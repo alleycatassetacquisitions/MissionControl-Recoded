@@ -1,0 +1,41 @@
+# Mission Control — Home Assistant configuration
+#
+# This file is the source of truth for what Mission Control adds to HA.
+# It is NOT a complete configuration.yaml — merge these sections into your
+# real HA config/configuration.yaml alongside the default_config block.
+#
+# Deploy custom components and www files before restarting HA:
+#
+#   custom_components/core_configurator/  ← Apps/Core_Configurator/HA_Component/custom_components/core_configurator/
+#   www/core_configurator/               ← Apps/Core_Configurator/HA_Component/www/core_configurator/
+#
+# ─────────────────────────────────────────────────────────────────────────────
+# Phase 1 — Core Configurator
+# ─────────────────────────────────────────────────────────────────────────────
+#
+# YAML seed: runs once on first boot to populate the config entry.
+# After the entry exists this block is ignored — edit URLs from the sidebar.
+# Tokens stay out of here; Proxmox credentials belong to Bug Buster.
+#
+# Copy secrets into config/secrets.yaml (see secrets.yaml.example below).
+
+core_configurator:
+  registration_primary: !secret cc_registration_primary
+  registration_secondary: !secret cc_registration_secondary
+  alleycattv: !secret cc_alleycattv
+  gbn: !secret cc_gbn
+  proxmox: !secret cc_proxmox
+  proxmox_node: !secret cc_proxmox_node
+
+frontend:
+  extra_module_url:
+    # Core Configurator shared client — must load before any panel that calls
+    # window.CoreConfigurator.getUrl. Add other panels' module_urls below this.
+    - /local/core_configurator/core-configurator-client.js
+
+panel_custom:
+  - name: core-configurator-panel
+    sidebar_title: Core Configurator
+    sidebar_icon: mdi:lan
+    url_path: core-configurator
+    module_url: /local/core_configurator/core-configurator-panel.js
