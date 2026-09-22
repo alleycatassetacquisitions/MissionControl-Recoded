@@ -39,11 +39,17 @@ from aiohttp import ClientResponse, ClientTimeout
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
 
-# core_configurator is listed in manifest dependencies so it is guaranteed to
-# be loaded before this helper is called.  The module-level import makes
-# get_url patchable in tests via
-# patch("custom_components.shared_libraries.http.get_url", …).
-from custom_components.core_configurator.helpers import get_url  # type: ignore[import]
+# core_configurator is listed in manifest dependencies so it is loaded before
+# this helper is called in production.  The module-level name makes get_url
+# patchable in tests via:
+#   patch("custom_components.shared_libraries.http.get_url", return_value=…)
+# The try/except lets the test runner import this module without core_configurator
+# on its path; tests replace the None sentinel via patch before calling
+# async_request.
+try:
+    from custom_components.core_configurator.helpers import get_url  # type: ignore[import]
+except ImportError:
+    get_url = None  # type: ignore[assignment]
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -93,6 +99,13 @@ async def async_request(
         The raw aiohttp response, or ``None`` when no URL is configured.
         The caller is responsible for reading the body and closing the response.
     """
+    if get_url is None:
+        _LOGGER.error(
+            "shared_libraries.http: core_configurator is not available — "
+            "add it to your manifest dependencies."
+        )
+        return None
+
     base_url = get_url(hass, service_key)
     if not base_url:
         _LOGGER.debug(
