@@ -151,6 +151,33 @@ www/core_configurator/                 ← HA_Component/www/core_configurator/
 
 ---
 
+## Running tests
+
+Tests live in `HA_Component/tests/`. Run from the `HA_Component/` directory so `custom_components/` is importable:
+
+```powershell
+cd Apps/Core_Configurator/HA_Component
+pytest
+```
+
+Or with coverage:
+
+```powershell
+pytest --cov=custom_components/core_configurator --cov-report=term-missing
+```
+
+The test suite requires `requirements_test.txt` installed at repo root:
+
+```powershell
+pip install -r requirements_test.txt   # run once from repo root
+```
+
+CI runs the suite automatically on every push and pull request via `.github/workflows/test.yml`.
+
+**Coverage baseline (Phase 2):** 90% overall. The uncovered lines in `helpers.py` (`apply_service`) will be exercised in Phase 4 when Registration and GBN call it.
+
+---
+
 ## What this phase ships
 
 - One place to type an IP address.
@@ -164,5 +191,5 @@ www/core_configurator/                 ← HA_Component/www/core_configurator/
 |---|---|
 | `master_control_server` key | Phase 4 — nothing talks to MCS yet |
 | Shared HTTP / MQTT helpers | Phase 3 — `get_url` is enough for this slice |
-| pytest / CI | Phase 2 — shipped. Run from `Apps/Core_Configurator/HA_Component/`: `pytest` |
+| `apply_service` test coverage | Phase 4 — no caller integration exists yet |
 | Patching the old `alleycat_directory` code | Old `HomeAssistConfig` is a contract reference, not the build target |
