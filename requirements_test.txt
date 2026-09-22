@@ -1,0 +1,11 @@
+# Test dependencies — developer and CI tooling only. Do not deploy to the HA machine.
+#
+# Pinned to HA 2026.7.2. When upgrading HA, update this file to the matching
+# pytest-homeassistant-custom-component release (one release per HA patch).
+#
+# Python 3.14+ required (pytest-homeassistant-custom-component >=0.13.337).
+# Check with: python --version
+
+pytest==9.0.3
+pytest-homeassistant-custom-component==0.13.346
+pytest-cov==7.1.0

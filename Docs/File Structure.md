@@ -21,11 +21,15 @@ Most apps live under `Apps\` and follow the same layout:
 | `HA_Component\`                   | Home Assistant files for the app             |
 | `HA_Component\www\`               | Web files served by Home Assistant           |
 | `HA_Component\custom_components\` | Custom Home Assistant components             |
+| `HA_Component\tests\`             | pytest tests for the HA component            |
 | `Server_Component\`               | Backend or server code, when the app has one |
+| `Server_Component\tests\`         | pytest / TestClient tests for the server     |
 | `Client_Component\`               | Client code, when the app has one            |
 | `docs\`                           | Documentation that belongs only to that app  |
 
-Tests live next to the code they cover (`HA_Component\tests\`, `Server_Component\tests\`) once the test suite phase lands. Do not keep a second copy of URLs, Player types, or MQTT clients outside these folders.
+Tests live next to the code they cover. A `tests\` folder is added to the relevant component when that phase ships tests. Do not keep a second copy of URLs, Player types, or MQTT clients outside these folders.
+
+`requirements_test.txt` lives at repo root and is shared by all HA integration test suites. It is developer and CI tooling — it is never deployed to the HA machine.
 
 
 
@@ -34,6 +38,10 @@ Tests live next to the code they cover (`HA_Component\tests\`, `Server_Component
 
 ```text
 MissionControl\
+├── requirements_test.txt              ← dev/CI only; never deployed to the HA machine
+├── .github\
+│   └── workflows\
+│       └── test.yml
 ├── Apps\
 │   ├── AlleycatTV\
 │   │   ├── HA_Component\
@@ -49,7 +57,8 @@ MissionControl\
 │   ├── Core_Configurator\
 │   │   └── HA_Component\
 │   │       ├── www\
-│   │       └── custom_components\
+│   │       ├── custom_components\
+│   │       └── tests\                 ← conftest.py + test_core_configurator.py (Phase 2)
 │   ├── Digital_Node_Nexus\
 │   │   └── HA_Component\
 │   │       ├── www\
