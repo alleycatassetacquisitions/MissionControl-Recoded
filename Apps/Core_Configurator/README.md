@@ -190,6 +190,7 @@ CI runs the suite automatically on every push and pull request via `.github/work
 | Item | Reason |
 |---|---|
 | `master_control_server` key | Phase 4 — nothing talks to MCS yet |
-| Shared HTTP / MQTT helpers | Phase 3 — `get_url` is enough for this slice |
 | `apply_service` test coverage | Phase 4 — no caller integration exists yet |
 | Patching the old `alleycat_directory` code | Old `HomeAssistConfig` is a contract reference, not the build target |
+
+> **Phase 3 shipped.** Shared HTTP / MQTT helpers now live in `Libraries/Shared_HA_Helpers/` (`shared_libraries` domain). Phase 4+ integrations should list `"shared_libraries"` in their manifest `dependencies` and call `async_request` / `mc_topic` from there instead of writing their own HTTP or MQTT clients. See `Libraries/Shared_HA_Helpers/README.md`.

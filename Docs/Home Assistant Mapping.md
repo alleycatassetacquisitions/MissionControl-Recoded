@@ -25,7 +25,7 @@ Build on these. A custom MQTT client, a second device list, or a panel that `fet
 | Name | Shape | Job |
 | --- | --- | --- |
 | Core Configurator | Home Assistant integration `core_configurator` | Exclusive endpoint catalog. YAML seeds once; the config entry is live. Every HTTP caller reads `get_url`. |
-| Shared HA helpers | `custom_component`, no sidebar | HTTP client (auth included), MQTT fabric helpers, panel kit. Other integrations list it in manifest `dependencies`. Not a product with its own tab. |
+| Shared HA helpers | `custom_component` `shared_libraries`, no sidebar | HTTP client (auth included), MQTT fabric helpers, panel kit. Other integrations list `"shared_libraries"` in manifest `dependencies`. Not a product with its own tab. See `Libraries/Shared_HA_Helpers/README.md`. |
 | Master Control Server | Proxmox companion service | Only Central HTTP adapter. Owns Player, Role, NeoCorp, and Faction JSON. Not a Home Assistant process. |
 | Registration | Home Assistant integration `registration` | Home Assistant face of Master Control Server: coordinator, roster sensor, services, panel. No Central URL of its own. |
 | Digital Node Nexus | Home Assistant integration `digital_node_nexus` | FDN domain only (LED, haptic, page). Fabric owns MQTT presence. Broadcast Group Controller owns placement and membership. |
