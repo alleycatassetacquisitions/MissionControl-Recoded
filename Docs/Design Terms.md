@@ -20,6 +20,7 @@ Write the product name in prose. In code, use the snake_case form in the table. 
 | Broadcast Group | `broadcast_group` | Zone |
 | Broadcast Group Controller | `broadcast_group_controller` | Zone Controller, `zone_controller`, `alleycat_zone` |
 | Meru | `meru` | — |
+| Shared HA Helpers | `shared_libraries` | — |
 
 Poster capture is part of **Galactic Bounty Network**. It is not a separate Mission Control app named Photobooth. Third-party tools (for example photobooth-app) may be researched for cameras; our product is still GBN.
 

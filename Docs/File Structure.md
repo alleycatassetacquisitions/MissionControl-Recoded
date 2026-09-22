@@ -84,6 +84,14 @@ MissionControl\
 │       └── HA_Component\
 │           ├── www\
 │           └── custom_components\
+├── Libraries\
+│   └── Shared_HA_Helpers\
+│       └── HA_Component\
+│           ├── custom_components\
+│           │   └── shared_libraries\
+│           ├── www\
+│           │   └── shared_libraries\
+│           └── tests\
 ├── HomeAssist\
 │   └── themes\
 └── Docs\
@@ -152,6 +160,21 @@ Controls Broadcast Group membership and writes Home Assistant Areas for physical
 ## Other top-level folders
 
 
+
+### Libraries
+
+Shared infrastructure that is not an operator-facing product. These are `custom_component` integrations other apps list in their manifest `dependencies`. They have no sidebar, no config flow, and no operator UI.
+
+The same `HA_Component\` layout applies. Tests live in `HA_Component\tests\`.
+
+**Path:** `Libraries\`
+
+#### Shared HA Helpers
+
+Bearer-auth HTTP helper, MQTT fabric helpers (topic builder, subscribe/publish/presence wrappers), and a panel CSS/JS kit loaded via `extra_module_url`. Other integrations import helpers directly after declaring `"shared_libraries"` as a manifest dependency.
+
+- **Code:** `shared_libraries`
+- **Path:** `Libraries\Shared_HA_Helpers\`
 
 ### HomeAssist
 

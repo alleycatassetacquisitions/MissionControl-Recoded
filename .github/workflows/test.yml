@@ -29,3 +29,12 @@ jobs:
             --tb=short \
             --cov=custom_components/core_configurator \
             --cov-report=term-missing
+
+      - name: Run Shared HA Helpers tests
+        working-directory: Libraries/Shared_HA_Helpers/HA_Component
+        run: |
+          pytest tests/ \
+            -v \
+            --tb=short \
+            --cov=custom_components/shared_libraries \
+            --cov-report=term-missing
