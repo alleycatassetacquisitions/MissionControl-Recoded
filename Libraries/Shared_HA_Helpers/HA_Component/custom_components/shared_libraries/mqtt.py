@@ -51,6 +51,7 @@ import logging
 from collections.abc import Callable
 from typing import Any
 
+from homeassistant.components import mqtt
 from homeassistant.core import HomeAssistant
 
 from .const import MC_TOPIC_ROOT
@@ -125,8 +126,6 @@ async def async_subscribe(
     Callable
         An unsubscribe function.  Call it to stop receiving messages.
     """
-    from homeassistant.components import mqtt  # noqa: PLC0415
-
     topic = mc_topic(kind, *segments)
     _LOGGER.debug("shared_libraries.mqtt: subscribing to %s", topic)
     return await mqtt.async_subscribe(hass, topic, callback, qos=qos)
@@ -157,8 +156,6 @@ async def async_publish(
     retain:
         Whether the broker should retain the message.  Defaults to False.
     """
-    from homeassistant.components import mqtt  # noqa: PLC0415
-
     topic = mc_topic(kind, *segments)
     _LOGGER.debug("shared_libraries.mqtt: publishing to %s", topic)
     await mqtt.async_publish(hass, topic, payload, qos=qos, retain=retain)
