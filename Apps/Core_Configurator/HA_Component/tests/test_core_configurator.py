@@ -134,10 +134,11 @@ class TestServicesFromMapping:
         assert services[KEY_PROXMOX]["extra"]["node"] == "mynode"
 
     def test_proxmox_node_none_leaves_default(self):
-        # proxmox_node present but falsy — should not override
+        # proxmox_node is present but None → data.get("proxmox_node") is None
+        # → the `is not None` guard is False → block is skipped entirely
+        # → empty_services() default "pve" is untouched.
         services = services_from_mapping({"proxmox_node": None})
-        # None becomes "" after str() + strip(); the default "pve" stays
-        assert services[KEY_PROXMOX]["extra"]["node"] == ""
+        assert services[KEY_PROXMOX]["extra"]["node"] == "pve"
 
     def test_url_normalized_on_import(self):
         services = services_from_mapping({KEY_GBN: "192.168.1.206:8100"})
