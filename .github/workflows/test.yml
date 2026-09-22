@@ -22,9 +22,10 @@ jobs:
         run: pip install -r requirements_test.txt
 
       - name: Run Core Configurator tests
+        working-directory: Apps/Core_Configurator/HA_Component
         run: |
-          pytest Apps/Core_Configurator/HA_Component/tests/ \
+          pytest tests/ \
             -v \
             --tb=short \
-            --cov=Apps/Core_Configurator/HA_Component/custom_components/core_configurator \
+            --cov=custom_components/core_configurator \
             --cov-report=term-missing

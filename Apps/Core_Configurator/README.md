@@ -164,5 +164,5 @@ www/core_configurator/                 ← HA_Component/www/core_configurator/
 |---|---|
 | `master_control_server` key | Phase 4 — nothing talks to MCS yet |
 | Shared HTTP / MQTT helpers | Phase 3 — `get_url` is enough for this slice |
-| pytest / CI | Phase 2 — test suite is its own phase |
+| pytest / CI | Phase 2 — shipped. Run from `Apps/Core_Configurator/HA_Component/`: `pytest` |
 | Patching the old `alleycat_directory` code | Old `HomeAssistConfig` is a contract reference, not the build target |
