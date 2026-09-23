@@ -14,7 +14,11 @@ from typing import Any
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
 
-from custom_components.shared_libraries.http import async_request
+try:
+    from custom_components.shared_libraries.http import async_request
+except ImportError:
+    # Keep the name at module scope so tests can patch it; fail closed at runtime.
+    async_request = None  # type: ignore[assignment]
 
 from .const import DOMAIN, KEY_MCS, UPDATE_INTERVAL
 
@@ -35,6 +39,11 @@ class McsDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
 
     async def _async_update_data(self) -> dict[str, Any]:
         """Fetch /players from MCS. Raises UpdateFailed on error."""
+        if async_request is None:
+            raise UpdateFailed(
+                "shared_libraries not available — add it to manifest dependencies"
+            )
+
         response = await async_request(
             self.hass,
             KEY_MCS,

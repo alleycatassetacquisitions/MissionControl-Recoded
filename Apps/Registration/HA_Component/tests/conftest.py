@@ -14,7 +14,8 @@ if str(_ha_component_dir) not in sys.path:
     sys.path.insert(0, str(_ha_component_dir))
 
 # Also add the Core Configurator and Shared HA Helpers so imports resolve.
-_repo_root = _ha_component_dir.parent.parent.parent.parent  # MissionControl/
+# HA_Component -> Registration -> Apps -> MissionControl
+_repo_root = _ha_component_dir.parent.parent.parent
 for extra in [
     _repo_root / "Apps" / "Core_Configurator" / "HA_Component",
     _repo_root / "Libraries" / "Shared_HA_Helpers" / "HA_Component",
