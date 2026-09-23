@@ -13,6 +13,6 @@ pytest-cov==7.1.0
 # Phase 4 — MCS server test client (FastAPI + httpx).
 # MCS dependencies are also installed in CI via:
 #   pip install "Apps/Master_Control_Server/Server_Component[test]"
-pytest-asyncio==0.24.0
+pytest-asyncio==1.4.0
 fastapi>=0.115
 httpx>=0.27
