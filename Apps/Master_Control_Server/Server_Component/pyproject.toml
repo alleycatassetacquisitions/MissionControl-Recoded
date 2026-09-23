@@ -17,6 +17,9 @@ test = [
     "httpx>=0.27",
 ]
 
+[tool.setuptools]
+py-modules = ["main", "models", "central_client"]
+
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 asyncio_mode = "auto"
