@@ -21,7 +21,7 @@ import voluptuous as vol
 from homeassistant.helpers import config_validation as cv
 
 try:
-    from custom_components.shared_libraries.http import async_request  # noqa: F401
+    from custom_components.shared_libraries.http import async_request
 except ImportError:
     async_request = None  # type: ignore[assignment]
 
@@ -133,13 +133,13 @@ def _register_services(
     """Register HA services for Registration."""
 
     async def _handle_sync_now(_service_call) -> None:
+        # async_refresh() — not async_request_refresh() — so an explicit operator
+        # action bypasses the coordinator's debounce cooldown.
         coordinator: McsDataUpdateCoordinator = hass.data[DOMAIN][entry.entry_id]
-        await coordinator.async_request_refresh()
+        await coordinator.async_refresh()
 
     async def _handle_register_player(service_call) -> None:
-        try:
-            from custom_components.shared_libraries.http import async_request as async_request_  # noqa: PLC0415
-        except ImportError:
+        if async_request is None:
             _LOGGER.error("Registration: shared_libraries not available")
             return
         payload = {
@@ -148,7 +148,7 @@ def _register_services(
             "neocorp": service_call.data.get("neocorp", ""),
             "faction": service_call.data.get("faction", ""),
         }
-        response = await async_request_(
+        response = await async_request(
             hass, KEY_MCS, "POST", "/players", token=token, json=payload
         )
         if response is None or response.status >= 400:
