@@ -11,6 +11,8 @@ from __future__ import annotations
 import logging
 from typing import Any
 
+from aiohttp import ClientTimeout
+
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
 
@@ -22,6 +24,9 @@ except ImportError:
 from .const import DOMAIN, EXTRA_MCS_TOKEN, KEY_MCS, UPDATE_INTERVAL
 
 _LOGGER = logging.getLogger(__name__)
+
+# MCS may spend up to ~20s trying Central primary then secondary before answering.
+_MCS_TIMEOUT = ClientTimeout(total=25)
 
 
 def _mcs_token(hass: HomeAssistant) -> str:
@@ -64,6 +69,7 @@ class McsDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             "GET",
             "/players",
             token=token,
+            timeout=_MCS_TIMEOUT,
         )
         if response is None:
             raise UpdateFailed(

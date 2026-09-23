@@ -143,6 +143,6 @@ async def async_request(
             "shared_libraries.http: %s %s failed: %s",
             method.upper(),
             url,
-            err,
+            err or type(err).__name__,
         )
         return None

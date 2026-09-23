@@ -30,7 +30,8 @@ async def async_setup_entry(
     async_add_entities: AddEntitiesCallback,
 ) -> None:
     coordinator: McsDataUpdateCoordinator = hass.data[DOMAIN][entry.entry_id]
-    async_add_entities([RegistrationRosterSensor(coordinator, entry)], True)
+    # False: do not block platform setup on MCS/Central latency (sync_now already live).
+    async_add_entities([RegistrationRosterSensor(coordinator, entry)], False)
 
 
 class RegistrationRosterSensor(

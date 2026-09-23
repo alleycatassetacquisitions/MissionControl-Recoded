@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import logging
 
+from homeassistant.components import websocket_api
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import Event, HomeAssistant, callback
 
@@ -31,6 +32,7 @@ from .const import (
     KEY_CENTRAL_PRIMARY,
     KEY_CENTRAL_SECONDARY,
     KEY_MCS,
+    WS_GET_ROSTER,
 )
 from .coordinator import McsDataUpdateCoordinator, _mcs_token
 
@@ -103,10 +105,17 @@ async def _push_central_config(hass: HomeAssistant) -> None:
 
 
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
-    coordinator = McsDataUpdateCoordinator(hass)
-    await coordinator.async_config_entry_first_refresh()
+    """Set up Registration.
 
+    Services and websocket must register before any MCS poll. MCS /players can
+    exceed the HA HTTP timeout while Central is slow; using first_refresh would
+    raise ConfigEntryNotReady and leave Sync Now unavailable (design principle 6).
+    """
+    coordinator = McsDataUpdateCoordinator(hass)
     hass.data.setdefault(DOMAIN, {})[entry.entry_id] = coordinator
+
+    _register_services(hass, entry)
+    _register_ws(hass)
 
     await _push_central_config(hass)
 
@@ -123,7 +132,8 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     )
 
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
-    _register_services(hass, entry)
+    # Soft refresh — unavailable sensors are OK when MCS/Central is slow.
+    await coordinator.async_refresh()
     return True
 
 
@@ -175,6 +185,36 @@ def _register_services(hass: HomeAssistant, entry: ConfigEntry) -> None:
                 }
             ),
         )
+
+
+@websocket_api.websocket_command({vol.Required("type"): WS_GET_ROSTER})
+@websocket_api.async_response
+async def ws_get_roster(hass: HomeAssistant, connection, msg) -> None:
+    """Return the coordinator-cached roster for the Registration panel."""
+    domain_data = hass.data.get(DOMAIN) or {}
+    coordinator: McsDataUpdateCoordinator | None = next(
+        iter(domain_data.values()), None
+    )
+    if coordinator is None:
+        connection.send_result(msg["id"], {"players": [], "count": 0})
+        return
+    data = coordinator.data or {}
+    connection.send_result(
+        msg["id"],
+        {
+            "players": list(data.get("players") or []),
+            "count": int(data.get("count") or 0),
+        },
+    )
+
+
+@callback
+def _register_ws(hass: HomeAssistant) -> None:
+    store = hass.data.setdefault(DOMAIN, {})
+    if store.get("ws_registered"):
+        return
+    websocket_api.async_register_command(hass, ws_get_roster)
+    store["ws_registered"] = True
 
 
 async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:

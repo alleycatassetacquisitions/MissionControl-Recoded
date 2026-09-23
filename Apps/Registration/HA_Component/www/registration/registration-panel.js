@@ -107,13 +107,23 @@ class RegistrationPanel extends window.McPanel.Base {
   // Data
   // -------------------------------------------------------------------------
 
+  _formatErr(err) {
+    if (err == null) return "unknown error";
+    if (typeof err === "string") return err;
+    return err.message || err.error || err.code || JSON.stringify(err);
+  }
+
   async _loadRoster() {
     try {
       const result = await this._hass.callWS({ type: "registration/get_roster" });
       this._roster = result?.players ?? [];
       this._renderRoster();
     } catch (err) {
-      this._feedback("Could not load roster: " + err, "err");
+      const body = this.shadowRoot.getElementById("roster-body");
+      if (body) {
+        body.innerHTML = `<p style="color:var(--error-color,#f44336)">Could not load roster.</p>`;
+      }
+      this._feedback("Could not load roster: " + this._formatErr(err), "err");
     }
   }
 
@@ -165,7 +175,7 @@ class RegistrationPanel extends window.McPanel.Base {
       // Give the coordinator a moment then reload the panel roster.
       setTimeout(() => this._loadRoster(), 1500);
     } catch (err) {
-      this._feedback("Sync failed: " + err, "err");
+      this._feedback("Sync failed: " + this._formatErr(err), "err");
     }
   }
 
@@ -191,7 +201,7 @@ class RegistrationPanel extends window.McPanel.Base {
       this.shadowRoot.getElementById("f-neocorp").value = "";
       await this._loadRoster();
     } catch (err) {
-      this._feedback("Registration failed: " + err, "err");
+      this._feedback("Registration failed: " + this._formatErr(err), "err");
     }
   }
 }
