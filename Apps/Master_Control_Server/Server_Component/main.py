@@ -20,8 +20,8 @@ from typing import Annotated
 from fastapi import Depends, FastAPI, HTTPException, Security, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 
-from .central_client import fetch_players
-from .models import ConfigUpdate, HealthResponse, Player, Roster
+from central_client import fetch_players
+from models import ConfigUpdate, HealthResponse, Player, Roster
 
 _LOGGER = logging.getLogger(__name__)
 
