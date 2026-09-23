@@ -18,6 +18,7 @@ bash /root/install-mcs-proxmox.sh
 
 3. Wait for `Done. CT … is ready.` The script prints:
    - CTID and LAN IP
+   - Console login: `root` / `alleycat` (override with `ROOT_PASSWORD=…`)
    - `http://<IP>:8700/health`
    - The generated API token
 
@@ -51,15 +52,18 @@ The script defaults to **Ubuntu 24.04** standard, 1 core, 1 GB RAM, 8 GB disk on
 | `BRIDGE` | `vmbr0` | Network bridge |
 | `MCS_API_TOKEN` | random | Skip generation; use a known token |
 | `MCS_SRC` | _(empty)_ | Host path to `Server_Component` to copy instead of git clone |
-| `REPO_URL` | MissionControl GitHub | Clone source when `MCS_SRC` is unset |
+| `REPO_URL` | `https://github.com/alleycatassetacquisitions/MissionContorl-Recoded.git` | Clone source when `MCS_SRC` is unset (needs network; private repos need a token or use `MCS_SRC` instead) |
+| `ROOT_PASSWORD` | `alleycat` | LXC console / SSH root password (Mission Control default for all companion LXCs) |
 | `SKIP_CONFIRM` | `0` | Set `1` to skip the 5-second cancel window |
 
-Example with a local checkout already on the Proxmox host:
+Example with a local checkout already on the Proxmox host (**recommended** — no GitHub login):
 
 ```bash
 MCS_SRC=/root/MissionControl/Apps/Master_Control_Server/Server_Component \
   bash /root/install-mcs-proxmox.sh
 ```
+
+If the GitHub repo is **private**, `git clone` will ask for a username/password (use a [personal access token](https://docs.github.com/en/authentication/keeping-your-account-and-data-secure/managing-your-personal-access-tokens) as the password). Prefer `MCS_SRC` for venue deploys so volunteers never need GitHub credentials.
 
 ## After install
 
@@ -77,6 +81,7 @@ MCS_SRC=/root/MissionControl/Apps/Master_Control_Server/Server_Component \
 | Disk | 8 GB |
 | OS | Ubuntu 24.04 LXC |
 | Port | 8700 |
+| Root password | `alleycat` (default for Mission Control LXCs) |
 
 
 ## Dev / test without the script
