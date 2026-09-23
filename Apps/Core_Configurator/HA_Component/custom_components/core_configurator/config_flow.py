@@ -9,10 +9,11 @@ from homeassistant.data_entry_flow import FlowResult
 from .const import (
     DOMAIN,
     KEY_ALLEYCATTV,
+    KEY_CENTRAL_PRIMARY,
+    KEY_CENTRAL_SECONDARY,
     KEY_GBN,
+    KEY_MASTER_CONTROL_SERVER,
     KEY_PROXMOX,
-    KEY_REGISTRATION_PRIMARY,
-    KEY_REGISTRATION_SECONDARY,
     SERVICE_CATALOG,
 )
 from .urlutil import services_from_mapping
@@ -46,12 +47,16 @@ class CoreConfiguratorConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             data_schema=vol.Schema(
                 {
                     vol.Optional(
-                        KEY_REGISTRATION_PRIMARY,
-                        description={"suggested_value": _placeholder(KEY_REGISTRATION_PRIMARY)},
+                        KEY_MASTER_CONTROL_SERVER,
+                        description={"suggested_value": _placeholder(KEY_MASTER_CONTROL_SERVER)},
                     ): str,
                     vol.Optional(
-                        KEY_REGISTRATION_SECONDARY,
-                        description={"suggested_value": _placeholder(KEY_REGISTRATION_SECONDARY)},
+                        KEY_CENTRAL_PRIMARY,
+                        description={"suggested_value": _placeholder(KEY_CENTRAL_PRIMARY)},
+                    ): str,
+                    vol.Optional(
+                        KEY_CENTRAL_SECONDARY,
+                        description={"suggested_value": _placeholder(KEY_CENTRAL_SECONDARY)},
                     ): str,
                     vol.Optional(
                         KEY_ALLEYCATTV,
