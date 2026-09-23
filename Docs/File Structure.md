@@ -195,6 +195,10 @@ Standing law:
 - `File Structure.md` — this file
 - `Home Assistant Config Steps.md` — Proxmox VM bootstrap for Home Assistant
 - `install-haos-proxmox.sh` — one-shot Proxmox host script that downloads the official HAOS KVM image and creates the Home Assistant VM
+- `Master Control Server Config Steps.md` — Proxmox LXC bootstrap for Master Control Server
+- `install-mcs-proxmox.sh` — one-shot Proxmox host script that creates an Ubuntu 24.04 LXC, installs MCS, and prints URL + token for Core Configurator
+
+Companion services on Proxmox follow the same pattern going forward: `install-<app>-proxmox.sh` plus a matching `* Config Steps.md`.
 
 The build-phase sequence stays on the Mission Control Build Plan canvas, not in these files.
 

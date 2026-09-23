@@ -12,13 +12,13 @@ Proxmox companion service. The **only** Central HTTP adapter for Mission Control
 
 ```
 Operator (CC panel)
-    │  saves central_primary / central_secondary URL
+    │  saves MCS URL + token, central_primary / central_secondary
     ▼
 Core Configurator (HA)
     │  fires core_configurator_updated
     ▼
 Registration integration (HA)
-    │  POST /config  (Bearer token)
+    │  POST /config  (Bearer from CC get_extra)
     ▼
 Master Control Server  ←──── GET /players, GET /players/{id}  ──── Registration
     │
@@ -37,12 +37,13 @@ Central Server (online or LAN)
 
 | Variable | Default | Purpose |
 |---|---|---|
-| `MCS_API_TOKEN` | _(required)_ | Bearer token shared with the Registration HA integration |
+| `MCS_API_TOKEN` | _(required)_ | Bearer token — **same value** as Core Configurator `master_control_server` → API token |
 | `CENTRAL_PRIMARY_URL` | `""` | Online / cloud Central Server (overwritten by HA via `/config`) |
 | `CENTRAL_SECONDARY_URL` | `""` | LAN / local Central Server fallback (overwritten by HA via `/config`) |
 
-Set these in the Proxmox LXC's `/etc/environment` or the service unit file.  
-`CENTRAL_PRIMARY_URL` and `CENTRAL_SECONDARY_URL` are **first-boot defaults only** — the Registration integration overwrites them on every HA start via `POST /config`. After the first push, operators change Central URLs from the Core Configurator sidebar panel, not by SSH-ing into Proxmox.
+**Production deploy:** use [`Docs/install-mcs-proxmox.sh`](../../../Docs/install-mcs-proxmox.sh) — see [`Docs/Master Control Server Config Steps.md`](../../../Docs/Master%20Control%20Server%20Config%20Steps.md). The installer generates the token and prints it for Core Configurator / secrets.
+
+`CENTRAL_PRIMARY_URL` and `CENTRAL_SECONDARY_URL` are **first-boot defaults only** — Registration overwrites them on every HA start via `POST /config`. After that, operators change Central URLs from the Core Configurator sidebar.
 
 ---
 
@@ -88,7 +89,7 @@ Returns `204 No Content`. Empty strings are ignored (existing value preserved).
 
 ## Auth contract
 
-MCS uses a single static Bearer token (`MCS_API_TOKEN`). The Registration HA integration stores this token in its own config entry (never in Core Configurator — CC stores URLs, not credentials). Every request from Registration passes `Authorization: Bearer {token}`.
+MCS uses a single static Bearer token (`MCS_API_TOKEN` on the LXC). The **same** token is stored in Core Configurator (`master_control_server` → API token). Registration reads it via `get_extra` and sends `Authorization: Bearer {token}` on every protected call. Registration does not keep its own copy of the token.
 
 `/health` is intentionally unauthenticated so the `DataUpdateCoordinator` can detect availability without needing the token in every health probe.
 

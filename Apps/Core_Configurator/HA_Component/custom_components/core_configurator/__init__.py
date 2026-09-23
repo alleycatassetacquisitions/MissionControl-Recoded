@@ -1,12 +1,12 @@
-"""Core Configurator — single authority for Alleycat app endpoints.
+"""Core Configurator — single authority for Alleycat URLs and shared API tokens.
 
 Design principles applied:
-  P2  Prefer authority over consensus — every caller reads get_url here.
+  P2  Prefer authority over consensus — every caller reads get_url / get_extra here.
   P5  Propagate truth — fire core_configurator_updated so listeners resync.
   P8  Reusable primitive — websocket + hass.data["core_configurator"]["services"].
 
-Fail-closed contract: get_url returns "" when no URL is stored.
-There are no built-in IP fallbacks. Callers that need a URL must have one configured.
+Fail-closed contract: get_url / get_extra return "" when nothing is stored.
+There are no built-in IP fallbacks. Callers that need a value must have it configured.
 """
 from __future__ import annotations
 

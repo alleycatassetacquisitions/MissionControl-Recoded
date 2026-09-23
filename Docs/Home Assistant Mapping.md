@@ -24,15 +24,15 @@ Build on these. A custom MQTT client, a second device list, or a panel that `fet
 
 | Name | Shape | Job |
 | --- | --- | --- |
-| Core Configurator | Home Assistant integration `core_configurator` | Exclusive endpoint catalog. YAML seeds once; the config entry is live. Every HTTP caller reads `get_url`. |
+| Core Configurator | Home Assistant integration `core_configurator` | Exclusive catalog for service URLs and shared API tokens. YAML seeds once; the config entry is live. Callers read `get_url` / `get_extra`. |
 | Shared HA helpers | `custom_component` `shared_libraries`, no sidebar | HTTP client (auth included), MQTT fabric helpers, panel kit. Other integrations list `"shared_libraries"` in manifest `dependencies`. Not a product with its own tab. See `Libraries/Shared_HA_Helpers/README.md`. |
 | Master Control Server | Proxmox companion service | Only Central HTTP adapter. Owns Player, Role, NeoCorp, and Faction JSON. Not a Home Assistant process. |
-| Registration | Home Assistant integration `registration` | Home Assistant face of Master Control Server: coordinator, roster sensor, services, panel. No Central URL of its own. |
+| Registration | Home Assistant integration `registration` | Home Assistant face of Master Control Server: coordinator, roster sensor, services, panel. No Central URL or MCS token of its own — both come from Core Configurator. |
 | Digital Node Nexus | Home Assistant integration `digital_node_nexus` | FDN domain only (LED, haptic, page). Fabric owns MQTT presence. Broadcast Group Controller owns placement and membership. |
 | AlleycatTV | Home Assistant integration `alleycattv` + Proxmox content server | Playback and content files. Home Assistant is the only MQTT command publisher. |
 | Galactic Bounty Network | Home Assistant integration `gbn` + Proxmox poster server | Posters and capture. `player_id` is a foreign key to Master Control Server. Panel goes through Home Assistant, not a raw LAN URL. |
 | Broadcast Group Controller | Home Assistant integration `broadcast_group_controller` | Physical = Area. Membership = Broadcast Group. Documented, not built. After the MQTT fabric exists. |
-| Bug Buster | Home Assistant integration `bug_buster` | Proxmox + MQTT spy. Ops only. Does not own venue types. |
+| Bug Buster | Home Assistant integration `bug_buster` | Monitoring, health, MQTT spy, SSH into sessions. Reads Proxmox credentials from Core Configurator. Ops only. Does not own venue types or tokens. |
 
 Players are not devices. Home Assistant devices are hardware (FDN, Pi, Proxmox guest). A Player is a Central record. Registration must not create one device per Player.
 
@@ -40,7 +40,7 @@ Players are not devices. Home Assistant devices are hardware (FDN, Pi, Proxmox g
 
 True:
 
-- One Core Configurator URL per service
+- One Core Configurator URL (and shared token where needed) per service
 - One HTTP client (auth inside it)
 - One MQTT fabric for FDN and AlleycatTV endpoints
 - One Player type via Master Control Server

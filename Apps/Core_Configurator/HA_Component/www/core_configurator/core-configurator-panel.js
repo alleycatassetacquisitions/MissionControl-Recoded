@@ -1,5 +1,5 @@
 /**
- * Core Configurator sidebar panel — Mission Control source of truth for endpoints.
+ * Core Configurator sidebar panel — Mission Control source of truth for URLs and auth.
  * Deploy: config/www/core_configurator/
  */
 class CoreConfiguratorPanel extends HTMLElement {
@@ -92,11 +92,12 @@ class CoreConfiguratorPanel extends HTMLElement {
     list.innerHTML = this._services.map((svc) => {
       const extras = (svc.extra_fields || []).map((f) => {
         const raw = (svc.extra || {})[f.key] || "";
+        const inputType = f.sensitive ? "password" : "text";
         return `
           <label for="extra-${this._esc(svc.key)}-${this._esc(f.key)}">${this._esc(f.label)}</label>
           <input id="extra-${this._esc(svc.key)}-${this._esc(f.key)}"
             data-extra="${this._esc(f.key)}"
-            type="text" value="${this._esc(raw)}"
+            type="${inputType}" value="${this._esc(raw)}"
             placeholder="${this._esc(f.placeholder || "")}"
             autocomplete="off" />
         `;
@@ -255,8 +256,8 @@ class CoreConfiguratorPanel extends HTMLElement {
           <div>
             <h1>Core Configurator</h1>
             <p class="sub">
-              Source of truth for Alleycat endpoints.
-              Set an IP here — Registration, AlleycatTV, GBN, and Bug Buster follow.
+              Source of truth for Alleycat URLs and API tokens.
+              Set them here — Registration, AlleycatTV, GBN, and Bug Buster follow.
             </p>
           </div>
           <div class="header-actions">

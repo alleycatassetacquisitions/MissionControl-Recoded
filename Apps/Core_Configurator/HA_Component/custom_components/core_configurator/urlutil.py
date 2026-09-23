@@ -3,7 +3,13 @@ from __future__ import annotations
 
 from urllib.parse import urlparse
 
-from .const import KEY_PROXMOX, SERVICE_CATALOG
+from .const import (
+    EXTRA_TOKEN,
+    KEY_MASTER_CONTROL_SERVER,
+    KEY_PROXMOX,
+    SERVICE_CATALOG,
+    YAML_MCS_TOKEN,
+)
 
 
 def normalize_url(raw: str, *, key: str = "") -> str:
@@ -50,4 +56,7 @@ def services_from_mapping(data: dict) -> dict:
         services[KEY_PROXMOX].setdefault("extra", {})["node"] = str(
             data.get("proxmox_node") or ""
         ).strip()
+    if data.get(YAML_MCS_TOKEN) is not None:
+        token = str(data.get(YAML_MCS_TOKEN) or "").strip()
+        services[KEY_MASTER_CONTROL_SERVER].setdefault("extra", {})[EXTRA_TOKEN] = token
     return services

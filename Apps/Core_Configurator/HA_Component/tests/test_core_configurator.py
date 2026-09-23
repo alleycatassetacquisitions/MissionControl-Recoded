@@ -166,6 +166,23 @@ class TestServicesFromMapping:
         assert services[KEY_PROXMOX]["url"] == "https://192.168.1.1:8006"
         assert services[KEY_PROXMOX]["extra"]["node"] == "pve"
 
+    def test_mcs_token_from_yaml(self):
+        from custom_components.core_configurator.const import YAML_MCS_TOKEN
+
+        services = services_from_mapping(
+            {
+                KEY_MASTER_CONTROL_SERVER: "http://192.168.1.10:8700",
+                YAML_MCS_TOKEN: "  secret-token  ",
+            }
+        )
+        assert services[KEY_MASTER_CONTROL_SERVER]["extra"]["token"] == "secret-token"
+
+    def test_mcs_token_blank_clears_extra(self):
+        from custom_components.core_configurator.const import YAML_MCS_TOKEN
+
+        services = services_from_mapping({YAML_MCS_TOKEN: "   "})
+        assert services[KEY_MASTER_CONTROL_SERVER]["extra"]["token"] == ""
+
 
 # ---------------------------------------------------------------------------
 # 2. helpers — get_url / get_extra / apply_service

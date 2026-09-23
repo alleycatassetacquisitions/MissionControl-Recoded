@@ -6,13 +6,13 @@ from Core Configurator to MCS POST /config — before any coordinator poll.
 """
 from __future__ import annotations
 
-from unittest.mock import AsyncMock, call, patch
+from unittest.mock import AsyncMock, patch
 
 import pytest
 from homeassistant.core import HomeAssistant
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 
-from custom_components.registration.const import CONF_MCS_TOKEN, DOMAIN
+from custom_components.registration.const import DOMAIN
 
 TOKEN = "first-boot-token"
 MOCK_ROSTER = {"count": 0, "players": []}
@@ -30,12 +30,16 @@ async def test_setup_pushes_config_immediately(hass: HomeAssistant):
     """_push_central_config is called exactly once during async_setup_entry."""
     entry = MockConfigEntry(
         domain=DOMAIN,
-        data={CONF_MCS_TOKEN: TOKEN},
+        data={},
         unique_id=DOMAIN,
     )
     entry.add_to_hass(hass)
 
     with (
+        patch(
+            "custom_components.registration.coordinator._mcs_token",
+            return_value=TOKEN,
+        ),
         patch(
             "custom_components.registration.coordinator.async_request",
             new=AsyncMock(return_value=_mock_response(MOCK_ROSTER)),
@@ -48,34 +52,7 @@ async def test_setup_pushes_config_immediately(hass: HomeAssistant):
         await hass.config_entries.async_setup(entry.entry_id)
         await hass.async_block_till_done()
 
-    mock_push.assert_called_once_with(hass, TOKEN)
-
-
-@pytest.mark.asyncio
-async def test_setup_push_passes_correct_token(hass: HomeAssistant):
-    """The MCS token from the config entry is forwarded to _push_central_config."""
-    entry = MockConfigEntry(
-        domain=DOMAIN,
-        data={CONF_MCS_TOKEN: "special-token-123"},
-        unique_id=DOMAIN,
-    )
-    entry.add_to_hass(hass)
-
-    with (
-        patch(
-            "custom_components.registration.coordinator.async_request",
-            new=AsyncMock(return_value=_mock_response(MOCK_ROSTER)),
-        ),
-        patch(
-            "custom_components.registration._push_central_config",
-            new=AsyncMock(),
-        ) as mock_push,
-    ):
-        await hass.config_entries.async_setup(entry.entry_id)
-        await hass.async_block_till_done()
-
-    _, pushed_token = mock_push.call_args[0]
-    assert pushed_token == "special-token-123"
+    mock_push.assert_called_once_with(hass)
 
 
 @pytest.mark.asyncio
@@ -83,16 +60,19 @@ async def test_setup_continues_when_push_fails(hass: HomeAssistant):
     """MCS down during setup push must not prevent the entry from loading."""
     entry = MockConfigEntry(
         domain=DOMAIN,
-        data={CONF_MCS_TOKEN: TOKEN},
+        data={},
         unique_id=DOMAIN,
     )
     entry.add_to_hass(hass)
 
     async def _push_that_logs(*_args):
-        # Simulates MCS being unreachable — _push_central_config logs and returns.
         return None
 
     with (
+        patch(
+            "custom_components.registration.coordinator._mcs_token",
+            return_value=TOKEN,
+        ),
         patch(
             "custom_components.registration.coordinator.async_request",
             new=AsyncMock(return_value=_mock_response(MOCK_ROSTER)),
@@ -105,6 +85,5 @@ async def test_setup_continues_when_push_fails(hass: HomeAssistant):
         result = await hass.config_entries.async_setup(entry.entry_id)
         await hass.async_block_till_done()
 
-    # Entry must still load successfully.
     assert result is True
     assert DOMAIN in hass.data

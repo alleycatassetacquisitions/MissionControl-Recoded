@@ -11,7 +11,7 @@ import pytest
 from homeassistant.core import HomeAssistant
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 
-from custom_components.registration.const import CONF_MCS_TOKEN, DOMAIN
+from custom_components.registration.const import DOMAIN
 
 TOKEN = "test-token"
 
@@ -38,12 +38,16 @@ async def loaded_entry(hass: HomeAssistant):
     """Set up a loaded Registration entry with a mocked MCS /players response."""
     entry = MockConfigEntry(
         domain=DOMAIN,
-        data={CONF_MCS_TOKEN: TOKEN},
+        data={},
         unique_id=DOMAIN,
     )
     entry.add_to_hass(hass)
 
     with (
+        patch(
+            "custom_components.registration.coordinator._mcs_token",
+            return_value=TOKEN,
+        ),
         patch(
             "custom_components.registration.coordinator.async_request",
             new=AsyncMock(return_value=_mock_response(MOCK_ROSTER)),
@@ -83,8 +87,5 @@ async def test_no_per_player_devices_created(hass: HomeAssistant, loaded_entry):
     """Players are game records — no device_tracker or device per player."""
     from homeassistant.helpers import device_registry as dr
     registry = dr.async_get(hass)
-    # Only the Registration integration itself may create a device (none expected).
-    # There should be NO per-player devices.
     all_entries = list(registry.devices.values())
-    # Zero devices expected from Registration — we create no hardware devices.
     assert len(all_entries) == 0

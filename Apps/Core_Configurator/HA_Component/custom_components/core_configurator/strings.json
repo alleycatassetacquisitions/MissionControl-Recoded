@@ -3,10 +3,12 @@
     "step": {
       "user": {
         "title": "Core Configurator",
-        "description": "Source of truth for Alleycat app endpoints. You can edit these later from the Core Configurator sidebar tab.",
+        "description": "Source of truth for Alleycat app URLs and API tokens. Edit later from the Core Configurator sidebar.",
         "data": {
-          "registration_primary": "Registration online URL",
-          "registration_secondary": "Registration local (LAN) URL",
+          "master_control_server": "Master Control Server URL",
+          "master_control_server_token": "Master Control Server API token",
+          "central_primary": "Central Server · online URL",
+          "central_secondary": "Central Server · local URL",
           "alleycattv": "AlleycatTV streaming server",
           "gbn": "Galactic Bounty Network server",
           "proxmox": "Proxmox URL",

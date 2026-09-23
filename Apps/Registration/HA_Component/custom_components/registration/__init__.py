@@ -8,7 +8,8 @@ Design contracts:
       The coordinator /health poll surfaces unavailability.
   P8  Reusable primitives: all HTTP goes through shared_libraries.http.async_request.
 
-Token storage: MCS API token lives in the Registration config entry, never in CC.
+Token storage: MCS API token lives in Core Configurator (extra.token on
+master_control_server). Registration never stores credentials in its config entry.
 """
 from __future__ import annotations
 
@@ -26,13 +27,12 @@ except ImportError:
     async_request = None  # type: ignore[assignment]
 
 from .const import (
-    CONF_MCS_TOKEN,
     DOMAIN,
     KEY_CENTRAL_PRIMARY,
     KEY_CENTRAL_SECONDARY,
     KEY_MCS,
 )
-from .coordinator import McsDataUpdateCoordinator
+from .coordinator import McsDataUpdateCoordinator, _mcs_token
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -44,7 +44,7 @@ PLATFORMS = ["sensor"]
 # ---------------------------------------------------------------------------
 
 
-async def _push_central_config(hass: HomeAssistant, token: str) -> None:
+async def _push_central_config(hass: HomeAssistant) -> None:
     """Push current central_primary / central_secondary from CC to MCS /config.
 
     Called on setup (first boot + every HA restart) and whenever
@@ -54,17 +54,24 @@ async def _push_central_config(hass: HomeAssistant, token: str) -> None:
     """
     try:
         from custom_components.core_configurator.helpers import get_url
-        from custom_components.shared_libraries.http import async_request
+        from custom_components.shared_libraries.http import async_request as request
     except ImportError as err:
         _LOGGER.warning(
             "Registration: cannot push Central config — dependency missing: %s", err
         )
         return
 
+    token = _mcs_token(hass)
+    if not token:
+        _LOGGER.warning(
+            "Registration: MCS token not set in Core Configurator — Central config push skipped."
+        )
+        return
+
     primary = get_url(hass, KEY_CENTRAL_PRIMARY)
     secondary = get_url(hass, KEY_CENTRAL_SECONDARY)
 
-    response = await async_request(
+    response = await request(
         hass,
         KEY_MCS,
         "POST",
@@ -96,51 +103,46 @@ async def _push_central_config(hass: HomeAssistant, token: str) -> None:
 
 
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
-    token: str = entry.data[CONF_MCS_TOKEN]
-
-    # Set up the coordinator.
-    coordinator = McsDataUpdateCoordinator(hass, token)
+    coordinator = McsDataUpdateCoordinator(hass)
     await coordinator.async_config_entry_first_refresh()
 
     hass.data.setdefault(DOMAIN, {})[entry.entry_id] = coordinator
 
-    # First-boot push: send current CC Central URLs to MCS immediately.
-    await _push_central_config(hass, token)
+    await _push_central_config(hass)
 
-    # Live-change listener: re-push when operator updates CC.
     @callback
     def _on_cc_updated(event: Event) -> None:
         changed_key = event.data.get("key")
-        if changed_key not in (KEY_CENTRAL_PRIMARY, KEY_CENTRAL_SECONDARY, None):
-            return  # Not a key we care about — skip.
-        hass.async_create_task(_push_central_config(hass, token))
+        if changed_key in (KEY_CENTRAL_PRIMARY, KEY_CENTRAL_SECONDARY, None):
+            hass.async_create_task(_push_central_config(hass))
+        if changed_key in (KEY_MCS, KEY_CENTRAL_PRIMARY, KEY_CENTRAL_SECONDARY, None):
+            hass.async_create_task(coordinator.async_refresh())
 
     entry.async_on_unload(
         hass.bus.async_listen("core_configurator_updated", _on_cc_updated)
     )
 
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
-
-    # Register services.
-    _register_services(hass, entry, token)
-
+    _register_services(hass, entry)
     return True
 
 
-def _register_services(
-    hass: HomeAssistant, entry: ConfigEntry, token: str
-) -> None:
+def _register_services(hass: HomeAssistant, entry: ConfigEntry) -> None:
     """Register HA services for Registration."""
 
     async def _handle_sync_now(_service_call) -> None:
-        # async_refresh() — not async_request_refresh() — so an explicit operator
-        # action bypasses the coordinator's debounce cooldown.
         coordinator: McsDataUpdateCoordinator = hass.data[DOMAIN][entry.entry_id]
         await coordinator.async_refresh()
 
     async def _handle_register_player(service_call) -> None:
         if async_request is None:
             _LOGGER.error("Registration: shared_libraries not available")
+            return
+        token = _mcs_token(hass)
+        if not token:
+            _LOGGER.warning(
+                "Registration: MCS token not set in Core Configurator — register_player skipped."
+            )
             return
         payload = {
             "name": service_call.data.get("name", ""),

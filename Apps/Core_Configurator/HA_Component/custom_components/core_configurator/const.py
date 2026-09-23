@@ -1,4 +1,4 @@
-"""Constants for Core Configurator — source of truth for app endpoints."""
+"""Constants for Core Configurator — source of truth for URLs and auth."""
 
 DOMAIN = "core_configurator"
 EVENT_UPDATED = f"{DOMAIN}_updated"
@@ -11,13 +11,28 @@ KEY_ALLEYCATTV = "alleycattv"
 KEY_GBN = "gbn"
 KEY_PROXMOX = "proxmox"
 
+# Extra field keys stored under a service entry's ``extra`` dict.
+EXTRA_TOKEN = "token"
+EXTRA_NODE = "node"
+
+# YAML / config-flow field that seeds the MCS Bearer into ``extra.token``.
+YAML_MCS_TOKEN = "master_control_server_token"
+
 SERVICE_CATALOG = (
     {
         "key": KEY_MASTER_CONTROL_SERVER,
         "label": "Master Control Server",
-        "hint": "LAN address of MCS — the only Central HTTP adapter (Proxmox companion)",
+        "hint": "LAN address + API token — the only Central HTTP adapter (Proxmox companion)",
         "apps": ["Registration"],
         "placeholder": "http://192.168.1.10:8700",
+        "extra_fields": (
+            {
+                "key": EXTRA_TOKEN,
+                "label": "API token",
+                "placeholder": "same value as MCS_API_TOKEN on the LXC",
+                "sensitive": True,
+            },
+        ),
     },
     {
         "key": KEY_CENTRAL_PRIMARY,
@@ -50,18 +65,19 @@ SERVICE_CATALOG = (
     {
         "key": KEY_PROXMOX,
         "label": "Proxmox",
-        "hint": "Hypervisor API (Bug Buster)",
+        "hint": "Hypervisor API — Bug Buster reads URL/node (and later tokens) from here",
         "apps": ["Bug Buster"],
         "placeholder": "https://192.168.1.1:8006",
         "extra_fields": (
-            {"key": "node", "label": "Node name", "placeholder": "pve"},
+            {"key": EXTRA_NODE, "label": "Node name", "placeholder": "pve"},
         ),
     },
 )
 
-# Keys accepted from YAML import. Tokens stay in integration config entries, not here.
+# Keys accepted from YAML import. URLs and tokens both seed here once.
 YAML_KEYS = (
     KEY_MASTER_CONTROL_SERVER,
+    YAML_MCS_TOKEN,
     KEY_CENTRAL_PRIMARY,
     KEY_CENTRAL_SECONDARY,
     KEY_ALLEYCATTV,

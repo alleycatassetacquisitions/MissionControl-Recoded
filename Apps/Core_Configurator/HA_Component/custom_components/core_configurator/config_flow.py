@@ -15,6 +15,7 @@ from .const import (
     KEY_MASTER_CONTROL_SERVER,
     KEY_PROXMOX,
     SERVICE_CATALOG,
+    YAML_MCS_TOKEN,
 )
 from .urlutil import services_from_mapping
 
@@ -27,7 +28,7 @@ def _placeholder(key: str) -> str:
 
 
 class CoreConfiguratorConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
-    """Config flow — runs once on first setup. Edit URLs from the sidebar later."""
+    """Config flow — runs once on first setup. Edit URLs and tokens from the sidebar later."""
 
     VERSION = 1
 
@@ -50,6 +51,7 @@ class CoreConfiguratorConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                         KEY_MASTER_CONTROL_SERVER,
                         description={"suggested_value": _placeholder(KEY_MASTER_CONTROL_SERVER)},
                     ): str,
+                    vol.Optional(YAML_MCS_TOKEN): str,
                     vol.Optional(
                         KEY_CENTRAL_PRIMARY,
                         description={"suggested_value": _placeholder(KEY_CENTRAL_PRIMARY)},

@@ -6,8 +6,9 @@ Design contracts:
     MCS stores them in memory and uses them for all Central calls.
   - Env vars (CENTRAL_PRIMARY_URL, CENTRAL_SECONDARY_URL) are first-boot
     defaults only. HA overwrites them on every setup.
-  - MCS_API_TOKEN guards /players and /config. HA stores this token in the
-    Registration config entry. Set it as an env var on the Proxmox LXC.
+  - MCS_API_TOKEN guards /players and /config. The same token is stored in
+    Core Configurator (master_control_server extra.token) and set as this
+    env var on the Proxmox LXC (see Docs/install-mcs-proxmox.sh).
   - Players are game records, not Home Assistant devices.
 """
 from __future__ import annotations

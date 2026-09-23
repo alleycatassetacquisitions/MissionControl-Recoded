@@ -4,7 +4,7 @@ Polls Master Control Server GET /players on the configured interval.
 All HTTP calls go through shared_libraries.http.async_request so:
   - The MCS URL comes from Core Configurator (fail-closed).
   - The HA-managed aiohttp session is used — no bare ClientSession.
-  - Bearer token comes from the Registration config entry.
+  - Bearer token comes from Core Configurator (extra.token on master_control_server).
 """
 from __future__ import annotations
 
@@ -17,25 +17,32 @@ from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, Upda
 try:
     from custom_components.shared_libraries.http import async_request
 except ImportError:
-    # Keep the name at module scope so tests can patch it; fail closed at runtime.
     async_request = None  # type: ignore[assignment]
 
-from .const import DOMAIN, KEY_MCS, UPDATE_INTERVAL
+from .const import DOMAIN, EXTRA_MCS_TOKEN, KEY_MCS, UPDATE_INTERVAL
 
 _LOGGER = logging.getLogger(__name__)
+
+
+def _mcs_token(hass: HomeAssistant) -> str:
+    """Read the MCS Bearer from Core Configurator. Fail closed if blank."""
+    try:
+        from custom_components.core_configurator.helpers import get_extra
+    except ImportError:
+        return ""
+    return get_extra(hass, KEY_MCS, EXTRA_MCS_TOKEN)
 
 
 class McsDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
     """Coordinator that fetches the player roster from MCS."""
 
-    def __init__(self, hass: HomeAssistant, mcs_token: str) -> None:
+    def __init__(self, hass: HomeAssistant) -> None:
         super().__init__(
             hass,
             _LOGGER,
             name=DOMAIN,
             update_interval=UPDATE_INTERVAL,
         )
-        self._token = mcs_token
 
     async def _async_update_data(self) -> dict[str, Any]:
         """Fetch /players from MCS. Raises UpdateFailed on error."""
@@ -44,12 +51,19 @@ class McsDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 "shared_libraries not available — add it to manifest dependencies"
             )
 
+        token = _mcs_token(self.hass)
+        if not token:
+            raise UpdateFailed(
+                "MCS API token not set in Core Configurator "
+                "(master_control_server → API token)."
+            )
+
         response = await async_request(
             self.hass,
             KEY_MCS,
             "GET",
             "/players",
-            token=self._token,
+            token=token,
         )
         if response is None:
             raise UpdateFailed(

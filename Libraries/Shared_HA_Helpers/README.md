@@ -44,9 +44,9 @@ if response is None:
 
 data = await response.json()
 
-# POST with bearer token
+# POST with bearer token (token usually from Core Configurator get_extra)
 response = await async_request(
-    hass, "registration_primary", "POST", "/players",
+    hass, "master_control_server", "POST", "/players",
     token=my_token,
     json={"name": "Player One"},
 )
@@ -57,7 +57,7 @@ response = await async_request(
 ```python
 async def async_request(
     hass,
-    service_key: str,       # Core Configurator key, e.g. "gbn", "registration_primary"
+    service_key: str,       # Core Configurator key, e.g. "gbn", "master_control_server"
     method: str,            # "GET", "POST", "PUT", "DELETE", …
     path: str,              # starts with "/", e.g. "/api/posters"
     *,

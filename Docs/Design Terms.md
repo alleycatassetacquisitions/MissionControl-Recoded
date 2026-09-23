@@ -24,7 +24,7 @@ Write the product name in prose. In code, use the snake_case form in the table. 
 
 Poster capture is part of **Galactic Bounty Network**. It is not a separate Mission Control app named Photobooth. Third-party tools (for example photobooth-app) may be researched for cameras; our product is still GBN.
 
-The endpoint catalog is **Core Configurator**. Say “Core Configurator URL” or `core_configurator` helpers, not “Directory.”
+The endpoint catalog is **Core Configurator**. Say “Core Configurator URL” or `core_configurator` helpers, not “Directory.” Shared API tokens also live in Core Configurator.
 
 Physical place is a Home Assistant **Area**. A content and command membership set is a **Broadcast Group**. Do not call that set a Zone — people will mix it up with Area.
 
@@ -46,7 +46,7 @@ FDNs talk to PDNs, the Central Server, and Home Assistant.
 
 ### Core Configurator
 
-The Mission Control app that stores service URLs (and related endpoint fields) in one place. Other integrations read it instead of keeping their own IPs.
+The Mission Control app that stores service URLs **and** shared API tokens/auth in one place. Other integrations read `get_url` / `get_extra` instead of keeping their own IPs or credentials.
 
 - **Communication:** Home Assistant config entry + helpers
 - **Code:** `core_configurator`
@@ -95,7 +95,7 @@ The Mission Control dashboard for adding, editing, and deleting player registrat
 
 ### Bug Buster
 
-The Mission Control ops tools for Proxmox guests and MQTT debug. It does not own players, Broadcast Groups, or posters.
+The Mission Control ops tools for monitoring Proxmox guests, health checks, MQTT debug, and SSH into sessions. It reads Proxmox URL/credentials from Core Configurator. It does not own players, Broadcast Groups, posters, or API tokens.
 
 - **Code:** `bug_buster`
 

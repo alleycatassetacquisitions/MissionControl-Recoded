@@ -14,18 +14,20 @@
 #   www/registration/                    ← Apps/Registration/HA_Component/www/registration/
 #
 # ─────────────────────────────────────────────────────────────────────────────
-# Phase 1 — Core Configurator
+# Core Configurator
 # ─────────────────────────────────────────────────────────────────────────────
 #
 # YAML seed: runs once on first boot to populate the config entry.
-# After the entry exists this block is ignored — edit URLs from the sidebar.
-# Tokens stay out of here; credentials belong to each integration's config entry.
+# After the entry exists this block is ignored — edit URLs and tokens from the
+# Core Configurator sidebar. URLs and API tokens both belong here (not in
+# per-app config entries).
 #
 # Copy secrets into config/secrets.yaml (see secrets.yaml.example).
 
 core_configurator:
   # Master Control Server (Proxmox companion — sole Central HTTP adapter)
   master_control_server: !secret cc_master_control_server
+  master_control_server_token: !secret cc_master_control_server_token
   # Central Server URLs — pushed to MCS by Registration on every HA start.
   # Change them here and save; Registration propagates the change to MCS automatically.
   central_primary: !secret cc_central_primary
@@ -45,14 +47,14 @@ frontend:
     - /local/core_configurator/core-configurator-client.js
 
 panel_custom:
-  # ─── Phase 1 — Core Configurator ──────────────────────────────────────────
+  # ─── Core Configurator ────────────────────────────────────────────────────
   - name: core-configurator-panel
     sidebar_title: Core Configurator
     sidebar_icon: mdi:lan
     url_path: core-configurator
     module_url: /local/core_configurator/core-configurator-panel.js
 
-  # ─── Phase 4 — Registration ───────────────────────────────────────────────
+  # ─── Registration ─────────────────────────────────────────────────────────
   - name: registration-panel
     sidebar_title: Registration
     sidebar_icon: mdi:account-group
