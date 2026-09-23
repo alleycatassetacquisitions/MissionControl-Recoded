@@ -4,25 +4,33 @@ DOMAIN = "core_configurator"
 EVENT_UPDATED = f"{DOMAIN}_updated"
 
 # Stable keys other integrations and panels look up. Do not rename.
-KEY_REGISTRATION_PRIMARY = "registration_primary"
-KEY_REGISTRATION_SECONDARY = "registration_secondary"
+KEY_MASTER_CONTROL_SERVER = "master_control_server"
+KEY_CENTRAL_PRIMARY = "central_primary"
+KEY_CENTRAL_SECONDARY = "central_secondary"
 KEY_ALLEYCATTV = "alleycattv"
 KEY_GBN = "gbn"
 KEY_PROXMOX = "proxmox"
 
 SERVICE_CATALOG = (
     {
-        "key": KEY_REGISTRATION_PRIMARY,
-        "label": "Registration · online",
-        "hint": "Cloud / DigitalOcean player API",
+        "key": KEY_MASTER_CONTROL_SERVER,
+        "label": "Master Control Server",
+        "hint": "LAN address of MCS — the only Central HTTP adapter (Proxmox companion)",
         "apps": ["Registration"],
+        "placeholder": "http://192.168.1.10:8700",
+    },
+    {
+        "key": KEY_CENTRAL_PRIMARY,
+        "label": "Central Server · online",
+        "hint": "Read by Master Control Server — cloud / DigitalOcean player API",
+        "apps": ["Master Control Server"],
         "placeholder": "https://alleycat-dl83g.ondigitalocean.app",
     },
     {
-        "key": KEY_REGISTRATION_SECONDARY,
-        "label": "Registration · local",
-        "hint": "LAN player API",
-        "apps": ["Registration"],
+        "key": KEY_CENTRAL_SECONDARY,
+        "label": "Central Server · local",
+        "hint": "Read by Master Control Server — LAN player API fallback",
+        "apps": ["Master Control Server"],
         "placeholder": "http://192.168.1.234:8090",
     },
     {
@@ -51,10 +59,11 @@ SERVICE_CATALOG = (
     },
 )
 
-# Keys accepted from YAML import. Tokens stay in Bug Buster config, not here.
+# Keys accepted from YAML import. Tokens stay in integration config entries, not here.
 YAML_KEYS = (
-    KEY_REGISTRATION_PRIMARY,
-    KEY_REGISTRATION_SECONDARY,
+    KEY_MASTER_CONTROL_SERVER,
+    KEY_CENTRAL_PRIMARY,
+    KEY_CENTRAL_SECONDARY,
     KEY_ALLEYCATTV,
     KEY_GBN,
     KEY_PROXMOX,

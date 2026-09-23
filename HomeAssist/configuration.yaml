@@ -7,7 +7,11 @@
 # Deploy custom components and www files before restarting HA:
 #
 #   custom_components/core_configurator/  ← Apps/Core_Configurator/HA_Component/custom_components/core_configurator/
+#   custom_components/shared_libraries/   ← Libraries/Shared_HA_Helpers/HA_Component/custom_components/shared_libraries/
+#   custom_components/registration/       ← Apps/Registration/HA_Component/custom_components/registration/
 #   www/core_configurator/               ← Apps/Core_Configurator/HA_Component/www/core_configurator/
+#   www/shared_libraries/                ← Libraries/Shared_HA_Helpers/HA_Component/www/shared_libraries/
+#   www/registration/                    ← Apps/Registration/HA_Component/www/registration/
 #
 # ─────────────────────────────────────────────────────────────────────────────
 # Phase 1 — Core Configurator
@@ -15,13 +19,18 @@
 #
 # YAML seed: runs once on first boot to populate the config entry.
 # After the entry exists this block is ignored — edit URLs from the sidebar.
-# Tokens stay out of here; Proxmox credentials belong to Bug Buster.
+# Tokens stay out of here; credentials belong to each integration's config entry.
 #
-# Copy secrets into config/secrets.yaml (see secrets.yaml.example below).
+# Copy secrets into config/secrets.yaml (see secrets.yaml.example).
 
 core_configurator:
-  registration_primary: !secret cc_registration_primary
-  registration_secondary: !secret cc_registration_secondary
+  # Master Control Server (Proxmox companion — sole Central HTTP adapter)
+  master_control_server: !secret cc_master_control_server
+  # Central Server URLs — pushed to MCS by Registration on every HA start.
+  # Change them here and save; Registration propagates the change to MCS automatically.
+  central_primary: !secret cc_central_primary
+  central_secondary: !secret cc_central_secondary
+  # Other services
   alleycattv: !secret cc_alleycattv
   gbn: !secret cc_gbn
   proxmox: !secret cc_proxmox
@@ -29,13 +38,23 @@ core_configurator:
 
 frontend:
   extra_module_url:
+    # Shared panel kit — must load before any Mission Control panel.
+    - /local/shared_libraries/mc-panel.js
     # Core Configurator shared client — must load before any panel that calls
-    # window.CoreConfigurator.getUrl. Add other panels' module_urls below this.
+    # window.CoreConfigurator.getUrl.
     - /local/core_configurator/core-configurator-client.js
 
 panel_custom:
+  # ─── Phase 1 — Core Configurator ──────────────────────────────────────────
   - name: core-configurator-panel
     sidebar_title: Core Configurator
     sidebar_icon: mdi:lan
     url_path: core-configurator
     module_url: /local/core_configurator/core-configurator-panel.js
+
+  # ─── Phase 4 — Registration ───────────────────────────────────────────────
+  - name: registration-panel
+    sidebar_title: Registration
+    sidebar_icon: mdi:account-group
+    url_path: registration
+    module_url: /local/registration/registration-panel.js

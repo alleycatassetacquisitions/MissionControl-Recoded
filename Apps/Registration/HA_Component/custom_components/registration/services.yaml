@@ -1,0 +1,40 @@
+sync_now:
+  name: Sync Now
+  description: >
+    Force an immediate refresh of the player roster from Master Control Server.
+    Useful after a Central Server update without waiting for the next poll interval.
+  fields: {}
+
+register_player:
+  name: Register Player
+  description: >
+    Register a new player or update an existing one via Master Control Server.
+    MCS forwards the request to Central Server.
+  fields:
+    name:
+      name: Name
+      description: Player's display name.
+      required: true
+      selector:
+        text:
+    role:
+      name: Role
+      description: "Player role (e.g. hunter, freelancer)."
+      required: false
+      default: ""
+      selector:
+        text:
+    neocorp:
+      name: NeoCorp
+      description: "NeoCorp affiliation (Freelancer, Helix, Endline, Reboot)."
+      required: false
+      default: ""
+      selector:
+        text:
+    faction:
+      name: Faction
+      description: Named faction the player belongs to.
+      required: false
+      default: ""
+      selector:
+        text:

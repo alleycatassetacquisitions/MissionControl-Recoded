@@ -1,0 +1,19 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "Registration",
+        "description": "Enter the Master Control Server API token. The MCS URL is set in Core Configurator.",
+        "data": {
+          "mcs_token": "MCS API Token"
+        }
+      }
+    },
+    "abort": {
+      "single_instance_allowed": "Only one Registration integration is allowed."
+    },
+    "error": {
+      "token_required": "API token cannot be empty."
+    }
+  }
+}

@@ -2,7 +2,7 @@
 
 Groups:
   1. urlutil        — pure-unit, no hass needed
-  2. helpers        — get_url / get_extra against mocked hass.data
+  2. helpers        — get_url / get_extra / apply_service against mocked hass.data
   3. Config flow    — user step, single-instance guard, YAML import
   4. async_setup_entry — hass.data populated, event fired
   5. Websocket      — get_services, get_url, set_service (admin / non-admin)
@@ -13,6 +13,7 @@ Design contract under test:
   - set_service requires an admin user.
   - core_configurator_updated fires on every successful write.
   - Config entry is single-instance (second setup attempt aborts).
+  - apply_service writes one service from another integration; no-op if CC absent.
 """
 from __future__ import annotations
 
@@ -26,11 +27,12 @@ from pytest_homeassistant_custom_component.common import MockConfigEntry
 from custom_components.core_configurator.const import (
     DOMAIN,
     EVENT_UPDATED,
+    KEY_MASTER_CONTROL_SERVER,
+    KEY_CENTRAL_PRIMARY,
+    KEY_CENTRAL_SECONDARY,
     KEY_ALLEYCATTV,
     KEY_GBN,
     KEY_PROXMOX,
-    KEY_REGISTRATION_PRIMARY,
-    KEY_REGISTRATION_SECONDARY,
     SERVICE_CATALOG,
 )
 from custom_components.core_configurator.urlutil import (
@@ -41,6 +43,7 @@ from custom_components.core_configurator.urlutil import (
 from custom_components.core_configurator.helpers import (
     get_extra,
     get_url,
+    apply_service,
 )
 
 
@@ -146,16 +149,18 @@ class TestServicesFromMapping:
 
     def test_all_yaml_keys_populated(self):
         data = {
-            KEY_REGISTRATION_PRIMARY: "https://cloud.example.com",
-            KEY_REGISTRATION_SECONDARY: "http://192.168.1.234:8090",
+            KEY_MASTER_CONTROL_SERVER: "http://192.168.1.10:8700",
+            KEY_CENTRAL_PRIMARY: "https://cloud.example.com",
+            KEY_CENTRAL_SECONDARY: "http://192.168.1.234:8090",
             KEY_ALLEYCATTV: "http://tv.local",
             KEY_GBN: "http://192.168.1.206:8100",
             KEY_PROXMOX: "192.168.1.1",
             "proxmox_node": "pve",
         }
         services = services_from_mapping(data)
-        assert services[KEY_REGISTRATION_PRIMARY]["url"] == "https://cloud.example.com"
-        assert services[KEY_REGISTRATION_SECONDARY]["url"] == "http://192.168.1.234:8090"
+        assert services[KEY_MASTER_CONTROL_SERVER]["url"] == "http://192.168.1.10:8700"
+        assert services[KEY_CENTRAL_PRIMARY]["url"] == "https://cloud.example.com"
+        assert services[KEY_CENTRAL_SECONDARY]["url"] == "http://192.168.1.234:8090"
         assert services[KEY_ALLEYCATTV]["url"] == "http://tv.local"
         assert services[KEY_GBN]["url"] == "http://192.168.1.206:8100"
         assert services[KEY_PROXMOX]["url"] == "https://192.168.1.1:8006"
@@ -163,7 +168,7 @@ class TestServicesFromMapping:
 
 
 # ---------------------------------------------------------------------------
-# 2. helpers — get_url / get_extra
+# 2. helpers — get_url / get_extra / apply_service
 # ---------------------------------------------------------------------------
 
 
@@ -201,6 +206,34 @@ class TestGetUrl:
         }
         assert get_url(hass, KEY_ALLEYCATTV, default="http://fallback") == "http://real.local"
 
+    def test_mcs_url_stored_and_retrieved(self, hass: HomeAssistant):
+        """master_control_server key works like any other service key."""
+        hass.data[DOMAIN] = {
+            "services": {
+                KEY_MASTER_CONTROL_SERVER: {"url": "http://192.168.1.10:8700", "extra": {}},
+            },
+            "entry_id": None,
+        }
+        assert get_url(hass, KEY_MASTER_CONTROL_SERVER) == "http://192.168.1.10:8700"
+
+    def test_central_primary_stored_and_retrieved(self, hass: HomeAssistant):
+        hass.data[DOMAIN] = {
+            "services": {
+                KEY_CENTRAL_PRIMARY: {"url": "https://cloud.example.com", "extra": {}},
+            },
+            "entry_id": None,
+        }
+        assert get_url(hass, KEY_CENTRAL_PRIMARY) == "https://cloud.example.com"
+
+    def test_central_secondary_stored_and_retrieved(self, hass: HomeAssistant):
+        hass.data[DOMAIN] = {
+            "services": {
+                KEY_CENTRAL_SECONDARY: {"url": "http://192.168.1.234:8090", "extra": {}},
+            },
+            "entry_id": None,
+        }
+        assert get_url(hass, KEY_CENTRAL_SECONDARY) == "http://192.168.1.234:8090"
+
 
 class TestGetExtra:
     def test_returns_default_when_domain_absent(self, hass: HomeAssistant):
@@ -226,6 +259,73 @@ class TestGetExtra:
             "entry_id": None,
         }
         assert get_extra(hass, KEY_PROXMOX, "node", default="pve") == "pve"
+
+
+class TestApplyService:
+    """apply_service — called by other integrations to write a URL into CC."""
+
+    def _setup_cc(self, hass: HomeAssistant):
+        """Put a minimal CC data structure into hass.data."""
+        hass.data[DOMAIN] = {
+            "services": empty_services(),
+            "entry_id": None,
+        }
+
+    def test_returns_false_when_cc_not_loaded(self, hass: HomeAssistant):
+        """No-op when Core Configurator has not been set up yet."""
+        result = apply_service(hass, KEY_GBN, url="http://192.168.1.206:8100")
+        assert result is False
+
+    def test_returns_true_when_cc_loaded(self, hass: HomeAssistant):
+        self._setup_cc(hass)
+        result = apply_service(hass, KEY_GBN, url="http://192.168.1.206:8100")
+        assert result is True
+
+    def test_writes_url_into_services(self, hass: HomeAssistant):
+        self._setup_cc(hass)
+        apply_service(hass, KEY_GBN, url="http://192.168.1.206:8100")
+        assert get_url(hass, KEY_GBN) == "http://192.168.1.206:8100"
+
+    def test_url_is_normalized(self, hass: HomeAssistant):
+        """apply_service passes the URL through normalize_url."""
+        self._setup_cc(hass)
+        apply_service(hass, KEY_GBN, url="192.168.1.206:8100")
+        assert get_url(hass, KEY_GBN) == "http://192.168.1.206:8100"
+
+    def test_extra_fields_merged(self, hass: HomeAssistant):
+        self._setup_cc(hass)
+        apply_service(hass, KEY_PROXMOX, extra={"node": "pve2"})
+        assert get_extra(hass, KEY_PROXMOX, "node") == "pve2"
+
+    def test_extra_merged_not_replaced(self, hass: HomeAssistant):
+        """Existing extra fields not in the update dict are preserved."""
+        self._setup_cc(hass)
+        hass.data[DOMAIN]["services"][KEY_PROXMOX]["extra"] = {"node": "pve", "other": "val"}
+        apply_service(hass, KEY_PROXMOX, extra={"node": "pve2"})
+        # "other" should still be there
+        stored = hass.data[DOMAIN]["services"][KEY_PROXMOX]["extra"]
+        assert stored["other"] == "val"
+        assert stored["node"] == "pve2"
+
+    def test_mcs_url_written(self, hass: HomeAssistant):
+        """apply_service works for the master_control_server key."""
+        self._setup_cc(hass)
+        apply_service(hass, KEY_MASTER_CONTROL_SERVER, url="http://192.168.1.10:8700")
+        assert get_url(hass, KEY_MASTER_CONTROL_SERVER) == "http://192.168.1.10:8700"
+
+    def test_central_primary_written(self, hass: HomeAssistant):
+        self._setup_cc(hass)
+        apply_service(hass, KEY_CENTRAL_PRIMARY, url="https://cloud.example.com")
+        assert get_url(hass, KEY_CENTRAL_PRIMARY) == "https://cloud.example.com"
+
+    def test_fires_updated_event(self, hass: HomeAssistant):
+        """apply_service fires core_configurator_updated after writing."""
+        self._setup_cc(hass)
+        events: list = []
+        hass.bus.async_listen(EVENT_UPDATED, lambda e: events.append(e))
+        apply_service(hass, KEY_GBN, url="http://192.168.1.206:8100")
+        assert len(events) == 1
+        assert events[0].data["key"] == KEY_GBN
 
 
 # ---------------------------------------------------------------------------

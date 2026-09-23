@@ -21,6 +21,9 @@ jobs:
       - name: Install test dependencies
         run: pip install -r requirements_test.txt
 
+      - name: Install MCS server test dependencies
+        run: pip install "Apps/Master_Control_Server/Server_Component[test]"
+
       - name: Run Core Configurator tests
         working-directory: Apps/Core_Configurator/HA_Component
         run: |
@@ -37,4 +40,23 @@ jobs:
             -v \
             --tb=short \
             --cov=custom_components/shared_libraries \
+            --cov-report=term-missing
+
+      - name: Run Master Control Server tests
+        working-directory: Apps/Master_Control_Server/Server_Component
+        run: |
+          pytest tests/ \
+            -v \
+            --tb=short \
+            --cov=. \
+            --cov-omit=tests/* \
+            --cov-report=term-missing
+
+      - name: Run Registration tests
+        working-directory: Apps/Registration/HA_Component
+        run: |
+          pytest tests/ \
+            -v \
+            --tb=short \
+            --cov=custom_components/registration \
             --cov-report=term-missing
