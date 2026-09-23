@@ -20,6 +20,9 @@ test = [
 [tool.setuptools]
 py-modules = ["main", "models", "central_client"]
 
+[tool.coverage.run]
+omit = ["tests/*"]
+
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 asyncio_mode = "auto"
