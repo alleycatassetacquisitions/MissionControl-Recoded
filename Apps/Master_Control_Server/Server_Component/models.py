@@ -19,6 +19,16 @@ class Player(BaseModel):
     neo_id: str = ""
 
 
+class PlayerWrite(BaseModel):
+    """Canonical create/update payload from Registration (HA → MCS)."""
+
+    name: str
+    role: str = "hunter"
+    neocorp: str = "freelancer"
+    faction: str = ""
+    neo_id: str = ""
+
+
 class Roster(BaseModel):
     """Full player list returned by GET /players."""
 

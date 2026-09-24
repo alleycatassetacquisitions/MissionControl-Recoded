@@ -40,6 +40,22 @@ _LOGGER = logging.getLogger(__name__)
 
 PLATFORMS = ["sensor"]
 
+_PLAYER_WRITE_SCHEMA = vol.Schema(
+    {
+        vol.Required("name"): cv.string,
+        vol.Optional("role", default="hunter"): cv.string,
+        vol.Optional("neocorp", default="freelancer"): cv.string,
+        vol.Optional("faction", default=""): cv.string,
+        vol.Optional("neo_id", default=""): cv.string,
+    }
+)
+
+_PLAYER_UPDATE_SCHEMA = _PLAYER_WRITE_SCHEMA.extend(
+    {vol.Required("player_id"): cv.string}
+)
+
+_PLAYER_DELETE_SCHEMA = vol.Schema({vol.Required("player_id"): cv.string})
+
 
 # ---------------------------------------------------------------------------
 # Config-push helper
@@ -99,6 +115,47 @@ async def _push_central_config(hass: HomeAssistant) -> None:
         )
 
 
+def _player_payload(service_call) -> dict:
+    return {
+        "name": service_call.data.get("name", ""),
+        "role": service_call.data.get("role", "hunter") or "hunter",
+        "neocorp": service_call.data.get("neocorp", "freelancer") or "freelancer",
+        "faction": service_call.data.get("faction", "") or "",
+        "neo_id": service_call.data.get("neo_id", "") or "",
+    }
+
+
+async def _mcs_mutate(
+    hass: HomeAssistant,
+    method: str,
+    path: str,
+    *,
+    json: dict | None = None,
+    action: str,
+) -> bool:
+    if async_request is None:
+        _LOGGER.error("Registration: shared_libraries not available")
+        return False
+    token = _mcs_token(hass)
+    if not token:
+        _LOGGER.warning(
+            "Registration: MCS token not set in Core Configurator — %s skipped.",
+            action,
+        )
+        return False
+    response = await async_request(
+        hass, KEY_MCS, method, path, token=token, json=json
+    )
+    if response is None or response.status >= 400:
+        _LOGGER.warning(
+            "Registration: %s failed (status=%s)",
+            action,
+            response.status if response else "no response",
+        )
+        return False
+    return True
+
+
 # ---------------------------------------------------------------------------
 # HA lifecycle
 # ---------------------------------------------------------------------------
@@ -145,29 +202,38 @@ def _register_services(hass: HomeAssistant, entry: ConfigEntry) -> None:
         await coordinator.async_refresh()
 
     async def _handle_register_player(service_call) -> None:
-        if async_request is None:
-            _LOGGER.error("Registration: shared_libraries not available")
-            return
-        token = _mcs_token(hass)
-        if not token:
-            _LOGGER.warning(
-                "Registration: MCS token not set in Core Configurator — register_player skipped."
-            )
-            return
-        payload = {
-            "name": service_call.data.get("name", ""),
-            "role": service_call.data.get("role", ""),
-            "neocorp": service_call.data.get("neocorp", ""),
-            "faction": service_call.data.get("faction", ""),
-        }
-        response = await async_request(
-            hass, KEY_MCS, "POST", "/players", token=token, json=payload
+        ok = await _mcs_mutate(
+            hass,
+            "POST",
+            "/players",
+            json=_player_payload(service_call),
+            action="register_player",
         )
-        if response is None or response.status >= 400:
-            _LOGGER.warning(
-                "Registration: register_player call failed (status=%s)",
-                response.status if response else "no response",
-            )
+        if ok:
+            await hass.data[DOMAIN][entry.entry_id].async_refresh()
+
+    async def _handle_update_player(service_call) -> None:
+        player_id = service_call.data["player_id"]
+        ok = await _mcs_mutate(
+            hass,
+            "PUT",
+            f"/players/{player_id}",
+            json=_player_payload(service_call),
+            action="update_player",
+        )
+        if ok:
+            await hass.data[DOMAIN][entry.entry_id].async_refresh()
+
+    async def _handle_delete_player(service_call) -> None:
+        player_id = service_call.data["player_id"]
+        ok = await _mcs_mutate(
+            hass,
+            "DELETE",
+            f"/players/{player_id}",
+            action="delete_player",
+        )
+        if ok:
+            await hass.data[DOMAIN][entry.entry_id].async_refresh()
 
     if not hass.services.has_service(DOMAIN, "sync_now"):
         hass.services.async_register(DOMAIN, "sync_now", _handle_sync_now)
@@ -176,14 +242,21 @@ def _register_services(hass: HomeAssistant, entry: ConfigEntry) -> None:
             DOMAIN,
             "register_player",
             _handle_register_player,
-            schema=vol.Schema(
-                {
-                    vol.Required("name"): cv.string,
-                    vol.Optional("role", default=""): cv.string,
-                    vol.Optional("neocorp", default=""): cv.string,
-                    vol.Optional("faction", default=""): cv.string,
-                }
-            ),
+            schema=_PLAYER_WRITE_SCHEMA,
+        )
+    if not hass.services.has_service(DOMAIN, "update_player"):
+        hass.services.async_register(
+            DOMAIN,
+            "update_player",
+            _handle_update_player,
+            schema=_PLAYER_UPDATE_SCHEMA,
+        )
+    if not hass.services.has_service(DOMAIN, "delete_player"):
+        hass.services.async_register(
+            DOMAIN,
+            "delete_player",
+            _handle_delete_player,
+            schema=_PLAYER_DELETE_SCHEMA,
         )
 
 
@@ -192,9 +265,12 @@ def _register_services(hass: HomeAssistant, entry: ConfigEntry) -> None:
 async def ws_get_roster(hass: HomeAssistant, connection, msg) -> None:
     """Return the coordinator-cached roster for the Registration panel."""
     domain_data = hass.data.get(DOMAIN) or {}
-    coordinator: McsDataUpdateCoordinator | None = next(
-        iter(domain_data.values()), None
-    )
+    # Prefer a coordinator entry over the ws_registered flag key.
+    coordinator: McsDataUpdateCoordinator | None = None
+    for value in domain_data.values():
+        if isinstance(value, McsDataUpdateCoordinator):
+            coordinator = value
+            break
     if coordinator is None:
         connection.send_result(msg["id"], {"players": [], "count": 0})
         return

@@ -1,7 +1,6 @@
 """Tests for Registration HA services.
 
-registration.sync_now   — forces coordinator refresh
-registration.register_player — POSTs a new player to MCS
+registration.sync_now / register_player / update_player / delete_player
 
 All HTTP is mocked — no live MCS needed.
 """
@@ -19,7 +18,7 @@ TOKEN = "svc-token"
 MOCK_ROSTER = {
     "count": 1,
     "players": [{"id": "p1", "name": "Alice", "role": "hunter",
-                 "neocorp": "Helix", "faction": "Phoenix", "neo_id": "n1"}],
+                 "neocorp": "helix", "faction": "Phoenix", "neo_id": "n1"}],
 }
 
 
@@ -108,14 +107,95 @@ async def test_register_player_calls_mcs_post(
         await hass.services.async_call(
             DOMAIN,
             "register_player",
-            {"name": "New Player", "role": "hunter", "neocorp": "Helix", "faction": ""},
+            {
+                "name": "New Player",
+                "role": "hunter",
+                "neocorp": "helix",
+                "faction": "",
+                "neo_id": "n9",
+            },
             blocking=True,
         )
         await hass.async_block_till_done()
 
     mock_post.assert_called_once()
-    _, kwargs = mock_post.call_args
+    args, kwargs = mock_post.call_args
+    assert args[2] == "POST"
+    assert args[3] == "/players"
     assert kwargs.get("token") == TOKEN
     body = kwargs.get("json", {})
     assert body["name"] == "New Player"
     assert body["role"] == "hunter"
+    assert body["neocorp"] == "helix"
+    assert body["neo_id"] == "n9"
+
+
+@pytest.mark.asyncio
+async def test_update_player_calls_mcs_put(hass: HomeAssistant, loaded_entry):
+    with (
+        patch(
+            "custom_components.registration._mcs_token",
+            return_value=TOKEN,
+        ),
+        patch(
+            "custom_components.registration.async_request",
+            new=AsyncMock(return_value=_mock_response({}, 200)),
+        ) as mock_req,
+        patch(
+            "custom_components.registration.coordinator.async_request",
+            new=AsyncMock(return_value=_mock_response(MOCK_ROSTER)),
+        ),
+        patch(
+            "custom_components.registration.coordinator._mcs_token",
+            return_value=TOKEN,
+        ),
+    ):
+        await hass.services.async_call(
+            DOMAIN,
+            "update_player",
+            {
+                "player_id": "p1",
+                "name": "Alice",
+                "role": "bounty",
+                "neocorp": "endline",
+                "faction": "F",
+                "neo_id": "n1",
+            },
+            blocking=True,
+        )
+        await hass.async_block_till_done()
+
+    assert mock_req.call_args.args[2] == "PUT"
+    assert mock_req.call_args.args[3] == "/players/p1"
+
+
+@pytest.mark.asyncio
+async def test_delete_player_calls_mcs_delete(hass: HomeAssistant, loaded_entry):
+    with (
+        patch(
+            "custom_components.registration._mcs_token",
+            return_value=TOKEN,
+        ),
+        patch(
+            "custom_components.registration.async_request",
+            new=AsyncMock(return_value=_mock_response(None, 204)),
+        ) as mock_req,
+        patch(
+            "custom_components.registration.coordinator.async_request",
+            new=AsyncMock(return_value=_mock_response(MOCK_ROSTER)),
+        ),
+        patch(
+            "custom_components.registration.coordinator._mcs_token",
+            return_value=TOKEN,
+        ),
+    ):
+        await hass.services.async_call(
+            DOMAIN,
+            "delete_player",
+            {"player_id": "p1"},
+            blocking=True,
+        )
+        await hass.async_block_till_done()
+
+    assert mock_req.call_args.args[2] == "DELETE"
+    assert mock_req.call_args.args[3] == "/players/p1"

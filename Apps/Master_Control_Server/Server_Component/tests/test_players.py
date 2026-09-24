@@ -15,31 +15,36 @@ MOCK_PLAYERS = [
         "id": "p1",
         "name": "Alice",
         "role": "hunter",
-        "neocorp": "Helix",
+        "neocorp": "helix",
         "faction": "Phoenix",
         "neo_id": "neo-001",
     },
     {
         "id": "p2",
         "name": "Bob",
-        "role": "freelancer",
-        "neocorp": "Freelancer",
+        "role": "bounty",
+        "neocorp": "freelancer",
         "faction": "",
         "neo_id": "neo-002",
     },
 ]
 
 
-def _patch_fetch(players: list[dict] | None = None):
-    return patch(
-        "main.fetch_players",
-        new_callable=lambda: lambda *_a, **_kw: AsyncMock(return_value=players or [])(),
-        # simpler: use AsyncMock directly
-    )
-
-
 def _patch_central(players: list[dict]):
-    return patch("main.fetch_players", new=AsyncMock(return_value=players))
+    """Patch normalized fetch used by GET handlers."""
+    return patch("main.fetch_normalized_players", new=AsyncMock(return_value=players))
+
+
+LEGACY_CENTRAL = [
+    {
+        "id": "p1",
+        "name": "Alice",
+        "allegiance": "Helix",
+        "mode": "hunter",
+        "faction": "Phoenix",
+        "neo_id": "neo-001",
+    },
+]
 
 
 # ---------------------------------------------------------------------------
@@ -98,13 +103,24 @@ def test_get_players_empty_roster(client: TestClient, auth_headers: dict):
 
 
 def test_get_players_skips_malformed_records(client: TestClient, auth_headers: dict):
-    """Malformed records are skipped; valid ones still returned."""
-    mixed = [MOCK_PLAYERS[0], {"bad": "record"}]
-    with _patch_central(mixed):
+    """Malformed records are skipped upstream; GET returns only normalized ones."""
+    with _patch_central([MOCK_PLAYERS[0]]):
         resp = client.get("/players", headers=auth_headers)
     assert resp.status_code == 200
-    # Only the valid player survives
     assert resp.json()["count"] == 1
+
+
+def test_get_players_maps_legacy_central_shape(client: TestClient, auth_headers: dict):
+    """Legacy allegiance/mode from Central surface as neocorp/role."""
+    from player_normalize import normalize_player
+
+    normalized = [normalize_player(LEGACY_CENTRAL[0])]
+    with _patch_central(normalized):
+        resp = client.get("/players", headers=auth_headers)
+    player = resp.json()["players"][0]
+    assert player["neocorp"] == "helix"
+    assert player["role"] == "hunter"
+    assert player["faction"] == "Phoenix"
 
 
 # ---------------------------------------------------------------------------
@@ -124,3 +140,66 @@ def test_get_player_by_id_not_found(client: TestClient, auth_headers: dict):
     with _patch_central(MOCK_PLAYERS):
         resp = client.get("/players/nonexistent", headers=auth_headers)
     assert resp.status_code == 404
+
+
+# ---------------------------------------------------------------------------
+# POST / PUT / DELETE /players
+# ---------------------------------------------------------------------------
+
+
+def test_post_player_forwards_legacy_body(client: TestClient, auth_headers: dict):
+    with patch(
+        "main.create_player",
+        new=AsyncMock(return_value=(201, {"id": "new1", "name": "N", "allegiance": "helix", "role": "hunter"})),
+    ) as mock_create:
+        resp = client.post(
+            "/players",
+            headers=auth_headers,
+            json={
+                "name": "N",
+                "role": "hunter",
+                "neocorp": "Helix",
+                "faction": "",
+                "neo_id": "",
+            },
+        )
+    assert resp.status_code == 201
+    assert resp.json()["neocorp"] == "helix"
+    assert mock_create.await_args.args[2]["allegiance"] == "helix"
+    assert mock_create.await_args.args[2]["hunter"] == 1
+
+
+def test_put_player_forwards_to_central(client: TestClient, auth_headers: dict):
+    with patch(
+        "main.update_player",
+        new=AsyncMock(return_value=(200, {"id": "p1", "name": "Alice", "allegiance": "endline", "mode": "bounty"})),
+    ) as mock_put:
+        resp = client.put(
+            "/players/p1",
+            headers=auth_headers,
+            json={
+                "name": "Alice",
+                "role": "bounty",
+                "neocorp": "endline",
+                "faction": "F",
+                "neo_id": "n",
+            },
+        )
+    assert resp.status_code == 200
+    assert resp.json()["role"] == "bounty"
+    assert mock_put.await_args.args[2] == "p1"
+
+
+def test_delete_player_forwards_to_central(client: TestClient, auth_headers: dict):
+    with patch(
+        "main.delete_player",
+        new=AsyncMock(return_value=(204, None)),
+    ) as mock_del:
+        resp = client.delete("/players/p1", headers=auth_headers)
+    assert resp.status_code == 204
+    assert mock_del.await_args.args[2] == "p1"
+
+
+def test_post_player_requires_auth(client: TestClient):
+    resp = client.post("/players", json={"name": "X"})
+    assert resp.status_code == 401

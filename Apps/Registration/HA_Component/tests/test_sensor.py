@@ -73,13 +73,16 @@ async def test_sensor_state_is_roster_count(hass: HomeAssistant, loaded_entry):
 
 @pytest.mark.asyncio
 async def test_sensor_attributes_contain_roster(hass: HomeAssistant, loaded_entry):
-    """Attributes include a roster list with id/name/role per player."""
+    """Attributes include full canonical player fields."""
     state = hass.states.get("sensor.registration_roster_count")
     roster = state.attributes.get("roster", [])
     assert len(roster) == 2
     assert roster[0]["id"] == "p1"
     assert roster[0]["name"] == "Alice"
     assert roster[0]["role"] == "hunter"
+    assert roster[0]["neocorp"] == "Helix"
+    assert roster[0]["faction"] == "Phoenix"
+    assert roster[0]["neo_id"] == "neo-001"
 
 
 @pytest.mark.asyncio

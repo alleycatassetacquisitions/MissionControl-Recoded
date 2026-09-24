@@ -8,8 +8,8 @@ sync_now:
 register_player:
   name: Register Player
   description: >
-    Register a new player or update an existing one via Master Control Server.
-    MCS forwards the request to Central Server.
+    Register a new player via Master Control Server. MCS forwards the request
+    to Central Server using legacy allegiance/hunter fields.
   fields:
     name:
       name: Name
@@ -19,22 +19,103 @@ register_player:
         text:
     role:
       name: Role
-      description: "Player role (e.g. hunter, freelancer)."
+      description: "hunter or bounty"
       required: false
-      default: ""
+      default: hunter
       selector:
-        text:
+        select:
+          options:
+            - hunter
+            - bounty
     neocorp:
       name: NeoCorp
-      description: "NeoCorp affiliation (Freelancer, Helix, Endline, Reboot)."
+      description: "freelancer, helix, endline, or reboot"
       required: false
-      default: ""
+      default: freelancer
       selector:
-        text:
+        select:
+          options:
+            - freelancer
+            - endline
+            - reboot
+            - helix
     faction:
       name: Faction
       description: Named faction the player belongs to.
       required: false
       default: ""
+      selector:
+        text:
+    neo_id:
+      name: Neo ID
+      description: Identifier from NeoBand Server.
+      required: false
+      default: ""
+      selector:
+        text:
+
+update_player:
+  name: Update Player
+  description: >
+    Update an existing player via Master Control Server (PUT /players/{id}).
+  fields:
+    player_id:
+      name: Player ID
+      description: Central Server player id.
+      required: true
+      selector:
+        text:
+    name:
+      name: Name
+      description: Player's display name.
+      required: true
+      selector:
+        text:
+    role:
+      name: Role
+      description: "hunter or bounty"
+      required: false
+      default: hunter
+      selector:
+        select:
+          options:
+            - hunter
+            - bounty
+    neocorp:
+      name: NeoCorp
+      description: "freelancer, helix, endline, or reboot"
+      required: false
+      default: freelancer
+      selector:
+        select:
+          options:
+            - freelancer
+            - endline
+            - reboot
+            - helix
+    faction:
+      name: Faction
+      description: Named faction the player belongs to.
+      required: false
+      default: ""
+      selector:
+        text:
+    neo_id:
+      name: Neo ID
+      description: Identifier from NeoBand Server.
+      required: false
+      default: ""
+      selector:
+        text:
+
+delete_player:
+  name: Delete Player
+  description: >
+    Delete a player via Master Control Server (DELETE /players/{id}).
+  fields:
+    player_id:
+      name: Player ID
+      description: Central Server player id.
+      required: true
       selector:
         text:

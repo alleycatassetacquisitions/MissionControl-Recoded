@@ -10,6 +10,8 @@ Design contracts:
     Core Configurator (master_control_server extra.token) and set as this
     env var on the Proxmox LXC (see Docs/install-mcs-proxmox.sh).
   - Players are game records, not Home Assistant devices.
+  - Central legacy keys (allegiance, hunter/mode) are normalized to canonical
+    Design Terms fields (neocorp, role) on read; writes reverse-map.
 """
 from __future__ import annotations
 
@@ -21,8 +23,14 @@ from typing import Annotated
 from fastapi import Depends, FastAPI, HTTPException, Security, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 
-from central_client import fetch_players
-from models import ConfigUpdate, HealthResponse, Player, Roster
+from central_client import (
+    create_player,
+    delete_player,
+    fetch_normalized_players,
+    update_player,
+)
+from models import ConfigUpdate, HealthResponse, Player, PlayerWrite, Roster
+from player_normalize import normalize_player, to_central_create_body, to_central_write_body
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -64,6 +72,26 @@ def _verify_token(
             headers={"WWW-Authenticate": "Bearer"},
         )
     return credentials.credentials
+
+
+def _require_central() -> None:
+    if not (_config["central_primary"] or _config["central_secondary"]):
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="No Central Server URL configured. Push /config from Home Assistant.",
+        )
+
+
+def _central_error(status_code: int, action: str) -> HTTPException:
+    if status_code == 0:
+        return HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail=f"Central Server unreachable during {action}.",
+        )
+    return HTTPException(
+        status_code=status.HTTP_502_BAD_GATEWAY,
+        detail=f"Central Server returned HTTP {status_code} during {action}.",
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -112,17 +140,12 @@ async def health() -> HealthResponse:
 async def get_players(
     _token: Annotated[str, Depends(_verify_token)],
 ) -> Roster:
-    """Return the full player roster from Central Server."""
-    raw = await fetch_players(
+    """Return the full player roster from Central Server (canonical fields)."""
+    players_raw = await fetch_normalized_players(
         _config["central_primary"],
         _config["central_secondary"],
     )
-    players = []
-    for item in raw:
-        try:
-            players.append(Player(**item))
-        except Exception as exc:  # noqa: BLE001
-            _LOGGER.warning("MCS: skipping malformed player record: %s", exc)
+    players = [Player(**item) for item in players_raw]
     return Roster(players=players, count=len(players))
 
 
@@ -132,17 +155,127 @@ async def get_player(
     _token: Annotated[str, Depends(_verify_token)],
 ) -> Player:
     """Return a single player by ID."""
-    raw = await fetch_players(
+    players_raw = await fetch_normalized_players(
         _config["central_primary"],
         _config["central_secondary"],
     )
-    for item in raw:
-        if str(item.get("id", "")) == player_id:
+    for item in players_raw:
+        if item["id"] == player_id:
             return Player(**item)
     raise HTTPException(
         status_code=status.HTTP_404_NOT_FOUND,
         detail=f"Player {player_id!r} not found.",
     )
+
+
+@app.post(
+    "/players",
+    response_model=Player,
+    status_code=status.HTTP_201_CREATED,
+    tags=["players"],
+)
+async def post_player(
+    body: PlayerWrite,
+    _token: Annotated[str, Depends(_verify_token)],
+) -> Player:
+    """Create a player on Central. Accepts canonical fields; writes legacy keys."""
+    _require_central()
+    central_body = to_central_create_body(
+        name=body.name,
+        role=body.role,
+        neocorp=body.neocorp,
+        faction=body.faction,
+        neo_id=body.neo_id,
+    )
+    status_code, resp = await create_player(
+        _config["central_primary"],
+        _config["central_secondary"],
+        central_body,
+    )
+    if status_code == 0 or status_code >= 400:
+        raise _central_error(status_code, "create")
+    if isinstance(resp, dict):
+        try:
+            return Player(**normalize_player(resp))
+        except Exception:  # noqa: BLE001
+            pass
+    # Central may return minimal payload — echo request with unknown id.
+    return Player(
+        id=str((resp or {}).get("id", "")) if isinstance(resp, dict) else "",
+        name=body.name,
+        role=central_body["role"],
+        neocorp=central_body["allegiance"],
+        faction=body.faction,
+        neo_id=body.neo_id,
+    )
+
+
+@app.put("/players/{player_id}", response_model=Player, tags=["players"])
+async def put_player(
+    player_id: str,
+    body: PlayerWrite,
+    _token: Annotated[str, Depends(_verify_token)],
+) -> Player:
+    """Update a player on Central."""
+    _require_central()
+    central_body = to_central_write_body(
+        name=body.name,
+        role=body.role,
+        neocorp=body.neocorp,
+        faction=body.faction,
+        neo_id=body.neo_id,
+    )
+    status_code, resp = await update_player(
+        _config["central_primary"],
+        _config["central_secondary"],
+        player_id,
+        central_body,
+    )
+    if status_code == 404:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Player {player_id!r} not found on Central.",
+        )
+    if status_code == 0 or status_code >= 400:
+        raise _central_error(status_code, "update")
+    if isinstance(resp, dict):
+        try:
+            return Player(**normalize_player({**resp, "id": resp.get("id", player_id)}))
+        except Exception:  # noqa: BLE001
+            pass
+    return Player(
+        id=player_id,
+        name=body.name,
+        role=central_body["role"],
+        neocorp=central_body["allegiance"],
+        faction=body.faction,
+        neo_id=body.neo_id,
+    )
+
+
+@app.delete(
+    "/players/{player_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+    tags=["players"],
+)
+async def remove_player(
+    player_id: str,
+    _token: Annotated[str, Depends(_verify_token)],
+) -> None:
+    """Delete a player on Central."""
+    _require_central()
+    status_code, _resp = await delete_player(
+        _config["central_primary"],
+        _config["central_secondary"],
+        player_id,
+    )
+    if status_code == 404:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Player {player_id!r} not found on Central.",
+        )
+    if status_code == 0 or status_code >= 400:
+        raise _central_error(status_code, "delete")
 
 
 @app.post(

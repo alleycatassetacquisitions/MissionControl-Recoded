@@ -5,16 +5,15 @@
  *  - Extends McPanelBase from shared_libraries/mc-panel.js.
  *  - ALL data reads and writes go through hass.callWS / hass.callService.
  *    Zero direct fetch() calls to MCS or any LAN IP.
- *  - The roster sensor (sensor.registration_roster_count) is the live source
- *    of truth for the player list shown here.
  *
- * Websocket calls used:
- *  - registration/get_roster   → full player list from coordinator cache
- *  - registration/register_player → POST a new player via HA service
+ * Websocket:
+ *  - registration/get_roster → coordinator-cached roster
  *
- * HA services called:
- *  - registration.sync_now        → force coordinator refresh
- *  - registration.register_player → register / update a player
+ * HA services:
+ *  - registration.sync_now
+ *  - registration.register_player
+ *  - registration.update_player
+ *  - registration.delete_player
  */
 
 class RegistrationPanel extends window.McPanel.Base {
@@ -22,6 +21,7 @@ class RegistrationPanel extends window.McPanel.Base {
     super();
     this.attachShadow({ mode: "open" });
     this._roster = [];
+    this._editingId = null;
   }
 
   set hass(hass) {
@@ -39,16 +39,31 @@ class RegistrationPanel extends window.McPanel.Base {
         .roster-table th,
         .roster-table td { padding: 8px 12px; text-align: left; border-bottom: 1px solid var(--divider-color, #2a3555); }
         .roster-table th { font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.05em; color: var(--secondary-text-color); }
-        .form-row { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 16px; }
-        .form-row input, .form-row select {
-          flex: 1; min-width: 120px; padding: 8px; border-radius: 6px;
+        .form-grid {
+          display: grid;
+          grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+          gap: 12px 16px;
+          align-items: end;
+          margin-top: 8px;
+        }
+        .field { display: flex; flex-direction: column; gap: 4px; }
+        .field label {
+          font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.04em;
+          color: var(--secondary-text-color);
+        }
+        .field input, .field select {
+          width: 100%; padding: 8px; border-radius: 6px; box-sizing: border-box;
           background: var(--input-background, #1e2a45); border: 1px solid var(--divider-color, #2a3555);
           color: var(--primary-text-color); font-size: 0.9rem;
         }
+        .field-actions { display: flex; gap: 8px; align-items: end; }
         .btn { padding: 8px 18px; border-radius: 6px; border: none; cursor: pointer; font-size: 0.9rem; }
         .btn-primary { background: var(--primary-color, #3d85c8); color: #fff; }
         .btn-secondary { background: var(--secondary-background-color, #1e2a45); color: var(--primary-text-color); }
+        .btn-danger { background: transparent; color: var(--error-color, #f44336); border: 1px solid var(--error-color, #f44336); }
+        .btn-link { background: transparent; color: var(--primary-color, #3d85c8); padding: 4px 8px; }
         .count-badge { font-size: 0.85rem; color: var(--secondary-text-color); margin-left: 8px; }
+        .actions-cell { white-space: nowrap; }
       </style>
 
       <div class="wrap">
@@ -64,20 +79,41 @@ class RegistrationPanel extends window.McPanel.Base {
 
         <div id="cards">
           <div class="card">
-            <div class="card-header">Register / Update Player</div>
+            <div class="card-header" id="form-title">Register Player</div>
             <div class="card-body">
-              <div class="form-row">
-                <input id="f-name"    type="text"   placeholder="Name" />
-                <input id="f-role"    type="text"   placeholder="Role (e.g. hunter)" />
-                <select id="f-neocorp">
-                  <option value="">NeoCorp…</option>
-                  <option value="Freelancer">Freelancer</option>
-                  <option value="Helix">Helix</option>
-                  <option value="Endline">Endline</option>
-                  <option value="Reboot">Reboot</option>
-                </select>
-                <input id="f-faction" type="text"   placeholder="Faction" />
-                <button class="btn btn-primary" id="register-btn">Register</button>
+              <div class="form-grid">
+                <div class="field">
+                  <label for="f-name">Name</label>
+                  <input id="f-name" type="text" autocomplete="off" />
+                </div>
+                <div class="field">
+                  <label for="f-role">Role</label>
+                  <select id="f-role">
+                    <option value="hunter">Hunter</option>
+                    <option value="bounty">Bounty</option>
+                  </select>
+                </div>
+                <div class="field">
+                  <label for="f-neocorp">NeoCorp</label>
+                  <select id="f-neocorp">
+                    <option value="freelancer" selected>Freelancer</option>
+                    <option value="endline">Endline</option>
+                    <option value="reboot">Reboot</option>
+                    <option value="helix">Helix</option>
+                  </select>
+                </div>
+                <div class="field">
+                  <label for="f-faction">Faction</label>
+                  <input id="f-faction" type="text" autocomplete="off" />
+                </div>
+                <div class="field">
+                  <label for="f-neo-id">Neo ID</label>
+                  <input id="f-neo-id" type="text" autocomplete="off" />
+                </div>
+                <div class="field-actions">
+                  <button class="btn btn-primary" id="save-btn">Register</button>
+                  <button class="btn btn-secondary" id="cancel-btn" hidden>Cancel</button>
+                </div>
               </div>
             </div>
           </div>
@@ -97,14 +133,17 @@ class RegistrationPanel extends window.McPanel.Base {
       .getElementById("sync-btn")
       .addEventListener("click", () => this._syncNow());
     this.shadowRoot
-      .getElementById("register-btn")
-      .addEventListener("click", () => this._registerPlayer());
+      .getElementById("save-btn")
+      .addEventListener("click", () => this._savePlayer());
+    this.shadowRoot
+      .getElementById("cancel-btn")
+      .addEventListener("click", () => this._clearForm());
 
     await this._loadRoster();
   }
 
   // -------------------------------------------------------------------------
-  // Data
+  // Helpers
   // -------------------------------------------------------------------------
 
   _formatErr(err) {
@@ -112,6 +151,56 @@ class RegistrationPanel extends window.McPanel.Base {
     if (typeof err === "string") return err;
     return err.message || err.error || err.code || JSON.stringify(err);
   }
+
+  _titleCaseNeo(value) {
+    const v = (value || "").toString().trim().toLowerCase();
+    if (!v) return "";
+    return v.charAt(0).toUpperCase() + v.slice(1);
+  }
+
+  _formPayload() {
+    return {
+      name: this.shadowRoot.getElementById("f-name").value.trim(),
+      role: this.shadowRoot.getElementById("f-role").value,
+      neocorp: this.shadowRoot.getElementById("f-neocorp").value,
+      faction: this.shadowRoot.getElementById("f-faction").value.trim(),
+      neo_id: this.shadowRoot.getElementById("f-neo-id").value.trim(),
+    };
+  }
+
+  _clearForm() {
+    this._editingId = null;
+    this.shadowRoot.getElementById("f-name").value = "";
+    this.shadowRoot.getElementById("f-role").value = "hunter";
+    this.shadowRoot.getElementById("f-neocorp").value = "freelancer";
+    this.shadowRoot.getElementById("f-faction").value = "";
+    this.shadowRoot.getElementById("f-neo-id").value = "";
+    this.shadowRoot.getElementById("form-title").textContent = "Register Player";
+    this.shadowRoot.getElementById("save-btn").textContent = "Register";
+    this.shadowRoot.getElementById("cancel-btn").hidden = true;
+  }
+
+  _startEdit(player) {
+    this._editingId = player.id;
+    this.shadowRoot.getElementById("f-name").value = player.name || "";
+    const role = (player.role || "hunter").toLowerCase();
+    this.shadowRoot.getElementById("f-role").value =
+      role === "bounty" ? "bounty" : "hunter";
+    const neo = (player.neocorp || "freelancer").toLowerCase();
+    const neoSelect = this.shadowRoot.getElementById("f-neocorp");
+    neoSelect.value = ["freelancer", "endline", "reboot", "helix"].includes(neo)
+      ? neo
+      : "freelancer";
+    this.shadowRoot.getElementById("f-faction").value = player.faction || "";
+    this.shadowRoot.getElementById("f-neo-id").value = player.neo_id || "";
+    this.shadowRoot.getElementById("form-title").textContent = "Update Player";
+    this.shadowRoot.getElementById("save-btn").textContent = "Update";
+    this.shadowRoot.getElementById("cancel-btn").hidden = false;
+  }
+
+  // -------------------------------------------------------------------------
+  // Data
+  // -------------------------------------------------------------------------
 
   async _loadRoster() {
     try {
@@ -144,64 +233,100 @@ class RegistrationPanel extends window.McPanel.Base {
       <table class="roster-table">
         <thead>
           <tr>
-            <th>ID</th><th>Name</th><th>Role</th><th>NeoCorp</th><th>Faction</th>
+            <th>ID</th><th>Name</th><th>Role</th><th>NeoCorp</th><th>Faction</th><th>Neo ID</th><th></th>
           </tr>
         </thead>
         <tbody>
           ${this._roster
             .map(
-              (p) => `
-            <tr>
+              (p, idx) => `
+            <tr data-idx="${idx}">
               <td>${this._esc(p.id ?? "")}</td>
               <td>${this._esc(p.name ?? "")}</td>
               <td>${this._esc(p.role ?? "")}</td>
-              <td>${this._esc(p.neocorp ?? "")}</td>
+              <td>${this._esc(this._titleCaseNeo(p.neocorp))}</td>
               <td>${this._esc(p.faction ?? "")}</td>
+              <td>${this._esc(p.neo_id ?? "")}</td>
+              <td class="actions-cell">
+                <button class="btn btn-link edit-btn" data-idx="${idx}">Edit</button>
+                <button class="btn btn-link delete-btn" data-idx="${idx}">Delete</button>
+              </td>
             </tr>`
             )
             .join("")}
         </tbody>
       </table>`;
+
+    body.querySelectorAll(".edit-btn").forEach((btn) => {
+      btn.addEventListener("click", () => {
+        const p = this._roster[Number(btn.dataset.idx)];
+        if (p) this._startEdit(p);
+      });
+    });
+    body.querySelectorAll(".delete-btn").forEach((btn) => {
+      btn.addEventListener("click", () => {
+        const p = this._roster[Number(btn.dataset.idx)];
+        if (p) this._deletePlayer(p);
+      });
+    });
   }
 
   // -------------------------------------------------------------------------
-  // Actions — all through HA services / websocket, zero direct LAN fetch
+  // Actions
   // -------------------------------------------------------------------------
 
   async _syncNow() {
     try {
       await this._hass.callService("registration", "sync_now", {});
       this._feedback("Syncing…", "ok");
-      // Give the coordinator a moment then reload the panel roster.
       setTimeout(() => this._loadRoster(), 1500);
     } catch (err) {
       this._feedback("Sync failed: " + this._formatErr(err), "err");
     }
   }
 
-  async _registerPlayer() {
-    const name = this.shadowRoot.getElementById("f-name").value.trim();
-    if (!name) {
+  async _savePlayer() {
+    const payload = this._formPayload();
+    if (!payload.name) {
       this._feedback("Name is required.", "warn");
       return;
     }
-    const payload = {
-      name,
-      role: this.shadowRoot.getElementById("f-role").value.trim(),
-      neocorp: this.shadowRoot.getElementById("f-neocorp").value,
-      faction: this.shadowRoot.getElementById("f-faction").value.trim(),
-    };
     try {
-      await this._hass.callService("registration", "register_player", payload);
-      this._feedback("Player registered.", "ok");
-      // Clear the form.
-      ["f-name", "f-role", "f-faction"].forEach(
-        (id) => (this.shadowRoot.getElementById(id).value = "")
-      );
-      this.shadowRoot.getElementById("f-neocorp").value = "";
+      if (this._editingId) {
+        await this._hass.callService("registration", "update_player", {
+          player_id: this._editingId,
+          ...payload,
+        });
+        this._feedback("Player updated.", "ok");
+      } else {
+        await this._hass.callService("registration", "register_player", payload);
+        this._feedback("Player registered.", "ok");
+      }
+      this._clearForm();
+      await this._hass.callService("registration", "sync_now", {});
       await this._loadRoster();
     } catch (err) {
-      this._feedback("Registration failed: " + this._formatErr(err), "err");
+      this._feedback(
+        (this._editingId ? "Update failed: " : "Registration failed: ") +
+          this._formatErr(err),
+        "err"
+      );
+    }
+  }
+
+  async _deletePlayer(player) {
+    if (!player?.id) return;
+    if (!window.confirm(`Delete player "${player.name || player.id}"?`)) return;
+    try {
+      await this._hass.callService("registration", "delete_player", {
+        player_id: player.id,
+      });
+      this._feedback("Player deleted.", "ok");
+      if (this._editingId === player.id) this._clearForm();
+      await this._hass.callService("registration", "sync_now", {});
+      await this._loadRoster();
+    } catch (err) {
+      this._feedback("Delete failed: " + this._formatErr(err), "err");
     }
   }
 }
