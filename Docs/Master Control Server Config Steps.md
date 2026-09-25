@@ -68,8 +68,32 @@ If the GitHub repo is **private**, `git clone` will ask for a username/password 
 ## After install
 
 1. Seed or edit Core Configurator with MCS URL + token (and Central primary/secondary URLs).
-2. Deploy Registration + Shared HA Helpers to HA (see deployment plan).
-3. Add the Registration integration (install-only — no token form). Registration pushes Central URLs to MCS and polls `/players`.
+2. Deploy Registration + Shared HA Helpers + Core Configurator to HA — see [`Home Assistant Config Steps.md`](Home%20Assistant%20Config%20Steps.md#deploy-mission-control-files-onto-ha) and [`File Structure.md` — On Home Assistant](File%20Structure.md#on-home-assistant).
+3. Add the Registration integration (install-only — no token form). Registration pushes Central URLs to MCS via `POST /config` and polls `GET /players`.
+4. Operators register / update / delete players from the Registration panel; HA services call MCS `POST` / `PUT` / `DELETE /players`. MCS maps canonical fields (`neocorp`, `role`) to Central legacy keys (`allegiance`, `hunter`).
+
+## Updating MCS code later
+
+Copy updated `Server_Component` files to the **Proxmox host** first, then into the LXC (CT id from install output, often `102`):
+
+```powershell
+# From your PC — replace <PROXMOX-IP>
+scp "z:\CodingProjects\Alleycat\MissionControl\Apps\Master_Control_Server\Server_Component\player_normalize.py" root@<PROXMOX-IP>:/root/
+scp "z:\CodingProjects\Alleycat\MissionControl\Apps\Master_Control_Server\Server_Component\central_client.py" root@<PROXMOX-IP>:/root/
+scp "z:\CodingProjects\Alleycat\MissionControl\Apps\Master_Control_Server\Server_Component\models.py" root@<PROXMOX-IP>:/root/
+scp "z:\CodingProjects\Alleycat\MissionControl\Apps\Master_Control_Server\Server_Component\main.py" root@<PROXMOX-IP>:/root/
+```
+
+On the Proxmox **host** shell (`pct` does not exist inside the LXC):
+
+```bash
+ls -la /root/*.py   # confirm files landed before push
+pct push 102 /root/player_normalize.py /opt/mcs/player_normalize.py
+pct push 102 /root/central_client.py /opt/mcs/central_client.py
+pct push 102 /root/models.py /opt/mcs/models.py
+pct push 102 /root/main.py /opt/mcs/main.py
+pct exec 102 -- systemctl restart mcs
+```
 
 ## Container resources
 

@@ -11,7 +11,17 @@ If you need to change the file structure:
 
 **Root directory:** `Z:\CodingProjects\Alleycat\MissionControl\`
 
-## How apps are organized
+Mission Control has **three** on-disk layouts you must keep straight:
+
+| Layout | Where | Purpose |
+| --- | --- | --- |
+| **Repo (GitHub / hard drive)** | This tree under `MissionControl\` | Source of truth for development |
+| **Home Assistant runtime** | HAOS `/config/` (see [On Home Assistant](#on-home-assistant)) | What operators actually run |
+| **MCS runtime** | Proxmox LXC `/opt/mcs/` | Companion FastAPI service (not HA) |
+
+Copying from repo → HA flattens `HA_Component\custom_components\<domain>\` and `HA_Component\www\<name>\` into `/config/custom_components/` and `/config/www/`. Tests and READMEs stay in the repo only.
+
+## How apps are organized (repo)
 
 Most apps live under `Apps\` and follow the same layout:
 
@@ -34,7 +44,7 @@ Tests live next to the code they cover. A `tests\` folder is added to the releva
 
 
 
-## Directory tree
+## Directory tree (repo)
 
 ```text
 MissionControl\
@@ -55,10 +65,11 @@ MissionControl\
 │   │       ├── www\
 │   │       └── custom_components\
 │   ├── Core_Configurator\
+│   │   ├── README.md
 │   │   └── HA_Component\
 │   │       ├── www\
 │   │       ├── custom_components\
-│   │       └── tests\                 ← conftest.py + test_core_configurator.py (Phase 2)
+│   │       └── tests\
 │   ├── Digital_Node_Nexus\
 │   │   └── HA_Component\
 │   │       ├── www\
@@ -69,11 +80,18 @@ MissionControl\
 │   │   │   └── custom_components\
 │   │   └── Server_Component\
 │   ├── Registration\
+│   │   ├── README.md
 │   │   └── HA_Component\
-│   │       ├── www\
-│   │       └── custom_components\
+│   │       ├── www\registration\
+│   │       ├── custom_components\registration\
+│   │       └── tests\
 │   ├── Master_Control_Server\
-│   │   ├── Server_Component\
+│   │   ├── Server_Component\          ← deploys to LXC /opt/mcs/ (not HA)
+│   │   │   ├── main.py
+│   │   │   ├── models.py
+│   │   │   ├── player_normalize.py  ← Central allegiance/hunter → neocorp/role
+│   │   │   ├── central_client.py
+│   │   │   └── tests\
 │   │   └── docs\
 │   ├── Meru\
 │   │   ├── HA_Component\
@@ -86,18 +104,66 @@ MissionControl\
 │           └── custom_components\
 ├── Libraries\
 │   └── Shared_HA_Helpers\
+│       ├── README.md
 │       └── HA_Component\
 │           ├── custom_components\
 │           │   └── shared_libraries\
 │           ├── www\
 │           │   └── shared_libraries\
 │           └── tests\
-├── HomeAssist\
+├── HomeAssist\                        ← merge fragments for /config (not a full HA install)
+│   ├── configuration.yaml
+│   ├── secrets.yaml.example
 │   └── themes\
 └── Docs\
 ```
 
+## On Home Assistant
 
+After deploy, Mission Control lives under HAOS **`/config/`** (SSH as `root` to the HA host). Repo paths map as follows:
+
+| Repo path | On HA |
+| --- | --- |
+| `Apps\Core_Configurator\HA_Component\custom_components\core_configurator\` | `/config/custom_components/core_configurator/` |
+| `Apps\Core_Configurator\HA_Component\www\core_configurator\` | `/config/www/core_configurator/` |
+| `Apps\Registration\HA_Component\custom_components\registration\` | `/config/custom_components/registration/` |
+| `Apps\Registration\HA_Component\www\registration\` | `/config/www/registration/` |
+| `Libraries\Shared_HA_Helpers\HA_Component\custom_components\shared_libraries\` | `/config/custom_components/shared_libraries/` |
+| `Libraries\Shared_HA_Helpers\HA_Component\www\shared_libraries\` | `/config/www/shared_libraries/` |
+| `HomeAssist\configuration.yaml` (merge sections) | `/config/configuration.yaml` |
+| `HomeAssist\secrets.yaml.example` → real secrets | `/config/secrets.yaml` |
+| `HomeAssist\themes\` | `/config/themes/` |
+
+Runtime tree (Phase 4 Mission Control slice):
+
+```text
+/config/
+├── configuration.yaml          ← default_config + frontend.extra_module_url + panel_custom + core_configurator seed
+├── secrets.yaml                ← cc_master_control_server, token, central_*, etc.
+├── automations.yaml            ← HA defaults (keep)
+├── scripts.yaml
+├── scenes.yaml
+├── themes/
+├── custom_components/
+│   ├── core_configurator/
+│   ├── shared_libraries/
+│   └── registration/
+└── www/                        ← served as /local/...
+    ├── core_configurator/
+    │   ├── core-configurator-client.js
+    │   └── core-configurator-panel.js
+    ├── shared_libraries/
+    │   └── mc-panel.js
+    └── registration/
+        └── registration-panel.js
+```
+
+`frontend.extra_module_url` load order (required):
+
+1. `/local/shared_libraries/mc-panel.js`
+2. `/local/core_configurator/core-configurator-client.js`
+
+Master Control Server is **not** under `/config/`. It runs on Proxmox LXC as `/opt/mcs/` (see [`Master Control Server Config Steps.md`](Master%20Control%20Server%20Config%20Steps.md)). HA talks to it over HTTP using the URL + token from Core Configurator.
 
 ## Apps
 
@@ -117,9 +183,10 @@ Proxmox guest inventory, console, and MQTT spy. Ops only — it does not own pla
 
 ### Core Configurator
 
-Holds shared core configuration for Mission Control. Right now this is mainly IP information for the other apps, so addresses are entered in one place instead of copied through the codebase. In code this is `core_configurator` — not Directory.
+Single source of truth for Alleycat service **URLs and API tokens** (MCS URL + Bearer, Central primary/secondary, AlleycatTV, GBN, Proxmox). Other apps call `get_url` / `get_extra`. In code this is `core_configurator` — not Directory.
 
-**Path:** `Apps\Core_Configurator\`
+**Path:** `Apps\Core_Configurator\`  
+**On HA:** `/config/custom_components/core_configurator/` + `/config/www/core_configurator/`
 
 ### Digital Node Nexus
 
@@ -135,15 +202,19 @@ Manages bounty posters, bounty boards, and poster capture. In code this is `gbn`
 
 ### Registration
 
-Talks to the Master Control Server to get current information from the Central Server. Use it to add, edit, and delete player registration information.
+Home Assistant face of Master Control Server: roster sensor, services (`sync_now`, `register_player`, `update_player`, `delete_player`), and sidebar panel. Talks only to MCS — never opens a Central socket. MCS URL and token come from Core Configurator.
 
-**Path:** `Apps\Registration\`
+**Path:** `Apps\Registration\`  
+**On HA:** `/config/custom_components/registration/` + `/config/www/registration/`  
+**App README:** [`Apps/Registration/README.md`](../Apps/Registration/README.md)
 
 ### Master Control Server
 
-Proxmox companion service. Talks directly to the Central Server and is the only Central HTTP adapter. Registration is its Home Assistant UI. This is not a Home Assistant process.
+Proxmox companion FastAPI service. The only Central HTTP adapter. Normalizes Central legacy fields (`allegiance`, `hunter`/`mode`) to canonical `neocorp` / `role`. Exposes `GET`/`POST`/`PUT`/`DELETE /players` and `POST /config`. Not a Home Assistant process.
 
-**Path:** `Apps\Master_Control_Server\`
+**Path:** `Apps\Master_Control_Server\`  
+**On LXC:** `/opt/mcs/` (uvicorn via systemd `mcs`)  
+**App docs:** [`Apps/Master_Control_Server/docs/README.md`](../Apps/Master_Control_Server/docs/README.md)
 
 ### Meru
 
@@ -175,12 +246,14 @@ Bearer-auth HTTP helper, MQTT fabric helpers (topic builder, subscribe/publish/p
 
 - **Code:** `shared_libraries`
 - **Path:** `Libraries\Shared_HA_Helpers\`
+- **On HA:** `/config/custom_components/shared_libraries/` + `/config/www/shared_libraries/`
 
 ### HomeAssist
 
-Home Assistant configuration for Mission Control, including themes.
+Merge fragments for Mission Control’s HA config (not a complete Home Assistant install). Copy/merge into `/config/` on the appliance.
 
-**Path:** `HomeAssist\`
+**Path:** `HomeAssist\`  
+**On HA:** see [On Home Assistant](#on-home-assistant)
 
 ### Docs
 
@@ -192,8 +265,8 @@ Standing law:
 - `Design Terms.md` — canonical names
 - `Home Assistant Mapping.md` — how Home Assistant is used
 - `MQTT Communication Principles.md` — topics and MQTT ownership
-- `File Structure.md` — this file
-- `Home Assistant Config Steps.md` — Proxmox VM bootstrap for Home Assistant
+- `File Structure.md` — this file (repo **and** HA/LXC layouts)
+- `Home Assistant Config Steps.md` — Proxmox VM bootstrap + deploying files onto HA
 - `install-haos-proxmox.sh` — one-shot Proxmox host script that downloads the official HAOS KVM image and creates the Home Assistant VM
 - `Master Control Server Config Steps.md` — Proxmox LXC bootstrap for Master Control Server
 - `install-mcs-proxmox.sh` — one-shot Proxmox host script that creates an Ubuntu 24.04 LXC, installs MCS, and prints URL + token for Core Configurator

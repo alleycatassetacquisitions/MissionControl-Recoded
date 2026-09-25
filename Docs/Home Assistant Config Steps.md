@@ -148,3 +148,50 @@ Accept the host fingerprint on first connect. You should land at a shell prompt 
 
 ---
 
+## Deploy Mission Control files onto HA
+
+SSH must already work (section above). Copy **into** `/config/` — never overwrite the whole `/config` tree with the repo `HomeAssist\` folder.
+
+### What lands where
+
+See [`File Structure.md` — On Home Assistant](File%20Structure.md#on-home-assistant) for the full map. Short version:
+
+| From repo | To HA |
+| --- | --- |
+| `…\custom_components\<domain>\` | `/config/custom_components/<domain>/` |
+| `…\www\<name>\` | `/config/www/<name>/` |
+| Merge `HomeAssist/configuration.yaml` sections | `/config/configuration.yaml` |
+| Secrets from `secrets.yaml.example` | `/config/secrets.yaml` |
+
+### Phase 4 — Core Configurator + Shared Helpers + Registration
+
+From PowerShell on your PC (`<HA-IP>` = LAN address of the HA VM):
+
+```powershell
+scp -r "z:\CodingProjects\Alleycat\MissionControl\Libraries\Shared_HA_Helpers\HA_Component\custom_components\shared_libraries" root@<HA-IP>:/config/custom_components/
+scp -r "z:\CodingProjects\Alleycat\MissionControl\Libraries\Shared_HA_Helpers\HA_Component\www\shared_libraries" root@<HA-IP>:/config/www/
+
+scp -r "z:\CodingProjects\Alleycat\MissionControl\Apps\Core_Configurator\HA_Component\custom_components\core_configurator" root@<HA-IP>:/config/custom_components/
+scp -r "z:\CodingProjects\Alleycat\MissionControl\Apps\Core_Configurator\HA_Component\www\core_configurator" root@<HA-IP>:/config/www/
+
+scp -r "z:\CodingProjects\Alleycat\MissionControl\Apps\Registration\HA_Component\custom_components\registration" root@<HA-IP>:/config/custom_components/
+scp -r "z:\CodingProjects\Alleycat\MissionControl\Apps\Registration\HA_Component\www\registration" root@<HA-IP>:/config/www/
+```
+
+Then merge [`HomeAssist/configuration.yaml`](../HomeAssist/configuration.yaml) into `/config/configuration.yaml` (keep `default_config`, themes, automations includes; add `frontend.extra_module_url`, `core_configurator` seed, both `panel_custom` entries). Fill `/config/secrets.yaml` from [`secrets.yaml.example`](../HomeAssist/secrets.yaml.example) with MCS URL/token and Central URLs.
+
+Restart and hard-refresh the browser:
+
+```bash
+ha core restart
+```
+
+### After restart
+
+1. Core Configurator entry: delete + re-add (or first import) so YAML/secrets re-seed MCS URL + token.
+2. Settings → Devices & Services → Add **Registration** (install-only — no token field).
+3. Confirm sidebar panels: Core Configurator, Registration.
+4. Registration **Sync Now** should load the roster (Role / NeoCorp / Faction via MCS field mapping).
+
+MCS itself is deployed on Proxmox, not HA — see [`Master Control Server Config Steps.md`](Master%20Control%20Server%20Config%20Steps.md).
+

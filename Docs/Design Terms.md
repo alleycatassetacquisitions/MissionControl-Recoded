@@ -80,7 +80,7 @@ The Mission Control app for creating and updating posters that players see on Al
 
 ### MCS — Master Control Server
 
-The Proxmox companion that is the only Central HTTP adapter. It owns Player, Role, NeoCorp, and Faction JSON.
+The Proxmox companion that is the only Central HTTP adapter. It owns Player, Role, NeoCorp, and Faction JSON on the Mission Control side of the wire, and maps Central legacy field names on read/write.
 
 Registration is its Home Assistant face. GBN overlays Player data from MCS. Home Assistant does not talk to the Central Server itself.
 
@@ -89,7 +89,7 @@ Registration is its Home Assistant face. GBN overlays Player data from MCS. Home
 
 ### Registration
 
-The Mission Control dashboard for adding, editing, and deleting player registration information. It talks to MCS, not to the Central Server on its own.
+The Mission Control dashboard for adding, editing, and deleting player registration information. It talks to MCS (services + panel), not to the Central Server on its own.
 
 - **Code:** `registration`
 
@@ -135,17 +135,19 @@ A person playing the game. A Player is a Central Server record, served locally b
 
 Players are **not** Home Assistant devices. Registration exposes connectivity and a roster summary as entities, plus services for operator workflows. Do not create one `device_tracker` (or similar) per Player.
 
-### Role
-
-A field on a Player, owned by Master Control Server / Central Server. GBN must not define or impersonate Role. GBN stores `player_id` as a foreign key and overlays live Player data from Master Control Server.
-
 ### NeoCorp
 
-A group a player can belong to. Possible NeoCorp factions are **Freelancer**, **Helix**, **Endline**, and **Reboot**.
+A group a player can belong to. Possible NeoCorp values are **Freelancer**, **Helix**, **Endline**, and **Reboot**.
+
+Canonical JSON field: `neocorp` (lowercase on the wire). Central Server historically used `allegiance`; Master Control Server maps between them so Home Assistant never sees `allegiance`.
 
 ### Faction
 
 A named group a player can belong to. There is no limit on faction names.
+
+### Role
+
+A field on a Player, owned by Master Control Server / Central Server. Values: **hunter** or **bounty**. Central may send `mode`, `role`, or numeric `hunter` (`1`/`2`); MCS normalizes to `role`. GBN must not define or impersonate Role. GBN stores `player_id` as a foreign key and overlays live Player data from Master Control Server.
 
 ### ID
 
