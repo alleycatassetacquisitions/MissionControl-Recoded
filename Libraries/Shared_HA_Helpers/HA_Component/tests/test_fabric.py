@@ -6,6 +6,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 from homeassistant.helpers import device_registry as dr
+from pytest_homeassistant_custom_component.common import MockConfigEntry
 
 from custom_components.shared_libraries.fabric import (
     PRESENCE_OFFLINE,
@@ -18,6 +19,8 @@ from custom_components.shared_libraries.fabric import (
     parse_presence_payload,
     presence_entity_id,
 )
+
+DOMAIN = "digital_node_nexus"
 
 
 # ---------------------------------------------------------------------------
@@ -87,12 +90,22 @@ def mock_mqtt_subscribe():
         yield mocked
 
 
-async def test_start_presence_subscribes_status_wildcard(hass, mock_mqtt_subscribe):
+@pytest.fixture
+def config_entry(hass):
+    """Register a config entry so device_registry can link devices to it."""
+    entry = MockConfigEntry(domain=DOMAIN, data={}, unique_id=DOMAIN)
+    entry.add_to_hass(hass)
+    return entry
+
+
+async def test_start_presence_subscribes_status_wildcard(
+    hass, mock_mqtt_subscribe, config_entry
+):
     tracker = await async_start_presence_tracking(
         hass,
         "dnn",
-        config_entry_id="entry-1",
-        domain="digital_node_nexus",
+        config_entry_id=config_entry.entry_id,
+        domain=DOMAIN,
         name_prefix="FDN",
     )
 
@@ -109,13 +122,13 @@ async def test_start_presence_subscribes_status_wildcard(hass, mock_mqtt_subscri
 
 
 async def test_status_message_creates_device_and_presence_entity(
-    hass, mock_mqtt_subscribe
+    hass, mock_mqtt_subscribe, config_entry
 ):
     tracker = await async_start_presence_tracking(
         hass,
         "dnn",
-        config_entry_id="entry-dnn",
-        domain="digital_node_nexus",
+        config_entry_id=config_entry.entry_id,
+        domain=DOMAIN,
         name_prefix="FDN",
         model="FDN",
     )
@@ -136,7 +149,7 @@ async def test_status_message_creates_device_and_presence_entity(
     assert state.attributes["kind"] == "dnn"
 
     registry = dr.async_get(hass)
-    device = registry.async_get_device({("digital_node_nexus", "node-42")})
+    device = registry.async_get_device({(DOMAIN, "node-42")})
     assert device is not None
     assert device.name == "FDN node-42"
     assert device.manufacturer == "Alleycat"
@@ -147,12 +160,14 @@ async def test_status_message_creates_device_and_presence_entity(
     assert devices[0]["presence"] == PRESENCE_ONLINE
 
 
-async def test_lwt_empty_payload_marks_offline(hass, mock_mqtt_subscribe):
+async def test_lwt_empty_payload_marks_offline(
+    hass, mock_mqtt_subscribe, config_entry
+):
     await async_start_presence_tracking(
         hass,
         "dnn",
-        config_entry_id="entry-dnn",
-        domain="digital_node_nexus",
+        config_entry_id=config_entry.entry_id,
+        domain=DOMAIN,
     )
     callback = mock_mqtt_subscribe.await_args.kwargs["callback"]
     callback(SimpleNamespace(topic="mc/dnn/status/node-7", payload=b"online"))
@@ -163,12 +178,14 @@ async def test_lwt_empty_payload_marks_offline(hass, mock_mqtt_subscribe):
     assert state.state == PRESENCE_OFFLINE
 
 
-async def test_json_status_copies_telemetry_attributes(hass, mock_mqtt_subscribe):
+async def test_json_status_copies_telemetry_attributes(
+    hass, mock_mqtt_subscribe, config_entry
+):
     await async_start_presence_tracking(
         hass,
         "dnn",
-        config_entry_id="entry-dnn",
-        domain="digital_node_nexus",
+        config_entry_id=config_entry.entry_id,
+        domain=DOMAIN,
     )
     callback = mock_mqtt_subscribe.await_args.kwargs["callback"]
     callback(
