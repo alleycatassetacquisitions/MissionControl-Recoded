@@ -9,9 +9,11 @@
 #   custom_components/core_configurator/  ← Apps/Core_Configurator/HA_Component/custom_components/core_configurator/
 #   custom_components/shared_libraries/   ← Libraries/Shared_HA_Helpers/HA_Component/custom_components/shared_libraries/
 #   custom_components/registration/       ← Apps/Registration/HA_Component/custom_components/registration/
+#   custom_components/digital_node_nexus/ ← Apps/Digital_Node_Nexus/HA_Component/custom_components/digital_node_nexus/
 #   www/core_configurator/               ← Apps/Core_Configurator/HA_Component/www/core_configurator/
 #   www/shared_libraries/                ← Libraries/Shared_HA_Helpers/HA_Component/www/shared_libraries/
 #   www/registration/                    ← Apps/Registration/HA_Component/www/registration/
+#   www/digital_node_nexus/              ← Apps/Digital_Node_Nexus/HA_Component/www/digital_node_nexus/
 #
 # ─────────────────────────────────────────────────────────────────────────────
 # Core Configurator
@@ -60,3 +62,10 @@ panel_custom:
     sidebar_icon: mdi:account-group
     url_path: registration
     module_url: /local/registration/registration-panel.js
+
+  # ─── Digital Node Nexus ───────────────────────────────────────────────────
+  - name: dnn-panel
+    sidebar_title: Digital Node Nexus
+    sidebar_icon: mdi:access-point
+    url_path: digital-node-nexus
+    module_url: /local/digital_node_nexus/dnn-panel.js

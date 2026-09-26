@@ -30,7 +30,8 @@ The nine principles still apply. On Mission Control they mean:
 1. **Home Assistant is the control plane**
   Home Assistant owns the operator console, entity state machine, device registry, Areas, services, and automations. Mission Control is Home Assistant shaped for Alleycat — not a second backend.
 2. **Companion services stay off Home Assistant**
-  The MQTT broker, Master Control Server, AlleycatTV content, and GBN posters run on Proxmox. Home Assistant connects to them. It does not host them.
+  Master Control Server, AlleycatTV content, and GBN posters run on Proxmox. Home Assistant connects to them; it does not host those file/HTTP services.
+  **Exception — MQTT broker:** use the official **Mosquitto broker** Home Assistant add-on (plus the built-in `mqtt` integration). Do not build a custom broker or a separate Proxmox Mosquitto LXC unless a venue constraint forces it. Apps never open a private MQTT client.
 3. **One integration per external system**
   An integration is the Home Assistant bridge to one authority. It creates devices and entities, exposes services, and (when needed) a sidebar panel. It does not scrape a sibling app’s HTTP API.
 4. **Devices and Areas are the venue model**
@@ -86,7 +87,7 @@ In short:
 
 - **PDN ↔ FDN:** ESP-Now
 - **FDN ↔ Central Server:** HTTP
-- **FDN ↔ Home Assistant:** MQTT
+- **FDN ↔ Home Assistant:** MQTT (via official Mosquitto add-on; HA `mqtt` integration)
 - **Home Assistant ↔ Master Control Server:** HTTP
 - **Master Control Server ↔ Central Server:** HTTP
 - **Home Assistant ↔ AlleycatTV server / GBN server:** HTTP (integration owns the call; the panel does not)

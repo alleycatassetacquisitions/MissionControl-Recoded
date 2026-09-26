@@ -1,0 +1,53 @@
+syntax = "proto3";
+
+// Digital Node Nexus MQTT command contract (Phase 5).
+// HA currently publishes UTF-8 JSON with the same field names.
+// Firmware may consume JSON now and later switch to binary protobuf
+// using these field numbers without renaming topics.
+//
+// Topics (see Docs/MQTT Communication Principles.md):
+//   mc/dnn/cmd/{DEVICE_ID}/page|led|haptic
+//   mc/dnn/cmd/all/page|led|haptic
+//   mc/dnn/cmd/broadcast/{id}/page|led|haptic
+//   mc/dnn/status/{DEVICE_ID}
+
+// mc/dnn/cmd/.../page
+message PageCmd {
+  string text      = 1;  // Message to display / start paging state machine
+  int32  duration  = 2;  // Seconds
+  bool   scroll    = 3;
+  string player_id = 4;  // MCS player id stamp (empty if unused)
+  string role      = 5;  // hunter | bounty (empty if unused)
+  string neocorp   = 6;  // freelancer | helix | endline | reboot
+}
+
+// mc/dnn/cmd/.../led
+message LedCmd {
+  bool   state      = 1;
+  int32  brightness = 2;
+  int32  r          = 3;
+  int32  g          = 4;
+  int32  b          = 5;
+  string effect     = 6;  // solid | blink | pulse | rainbow
+}
+
+// mc/dnn/cmd/.../haptic
+message HapticCmd {
+  string pattern     = 1;  // short | long | double | sos | custom
+  int32  intensity   = 2;
+  int32  duration_ms = 3;
+  int32  repeat      = 4;
+}
+
+// mc/dnn/status/{DEVICE_ID} — string LWT ("online"|"offline") or JSON StatusMsg
+message StatusMsg {
+  string device_id = 1;
+  string firmware  = 2;
+  string ip        = 3;
+  sint32 rssi      = 4;
+  int32  uptime    = 5;
+  int32  free_heap = 6;
+  bool   led_state = 7;
+  int64  timestamp = 8;
+  bool   online    = 9;
+}

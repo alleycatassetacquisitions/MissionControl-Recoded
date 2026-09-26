@@ -53,9 +53,9 @@ The Mission Control app that stores service URLs **and** shared API tokens/auth 
 
 ### DNN — Digital Node Nexus
 
-The Mission Control dashboard for sending messages to FDNs and gathering information from them.
+The Mission Control dashboard for sending messages to FDNs and gathering information from them. Phase 5 focuses on **paging** (MQTT page starts an FDN state machine). LED and haptic remain secondary tools. Roster targeting (player / role / NeoCorp) is read from Master Control Server.
 
-- **Communication:** MQTT, Protobuf
+- **Communication:** MQTT (JSON payload contract; protobuf schema documented for firmware)
 - **Used for:** paging, mini-bosses, quests, and virus
 - **Code:** `digital_node_nexus`
 
@@ -123,7 +123,7 @@ Do not call this a Zone. Do not store membership as a Home Assistant Area.
 
 ### MQTT fabric
 
-Shared presence and command routing for FDNs and AlleycatTV endpoints, using Home Assistant’s `mqtt` integration. Status and LWT become presence entities. Commands target this device, `all`, or a Broadcast Group.
+Shared presence and command routing for FDNs and AlleycatTV endpoints, using Home Assistant’s `mqtt` integration against the official **Mosquitto** broker add-on. Status and LWT become presence entities. Commands target this device, `all`, or a Broadcast Group.
 
 Digital Node Nexus and AlleycatTV own payloads (LED, haptic, playback). They do not each open a private MQTT client.
 

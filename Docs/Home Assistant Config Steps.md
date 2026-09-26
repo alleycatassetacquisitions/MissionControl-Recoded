@@ -195,3 +195,48 @@ ha core restart
 
 MCS itself is deployed on Proxmox, not HA — see [`Master Control Server Config Steps.md`](Master%20Control%20Server%20Config%20Steps.md).
 
+### Phase 5 — Mosquitto + Shared Helpers (fabric) + Digital Node Nexus
+
+MQTT for Mission Control uses the **official Mosquitto broker add-on** on Home Assistant OS (not a custom broker, not a Proxmox Mosquitto LXC). DNN and the fabric talk only through HA’s `mqtt` integration.
+
+#### 5a. Install Mosquitto and connect the MQTT integration
+
+1. **Settings → Add-ons → Add-on store** → search **Mosquitto broker** → **Install**.
+2. Open the add-on → **Configuration** (optional but recommended for venue use):
+   - Add a local user under `logins` (username + password). Save.
+3. **Start** the add-on. Confirm it is running (Log tab shows Mosquitto started).
+4. Enable **Start on boot** (and **Watchdog** if you want auto-restart).
+5. **Settings → Devices & services → Add integration → MQTT**.
+6. When asked how to connect, choose **Use the official Mosquitto Mqtt Broker app.**  
+   HA should discover the add-on and finish the MQTT integration setup.  
+   (If discovery fails: choose manual entry and use host `core-mosquitto`, port `1883`, and the user/password from step 2.)
+7. Confirm **MQTT** appears under Devices & services and is not in an error state.
+
+Official docs: [Mosquitto broker add-on](https://github.com/home-assistant/addons/tree/master/mosquitto) · [MQTT integration](https://www.home-assistant.io/integrations/mqtt/)
+
+#### 5b. Deploy Shared Helpers + Digital Node Nexus
+
+Redeploy Shared HA Helpers (includes `fabric.py`), then DNN:
+
+```powershell
+scp -r "z:\CodingProjects\Alleycat\MissionControl\Libraries\Shared_HA_Helpers\HA_Component\custom_components\shared_libraries" root@<HA-IP>:/config/custom_components/
+scp -r "z:\CodingProjects\Alleycat\MissionControl\Libraries\Shared_HA_Helpers\HA_Component\www\shared_libraries" root@<HA-IP>:/config/www/
+
+scp -r "z:\CodingProjects\Alleycat\MissionControl\Apps\Digital_Node_Nexus\HA_Component\custom_components\digital_node_nexus" root@<HA-IP>:/config/custom_components/
+scp -r "z:\CodingProjects\Alleycat\MissionControl\Apps\Digital_Node_Nexus\HA_Component\www\digital_node_nexus" root@<HA-IP>:/config/www/
+```
+
+Merge the Digital Node Nexus `panel_custom` block from [`HomeAssist/configuration.yaml`](../HomeAssist/configuration.yaml). Restart:
+
+```bash
+ha core restart
+```
+
+1. Settings → Devices & services → Add **Digital Node Nexus** (install-only). If setup says MQTT is not ready, finish **5a** first; DNN will retry.
+2. Confirm sidebar: Digital Node Nexus.
+3. Hard-refresh the browser. **Refresh** on the DNN panel should load the MCS roster (no “Unknown command”).
+4. FDNs that publish `mc/dnn/status/{id}` (to the Mosquitto broker) appear as devices with presence sensors.
+5. Page composer can target FDN / all / broadcast id / MCS player / role|NeoCorp filter.
+
+FDN / Pi firmware must use the **HA host LAN IP** (or a DNS name that resolves to it) and Mosquitto’s listener port (**1883** by default), with the same credentials as the add-on `logins` entry.
+

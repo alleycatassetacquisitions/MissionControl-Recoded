@@ -16,6 +16,7 @@ Three modules other integrations import directly:
 |---|---|
 | `http.py` | `async_request` — bearer-auth HTTP via HA's managed session + Core Configurator URL |
 | `mqtt.py` | `mc_topic` topic builder, `async_subscribe` / `async_publish` / `async_subscribe_presence` wrappers |
+| `fabric.py` | Presence tracking: `mc/{kind}/status/#` → device_registry + `online`/`offline`/`unknown` sensor |
 | `www/shared_libraries/mc-panel.js` | CSS design tokens + `McPanelBase` class for `extra_module_url` panels |
 
 ---
@@ -106,7 +107,29 @@ unsub = await async_subscribe_presence(hass, "dnn", device_id, callback=on_prese
 - Use `"broadcast"` as the group-command segment. Never use `"zone"`.
 - Never open a private MQTT client inside an integration. These wrappers delegate to HA's `mqtt` component.
 
-### 4. Panel kit (frontend)
+### 4. Fabric presence
+
+```python
+from custom_components.shared_libraries.fabric import (
+    async_start_presence_tracking,
+    async_stop_presence_tracking,
+    get_presence_tracker,
+)
+
+tracker = await async_start_presence_tracking(
+    hass,
+    "dnn",
+    config_entry_id=entry.entry_id,
+    domain="digital_node_nexus",
+    name_prefix="FDN",
+)
+# Status on mc/dnn/status/{device_id} → HA device + sensor.*_presence
+devices = tracker.list_devices()
+```
+
+On unload call `async_stop_presence_tracking(hass, "dnn")`.
+
+### 5. Panel kit (frontend)
 
 Load `mc-panel.js` via `extra_module_url` before your feature panel:
 
@@ -178,13 +201,15 @@ Libraries/Shared_HA_Helpers/HA_Component/
 │   ├── __init__.py        async_setup only — no config flow
 │   ├── const.py           DOMAIN, MC_TOPIC_ROOT = "mc"
 │   ├── http.py            async_request
-│   └── mqtt.py            mc_topic, async_subscribe, async_publish, async_subscribe_presence
+│   ├── mqtt.py            mc_topic, async_subscribe, async_publish, async_subscribe_presence
+│   └── fabric.py          status/# → device_registry + presence sensors
 ├── www/shared_libraries/
 │   └── mc-panel.js        McPanelBase + CSS tokens
 └── tests/
     ├── conftest.py
-    ├── test_http.py        12 tests — fail-closed, URL assembly, bearer auth, errors
-    └── test_mqtt.py        24 tests — mc_topic pure unit + subscribe/publish/presence
+    ├── test_http.py        fail-closed, URL assembly, bearer auth, errors
+    ├── test_mqtt.py        mc_topic pure unit + subscribe/publish/presence
+    └── test_fabric.py      presence parse + device/entity creation
 ```
 
 ---

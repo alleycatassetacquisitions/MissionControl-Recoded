@@ -53,10 +53,27 @@ from typing import Any
 
 from homeassistant.components import mqtt
 from homeassistant.core import HomeAssistant
+from homeassistant.exceptions import HomeAssistantError
 
 from .const import MC_TOPIC_ROOT
 
 _LOGGER = logging.getLogger(__name__)
+
+
+async def async_ensure_mqtt(hass: HomeAssistant) -> None:
+    """Wait for HA's MQTT client; raise if the MQTT integration is not set up.
+
+    Call before the first subscribe/publish in an integration setup path.
+    Returns normally when the client exists (connected or not).
+    """
+    available = await mqtt.async_wait_for_mqtt_client(hass)
+    if not available:
+        raise HomeAssistantError(
+            "MQTT is not set up. Install the official Mosquitto broker add-on "
+            "(Settings → Add-ons), then add the MQTT integration "
+            "(Settings → Devices & services → MQTT → Use the official Mosquitto "
+            "Mqtt Broker app). Reload Digital Node Nexus or restart Home Assistant."
+        )
 
 
 # ---------------------------------------------------------------------------

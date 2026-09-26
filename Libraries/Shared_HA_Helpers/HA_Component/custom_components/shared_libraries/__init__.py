@@ -6,6 +6,7 @@ import helpers directly:
 
     from custom_components.shared_libraries.http import async_request
     from custom_components.shared_libraries.mqtt import mc_topic, async_subscribe
+    from custom_components.shared_libraries.fabric import async_start_presence_tracking
 
 Design principles applied:
   P8  Reusable primitive — HTTP and MQTT helpers live here, not copied per app.

@@ -1,0 +1,201 @@
+page:
+  name: Page
+  description: >
+    Send a page message over MQTT so an FDN can start its paging state machine.
+    Target one device, all devices, a Broadcast Group id, a player, or a
+    role/NeoCorp filter. Player and filter stamps are included in the payload
+    for the FDN; routing uses cmd/all when no device or broadcast target is set.
+  fields:
+    message:
+      name: Message
+      description: Text to page / display.
+      required: true
+      selector:
+        text:
+    duration:
+      name: Duration
+      description: Display duration in seconds (1–60).
+      required: false
+      default: 10
+      selector:
+        number:
+          min: 1
+          max: 60
+    scroll:
+      name: Scroll
+      description: Scroll long text on the FDN display.
+      required: false
+      default: false
+      selector:
+        boolean:
+    device_id:
+      name: Device ID
+      description: Target a single FDN (mc/dnn/cmd/{device_id}/page).
+      required: false
+      selector:
+        text:
+    target:
+      name: Target
+      description: Use "all" to page every FDN (mc/dnn/cmd/all/page).
+      required: false
+      selector:
+        select:
+          options:
+            - all
+    broadcast_group_id:
+      name: Broadcast Group ID
+      description: Target mc/dnn/cmd/broadcast/{id}/page (membership owned by Broadcast Group Controller).
+      required: false
+      selector:
+        text:
+    player_id:
+      name: Player ID
+      description: Stamp a MCS player id into the page payload (routes via all unless device/broadcast set).
+      required: false
+      selector:
+        text:
+    role:
+      name: Role filter
+      description: Stamp role (hunter or bounty) into the page payload.
+      required: false
+      selector:
+        select:
+          options:
+            - hunter
+            - bounty
+    neocorp:
+      name: NeoCorp filter
+      description: Stamp NeoCorp into the page payload.
+      required: false
+      selector:
+        select:
+          options:
+            - freelancer
+            - helix
+            - endline
+            - reboot
+
+set_led:
+  name: Set LED
+  description: Skeleton LED command to one FDN or all FDNs over MQTT.
+  fields:
+    device_id:
+      name: Device ID
+      description: Target a single FDN. Omit when target is all.
+      required: false
+      selector:
+        text:
+    target:
+      name: Target
+      description: Use "all" for every FDN.
+      required: false
+      selector:
+        select:
+          options:
+            - all
+    state:
+      name: State
+      description: LED on/off.
+      required: false
+      default: true
+      selector:
+        boolean:
+    brightness:
+      name: Brightness
+      description: 0–255.
+      required: false
+      default: 255
+      selector:
+        number:
+          min: 0
+          max: 255
+    r:
+      name: Red
+      required: false
+      default: 255
+      selector:
+        number:
+          min: 0
+          max: 255
+    g:
+      name: Green
+      required: false
+      default: 255
+      selector:
+        number:
+          min: 0
+          max: 255
+    b:
+      name: Blue
+      required: false
+      default: 255
+      selector:
+        number:
+          min: 0
+          max: 255
+    effect:
+      name: Effect
+      required: false
+      default: solid
+      selector:
+        select:
+          options:
+            - solid
+            - blink
+            - pulse
+            - rainbow
+
+trigger_haptic:
+  name: Trigger Haptic
+  description: Skeleton haptic command to one FDN or all FDNs over MQTT.
+  fields:
+    device_id:
+      name: Device ID
+      description: Target a single FDN. Omit when target is all.
+      required: false
+      selector:
+        text:
+    target:
+      name: Target
+      description: Use "all" for every FDN.
+      required: false
+      selector:
+        select:
+          options:
+            - all
+    pattern:
+      name: Pattern
+      required: false
+      default: short
+      selector:
+        select:
+          options:
+            - short
+            - long
+            - double
+            - sos
+            - custom
+    intensity:
+      name: Intensity
+      required: false
+      default: 255
+      selector:
+        number:
+          min: 0
+          max: 255
+    duration_ms:
+      name: Duration (ms)
+      required: false
+      default: 100
+      selector:
+        number:
+          min: 1
+          max: 5000
+    repeat:
+      name: Repeat
+      required: false
+      default: 1
+      selector:
+        number:
+          min: 1
+          max: 20

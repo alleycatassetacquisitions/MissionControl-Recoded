@@ -59,3 +59,12 @@ jobs:
             --tb=short \
             --cov=custom_components/registration \
             --cov-report=term-missing
+
+      - name: Run Digital Node Nexus tests
+        working-directory: Apps/Digital_Node_Nexus/HA_Component
+        run: |
+          pytest tests/ \
+            -v \
+            --tb=short \
+            --cov=custom_components/digital_node_nexus \
+            --cov-report=term-missing

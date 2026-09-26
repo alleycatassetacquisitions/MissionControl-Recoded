@@ -71,9 +71,13 @@ MissionControl\
 │   │       ├── custom_components\
 │   │       └── tests\
 │   ├── Digital_Node_Nexus\
+│   │   ├── README.md
+│   │   ├── docs\
+│   │   │   └── dnn_commands.proto
 │   │   └── HA_Component\
 │   │       ├── www\
-│   │       └── custom_components\
+│   │       ├── custom_components\
+│   │       └── tests\
 │   ├── Galactic_Bounty_Network\
 │   │   ├── HA_Component\
 │   │   │   ├── www\
@@ -128,13 +132,15 @@ After deploy, Mission Control lives under HAOS **`/config/`** (SSH as `root` to 
 | `Apps\Core_Configurator\HA_Component\www\core_configurator\` | `/config/www/core_configurator/` |
 | `Apps\Registration\HA_Component\custom_components\registration\` | `/config/custom_components/registration/` |
 | `Apps\Registration\HA_Component\www\registration\` | `/config/www/registration/` |
+| `Apps\Digital_Node_Nexus\HA_Component\custom_components\digital_node_nexus\` | `/config/custom_components/digital_node_nexus/` |
+| `Apps\Digital_Node_Nexus\HA_Component\www\digital_node_nexus\` | `/config/www/digital_node_nexus/` |
 | `Libraries\Shared_HA_Helpers\HA_Component\custom_components\shared_libraries\` | `/config/custom_components/shared_libraries/` |
 | `Libraries\Shared_HA_Helpers\HA_Component\www\shared_libraries\` | `/config/www/shared_libraries/` |
 | `HomeAssist\configuration.yaml` (merge sections) | `/config/configuration.yaml` |
 | `HomeAssist\secrets.yaml.example` → real secrets | `/config/secrets.yaml` |
 | `HomeAssist\themes\` | `/config/themes/` |
 
-Runtime tree (Phase 4 Mission Control slice):
+Runtime tree (Phase 5 Mission Control slice):
 
 ```text
 /config/
@@ -147,15 +153,18 @@ Runtime tree (Phase 4 Mission Control slice):
 ├── custom_components/
 │   ├── core_configurator/
 │   ├── shared_libraries/
-│   └── registration/
+│   ├── registration/
+│   └── digital_node_nexus/
 └── www/                        ← served as /local/...
     ├── core_configurator/
     │   ├── core-configurator-client.js
     │   └── core-configurator-panel.js
     ├── shared_libraries/
     │   └── mc-panel.js
-    └── registration/
-        └── registration-panel.js
+    ├── registration/
+    │   └── registration-panel.js
+    └── digital_node_nexus/
+        └── dnn-panel.js
 ```
 
 `frontend.extra_module_url` load order (required):
@@ -190,9 +199,11 @@ Single source of truth for Alleycat service **URLs and API tokens** (MCS URL + B
 
 ### Digital Node Nexus
 
-Manages communications with FDNs (Fixed Data Nodes). Mission Control talks to FDNs here first, and later to PDNs (Portable Data Nodes) as well.
+Manages communications with FDNs (Fixed Data Nodes). Mission Control talks to FDNs here first, and later to PDNs (Portable Data Nodes) as well. Phase 5 ships a paging-first HA integration on the MQTT fabric; MCS supplies read-only roster for player/role/NeoCorp targeting.
 
-**Path:** `Apps\Digital_Node_Nexus\`
+**Path:** `Apps\Digital_Node_Nexus\`  
+**On HA:** `/config/custom_components/digital_node_nexus/` + `/config/www/digital_node_nexus/`  
+**App README:** [`Apps/Digital_Node_Nexus/README.md`](../Apps/Digital_Node_Nexus/README.md)
 
 ### Galactic Bounty Network
 
@@ -242,7 +253,7 @@ The same `HA_Component\` layout applies. Tests live in `HA_Component\tests\`.
 
 #### Shared HA Helpers
 
-Bearer-auth HTTP helper, MQTT fabric helpers (topic builder, subscribe/publish/presence wrappers), and a panel CSS/JS kit loaded via `extra_module_url`. Other integrations import helpers directly after declaring `"shared_libraries"` as a manifest dependency.
+Bearer-auth HTTP helper, MQTT fabric helpers (topic builder, subscribe/publish/presence wrappers, status/# → device + presence entity), and a panel CSS/JS kit loaded via `extra_module_url`. Other integrations import helpers directly after declaring `"shared_libraries"` as a manifest dependency.
 
 - **Code:** `shared_libraries`
 - **Path:** `Libraries\Shared_HA_Helpers\`
@@ -271,7 +282,7 @@ Standing law:
 - `Master Control Server Config Steps.md` — Proxmox LXC bootstrap for Master Control Server
 - `install-mcs-proxmox.sh` — one-shot Proxmox host script that creates an Ubuntu 24.04 LXC, installs MCS, and prints URL + token for Core Configurator
 
-Companion services on Proxmox follow the same pattern going forward: `install-<app>-proxmox.sh` plus a matching `* Config Steps.md`.
+Companion services on Proxmox follow the same pattern going forward: `install-<app>-proxmox.sh` plus a matching `* Config Steps.md`. The MQTT broker is an exception — use the official **Mosquitto** Home Assistant add-on (see Phase 5a in `Home Assistant Config Steps.md`), not a Proxmox Mosquitto LXC.
 
 The build-phase sequence stays on the Mission Control Build Plan canvas, not in these files.
 

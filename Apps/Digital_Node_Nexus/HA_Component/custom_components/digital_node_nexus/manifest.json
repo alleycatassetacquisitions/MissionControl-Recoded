@@ -1,0 +1,11 @@
+{
+  "domain": "digital_node_nexus",
+  "name": "Digital Node Nexus",
+  "documentation": "https://github.com/DLightmedia/MissionControl",
+  "requirements": [],
+  "dependencies": ["mqtt", "core_configurator", "shared_libraries"],
+  "codeowners": [],
+  "version": "1.0.0",
+  "iot_class": "local_push",
+  "config_flow": true
+}
