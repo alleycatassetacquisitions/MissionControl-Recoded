@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 ##############################################################################
-# install.sh â€” AlleycatTV player setup for Raspberry Pi OS Lite (no desktop)
+# install.sh — AlleycatTV player setup for Raspberry Pi OS Lite (no desktop)
 #
 # Installs a tiny Wayland kiosk (labwc) for HDMI, then mpv + Chromium kiosk
 # for video/photo/live pages. Run as root on a fresh Lite image.
@@ -8,21 +8,56 @@
 # Usage:
 #   chmod +x install.sh
 #   sudo ./install.sh
+#   sudo ./install.sh --from-env   # noninteractive (flash first-boot / golden image)
 ##############################################################################
 set -euo pipefail
 
 INSTALL_DIR="/opt/alleycattv"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+FROM_ENV=0
+if [[ "${1:-}" == "--from-env" ]]; then
+  FROM_ENV=1
+fi
+
+load_env_file() {
+  local f="$1"
+  [[ -f "$f" ]] || return 1
+  set -a
+  # shellcheck disable=SC1090
+  source "$f"
+  set +a
+  return 0
+}
 
 if [[ "$(id -u)" -ne 0 ]]; then
   echo "Run as root: sudo ./install.sh" >&2
   exit 1
 fi
 
-TARGET_USER="${SUDO_USER:-$(logname 2>/dev/null || true)}"
-if [[ -z "${TARGET_USER}" || "${TARGET_USER}" == "root" ]]; then
-  read -rp "Linux username that will run the player: " TARGET_USER
+if [[ "$FROM_ENV" -eq 1 ]]; then
+  load_env_file /etc/alleycattv.env \
+    || load_env_file /boot/firmware/alleycattv.env \
+    || load_env_file /boot/alleycattv.env \
+    || { echo "Missing alleycattv.env for --from-env" >&2; exit 1; }
+  TARGET_USER="${ALLEYCATV_OS_USER:-alleycat}"
+  PI_ID="${ALLEYCATV_PI_ID:-}"
+  SERVER_URL="${ALLEYCATV_SERVER:-}"
+  MQTT_IP="${ALLEYCATV_MQTT:-}"
+  MQTT_USER="${ALLEYCATV_MQTT_USER:-}"
+  MQTT_PASS="${ALLEYCATV_MQTT_PASS:-}"
+  BG_ID="${ALLEYCATV_BROADCAST_GROUP_ID:-}"
+  PHOTO_INTERVAL="${ALLEYCATV_PHOTO_INTERVAL:-5}"
+  if [[ -z "$PI_ID" || -z "$SERVER_URL" || -z "$MQTT_IP" ]]; then
+    echo "--from-env requires ALLEYCATV_PI_ID, ALLEYCATV_SERVER, ALLEYCATV_MQTT" >&2
+    exit 1
+  fi
+else
+  TARGET_USER="${SUDO_USER:-$(logname 2>/dev/null || true)}"
+  if [[ -z "${TARGET_USER}" || "${TARGET_USER}" == "root" ]]; then
+    read -rp "Linux username that will run the player: " TARGET_USER
+  fi
 fi
+
 if ! id "$TARGET_USER" >/dev/null 2>&1; then
   echo "User '${TARGET_USER}' does not exist." >&2
   exit 1
@@ -37,28 +72,39 @@ echo ""
 echo "  Service user: ${TARGET_USER} (uid ${TARGET_UID})"
 echo ""
 
-# ── Prompt for device configuration ──────────────────────────────────────────
-read -rp "Pi ID (e.g. pi-lobby-1):                    " PI_ID
-read -rp "Content server URL (e.g. http://alleycattv.local): " SERVER_URL
-read -rp "MQTT broker (HAOS Mosquitto host):          " MQTT_IP
-read -rp "MQTT username (leave blank if none):       " MQTT_USER
-read -rsp "MQTT password (leave blank if none):      " MQTT_PASS
-echo ""
-read -rp "Optional Broadcast Group ID for playlist (blank until Phase 7): " BG_ID
-read -rp "Photo interval (videos between photos, default 5): " PHOTO_INTERVAL
-PHOTO_INTERVAL="${PHOTO_INTERVAL:-5}"
+if [[ "$FROM_ENV" -eq 0 ]]; then
+  # ── Prompt for device configuration ──────────────────────────────────────────
+  read -rp "Pi ID (e.g. pi-lobby-1):                    " PI_ID
+  read -rp "Content server URL (e.g. http://alleycattv.local): " SERVER_URL
+  read -rp "MQTT broker (HAOS Mosquitto host):          " MQTT_IP
+  read -rp "MQTT username (leave blank if none):       " MQTT_USER
+  read -rsp "MQTT password (leave blank if none):      " MQTT_PASS
+  echo ""
+  read -rp "Optional Broadcast Group ID for playlist (blank until Phase 7): " BG_ID
+  read -rp "Photo interval (videos between photos, default 5): " PHOTO_INTERVAL
+  PHOTO_INTERVAL="${PHOTO_INTERVAL:-5}"
 
-echo ""
-echo "Configuration:"
-echo "  PI_ID:          $PI_ID"
-echo "  SERVER_URL:     $SERVER_URL"
-echo "  MQTT_BROKER:    $MQTT_IP"
-echo "  MQTT_USER:      ${MQTT_USER:-<none>}"
-echo "  BROADCAST_GROUP:${BG_ID:-<none>}"
-echo "  PHOTO_INTERVAL: $PHOTO_INTERVAL"
-echo ""
-read -rp "Continue? [y/N]: " CONFIRM
-[[ "${CONFIRM,,}" == "y" ]] || { echo "Aborted."; exit 0; }
+  echo ""
+  echo "Configuration:"
+  echo "  PI_ID:          $PI_ID"
+  echo "  SERVER_URL:     $SERVER_URL"
+  echo "  MQTT_BROKER:    $MQTT_IP"
+  echo "  MQTT_USER:      ${MQTT_USER:-<none>}"
+  echo "  BROADCAST_GROUP:${BG_ID:-<none>}"
+  echo "  PHOTO_INTERVAL: $PHOTO_INTERVAL"
+  echo ""
+  read -rp "Continue? [y/N]: " CONFIRM
+  [[ "${CONFIRM,,}" == "y" ]] || { echo "Aborted."; exit 0; }
+else
+  echo "Noninteractive --from-env:"
+  echo "  PI_ID:          $PI_ID"
+  echo "  SERVER_URL:     $SERVER_URL"
+  echo "  MQTT_BROKER:    $MQTT_IP"
+  echo "  MQTT_USER:      ${MQTT_USER:-<none>}"
+  echo "  BROADCAST_GROUP:${BG_ID:-<none>}"
+  echo "  PHOTO_INTERVAL: $PHOTO_INTERVAL"
+  echo ""
+fi
 
 render_unit() {
   local src="$1"
@@ -120,15 +166,17 @@ fi
 chown -R "$TARGET_USER:$TARGET_USER" "$INSTALL_DIR"
 
 # ── Per-unit env (config.py already reads ALLEYCATV_* from environment) ──────
+MQTT_PORT="${ALLEYCATV_MQTT_PORT:-1883}"
 cat > /etc/alleycattv.env <<EOF
 ALLEYCATV_PI_ID=$PI_ID
 ALLEYCATV_BROADCAST_GROUP_ID=$BG_ID
 ALLEYCATV_SERVER=$SERVER_URL
 ALLEYCATV_MQTT=$MQTT_IP
-ALLEYCATV_MQTT_PORT=1883
+ALLEYCATV_MQTT_PORT=$MQTT_PORT
 ALLEYCATV_MQTT_USER=$MQTT_USER
 ALLEYCATV_MQTT_PASS=$MQTT_PASS
 ALLEYCATV_PHOTO_INTERVAL=$PHOTO_INTERVAL
+ALLEYCATV_OS_USER=$TARGET_USER
 EOF
 chmod 640 /etc/alleycattv.env
 chown root:"$TARGET_USER" /etc/alleycattv.env

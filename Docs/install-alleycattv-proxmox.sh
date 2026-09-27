@@ -245,7 +245,8 @@ NGX
     ln -sfn /etc/nginx/sites-available/alleycattv /etc/nginx/sites-enabled/alleycattv
     rm -f /etc/nginx/sites-enabled/default
     nginx -t
-    systemctl enable --now nginx
+    systemctl enable nginx
+    systemctl restart nginx
     systemctl daemon-reload
     systemctl enable --now alleycattv-server
   '

@@ -20,14 +20,41 @@ def test_env_file_contains_pi_and_mqtt():
         mqtt_host="homeassistant.local",
         mqtt_user="mqtt",
         mqtt_pass="secret",
+        os_user="alleycat",
     )
     env = unit.env_file()
     assert "ALLEYCATV_PI_ID=pi-lobby-1" in env
     assert "ALLEYCATV_SERVER=http://alleycattv.local" in env
     assert "ALLEYCATV_MQTT=homeassistant.local" in env
     assert "ALLEYCATV_MQTT_PASS=secret" in env
+    assert "ALLEYCATV_OS_USER=alleycat" in env
     # Membership must not be required
     assert "ALLEYCATV_BROADCAST_GROUP_ID=" in env
+
+
+def test_user_data_enables_ssh_password():
+    unit = UnitConfig(
+        "pi-1",
+        "pi-1",
+        "http://x",
+        "ha.local",
+        os_user="alleycat",
+        os_password="alleycat",
+        os_password_hash="$6$saltexample$hash",
+    )
+    text = unit.user_data()
+    assert text.startswith("#cloud-config\n")
+    assert "enable_ssh: true" in text
+    assert "ssh_pwauth: true" in text
+    assert "name: alleycat" in text
+    assert "plain_text_passwd:" in text
+    assert "PasswordAuthentication yes" in text
+    assert "alleycattv-firstboot.sh" in text
+
+
+def test_env_adds_http_scheme():
+    unit = UnitConfig("pi-1", "pi-1", "192.168.1.173", "ha.local")
+    assert "ALLEYCATV_SERVER=http://192.168.1.173" in unit.env_file()
 
 
 def test_wpa_optional():
@@ -39,6 +66,51 @@ def test_wpa_optional():
     text = wifi.wpa_supplicant()
     assert text is not None
     assert 'ssid="Alleycat"' in text
+
+
+def test_network_config_wifi():
+    wifi = UnitConfig(
+        "pi-1",
+        "pi-1",
+        "http://x",
+        "ha.local",
+        wifi_ssid="NeoCore Networks",
+        wifi_psk="secret",
+    )
+    text = wifi.network_config()
+    assert "renderer: NetworkManager" in text
+    assert '"NeoCore Networks"' in text
+    assert 'password: "secret"' in text
+    assert "eth0:" in text
+    assert "route-metric: 100" in text
+    assert "route-metric: 700" in text
+
+
+def test_normalize_mqtt_strips_scheme():
+    from config_render import normalize_mqtt_host
+
+    assert normalize_mqtt_host("http://192.168.1.11") == "192.168.1.11"
+    assert normalize_mqtt_host("192.168.1.11") == "192.168.1.11"
+
+
+def test_userconf_requires_hash():
+    unit = UnitConfig(
+        "pi-1",
+        "pi-1",
+        "http://x",
+        "ha.local",
+        os_user="alleycat",
+        os_password_hash="$6$saltexample$hash",
+    )
+    assert unit.userconf() == "alleycat:$6$saltexample$hash\n"
+
+
+def test_sha512_crypt_openssl():
+    from config_render import sha512_crypt
+
+    hashed = sha512_crypt("alleycat")
+    assert hashed.startswith("$6$")
+    assert "alleycat" not in hashed
 
 
 def test_refuse_system_disk():

@@ -202,8 +202,17 @@ MQTT for Mission Control uses the **official Mosquitto broker add-on** on Home A
 #### 5a. Install Mosquitto and connect the MQTT integration
 
 1. **Settings → Add-ons → Add-on store** → search **Mosquitto broker** → **Install**.
-2. Open the add-on → **Configuration** (optional but recommended for venue use):
-   - Add a local user under `logins` (username + password). Save.
+2. Open the add-on → **Configuration**:
+   - Under `logins`, add a local user (username + password), then **Save**.  
+     Venue default used by AlleycatTV Pi flashes:
+
+     ```yaml
+     logins:
+       - username: alleycatTV
+         password: alleycat
+     ```
+
+     If you skip Save, Pis connect with blank/wrong creds and fail with MQTT **`rc=5` (Not authorized)** — they will not appear in AlleycatTV.
 3. **Start** the add-on. Confirm it is running (Log tab shows Mosquitto started).
 4. Enable **Start on boot** (and **Watchdog** if you want auto-restart).
 5. **Settings → Devices & services → Add integration → MQTT**.
@@ -265,25 +274,37 @@ scp -r "z:\CodingProjects\Alleycat\MissionControl\Apps\AlleycatTV\HA_Component\c
 scp -r "z:\CodingProjects\Alleycat\MissionControl\Apps\AlleycatTV\HA_Component\www\alleycattv" root@<HA-IP>:/config/www/
 ```
 
-Merge the AlleycatTV `panel_custom` blocks from [`HomeAssist/configuration.yaml`](../HomeAssist/configuration.yaml). Restart:
+Merge from [`HomeAssist/configuration.yaml`](../HomeAssist/configuration.yaml): the `alleycattv: {}` block **and** the AlleycatTV `panel_custom` entries. Restart:
 
 ```bash
 ha core restart
 ```
 
-1. Settings → Devices & services → Add **AlleycatTV** (install-only). MQTT must already be ready (Phase 5a).
+1. Settings → Devices & services → Add **AlleycatTV** (install-only). MQTT must already be ready (Phase 5a). Sidebar panels without this entry → “Unknown command” / “Proxy not registered”.
 2. Sidebar: **AlleycatTV** and **AlleycatTV Content**.
 3. Pis that publish `mc/tv/status/{pi_id}` appear as devices; playback commands use `alleycattv.play_broadcast_group` / `stop_broadcast_group`.
 
 #### 6c. Flash TV Pi SD cards (prep PC)
 
+Plug-and-play flash (Trixie Lite `.img.xz`, cloud-init, player bundle, MQTT presence):
+
 ```powershell
 cd z:\CodingProjects\Alleycat\MissionControl\Apps\AlleycatTV\Client_Component\distro
-py -3 flash.py --image path\to\raspios-lite-arm64.img
+py -3 flash.py --image .\2026-09-15-raspios-trixie-arm64-lite.img.xz
 ```
 
-Enter content-server URL + Mosquitto host once. For each card: Pi ID → select drive (tool refuses system disks) → flash / inject `alleycattv.env` → eject → next card.  
-Do **not** flash Broadcast Group membership (Phase 7). Optional Wi‑Fi SSID/PSK is supported for headless join.
+Venue flash prompts (must match Phase 5a Mosquitto `logins`):
 
-Details + smoke test: [`AlleycatTV Config Steps.md`](AlleycatTV%20Config%20Steps.md) · App README: [`Apps/AlleycatTV/README.md`](../Apps/AlleycatTV/README.md)
+| Field | Venue example |
+| --- | --- |
+| Content server | `http://<content-LXC-IP>` |
+| MQTT broker | HA LAN IP (e.g. `192.168.1.11`) — no `http://` |
+| MQTT user / pass | `alleycatTV` / `alleycat` |
+| Pi OS user / pass | `alleycat` / `alleycat` |
+
+Confirm inject lands on `bootfs` (e.g. `D:\`), not a Temp folder. First boot installs the player; AlleycatTV panel chips appear when `mc/tv/status/{pi_id}` is published (MQTT `rc=5` means bad/missing Mosquitto login).
+
+Do **not** flash Broadcast Group membership (Phase 7).
+
+Full procedure + troubleshooting: [`AlleycatTV Config Steps.md` § D](AlleycatTV%20Config%20Steps.md#d-flash-tv-pi-sd-cards-prep-pc) · App README: [`Apps/AlleycatTV/README.md`](../Apps/AlleycatTV/README.md)
 

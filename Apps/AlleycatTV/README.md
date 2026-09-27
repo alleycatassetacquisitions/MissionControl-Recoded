@@ -51,9 +51,12 @@ Home Assistant is the **only** MQTT command publisher.
 | Content LXC | [`Docs/install-alleycattv-proxmox.sh`](../../Docs/install-alleycattv-proxmox.sh) |
 | Full checklist | [`Docs/AlleycatTV Config Steps.md`](../../Docs/AlleycatTV%20Config%20Steps.md) |
 | HA scp + panels | Phase 6b in [`Home Assistant Config Steps.md`](../../Docs/Home%20Assistant%20Config%20Steps.md#phase-6--alleycattv-on-the-fabric) |
-| Pi SD flash | `Client_Component/distro/flash.py` (see Config Steps § D) |
+| Mosquitto login | Phase 5a — venue `alleycatTV` / `alleycat` (must **Save** in add-on) |
+| Pi SD flash (plug-and-play) | `Client_Component/distro/flash.py` — Config Steps **§ D** (`.img.xz` OK; cloud-init + player bundle) |
 
 Set Core Configurator key `alleycattv` to the content server URL (`cc_alleycattv` in secrets).
+
+Pi flash session must use the same Mosquitto user/password as Phase 5a. MQTT **`rc=5`** on the Pi means auth rejected — the endpoint will not show in the AlleycatTV panel until that is fixed.
 
 ---
 

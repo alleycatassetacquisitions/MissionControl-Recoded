@@ -92,6 +92,13 @@ class AlleycatTVProxyView(HomeAssistantView):
                 method, url, data=body, headers=headers, timeout=timeout
             ) as resp:
                 payload = await resp.read()
+                if resp.status >= 400:
+                    _LOGGER.warning(
+                        "AlleycatTV proxy upstream %s %s -> %s",
+                        method,
+                        url,
+                        resp.status,
+                    )
                 return web.Response(
                     body=payload,
                     status=resp.status,

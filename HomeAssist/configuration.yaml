@@ -42,6 +42,11 @@ core_configurator:
   proxmox: !secret cc_proxmox
   proxmox_node: !secret cc_proxmox_node
 
+# Loads the AlleycatTV custom component (proxy + WS) on HA start.
+# Must be `{}` — a bare `alleycattv:` is YAML null and will not set up the integration.
+# Also creates the install-only config entry on first boot (MQTT presence / media_player).
+alleycattv: {}
+
 frontend:
   extra_module_url:
     # Shared panel kit — must load before any Mission Control panel.

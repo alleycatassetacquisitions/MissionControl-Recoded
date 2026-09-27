@@ -18,6 +18,19 @@ class AlleycatTVContentPanel extends window.McPanel.Base {
     return super.hass;
   }
 
+  _formatErr(err) {
+    if (err == null) return "unknown error";
+    if (typeof err === "string") return err;
+    if (err.message) return err.message;
+    if (err.error) return err.error;
+    if (err.code) return String(err.code);
+    try {
+      return JSON.stringify(err);
+    } catch (_) {
+      return String(err);
+    }
+  }
+
   async _proxy(path, options = {}) {
     const url = `/api/alleycattv/proxy/${path.replace(/^\//, "")}`;
     const resp = await this.hass.fetchWithAuth(url, {
@@ -29,7 +42,39 @@ class AlleycatTVContentPanel extends window.McPanel.Base {
     });
     if (!resp.ok) {
       const text = await resp.text();
-      throw new Error(text || `HTTP ${resp.status}`);
+      let detail = text;
+      try {
+        const parsed = JSON.parse(text);
+        detail = parsed.error || parsed.message || parsed.detail || text;
+      } catch (_) {
+        /* strip HTML error pages (nginx/uvicorn) into a short line */
+        const title = text.match(/<title>([^<]+)<\/title>/i);
+        const h1 = text.match(/<h1>([^<]+)<\/h1>/i);
+        const server = text.match(/nginx\/[\d.]+[^<\s]*/i);
+        if (title || h1) {
+          detail = [h1?.[1] || title?.[1], server?.[0]].filter(Boolean).join(" · ");
+        }
+      }
+      if (resp.status === 404) {
+        const haMissing =
+          /404:\s*Not Found/i.test(text) && !/nginx/i.test(text);
+        if (haMissing) {
+          throw new Error(
+            "Proxy not registered — ensure configuration.yaml has `alleycattv: {}`, redeploy custom_component, restart HA"
+          );
+        }
+        throw new Error(
+          (detail || "Not found") +
+            " — check content server at Core Configurator alleycattv URL (curl /health and /api/content/)"
+        );
+      }
+      if (resp.status === 503) {
+        throw new Error(
+          detail ||
+            "AlleycatTV URL not set in Core Configurator (or content server unreachable)"
+        );
+      }
+      throw new Error(detail || `HTTP ${resp.status}`);
     }
     const ct = resp.headers.get("content-type") || "";
     if (ct.includes("application/json")) return resp.json();
@@ -88,7 +133,7 @@ class AlleycatTVContentPanel extends window.McPanel.Base {
       this._paint();
       this._feedback("Refreshed", "ok");
     } catch (err) {
-      this._feedback(String(err), "err");
+      this._feedback(this._formatErr(err), "err");
     }
   }
 
@@ -122,11 +167,6 @@ class AlleycatTVContentPanel extends window.McPanel.Base {
           .join("")}
       </tbody></table>`;
     }
-  }
-
-  connectedCallback() {
-    this._render();
-    this._boot();
   }
 }
 

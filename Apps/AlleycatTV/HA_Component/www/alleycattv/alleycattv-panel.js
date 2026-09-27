@@ -20,6 +20,19 @@ class AlleycatTVPanel extends window.McPanel.Base {
     return super.hass;
   }
 
+  _formatErr(err) {
+    if (err == null) return "unknown error";
+    if (typeof err === "string") return err;
+    if (err.message) return err.message;
+    if (err.error) return err.error;
+    if (err.code) return String(err.code);
+    try {
+      return JSON.stringify(err);
+    } catch (_) {
+      return String(err);
+    }
+  }
+
   _render() {
     this.shadowRoot.innerHTML = `
       <style>
@@ -122,52 +135,72 @@ class AlleycatTVPanel extends window.McPanel.Base {
     root.getElementById("btn-stop").onclick = () => this._callBg("stop_broadcast_group");
     root.getElementById("btn-reload").onclick = () => this._callBg("reload_playlist");
     root.getElementById("btn-volume").onclick = async () => {
-      const bg = root.getElementById("bg-id").value.trim();
-      if (!bg) return this._feedback("Broadcast Group ID required", "err");
-      const volume = Number(root.getElementById("volume").value);
-      await this.hass.callService("alleycattv", "set_volume_broadcast_group", {
-        broadcast_group_id: bg,
-        volume,
-      });
-      this._feedback("Volume set", "ok");
+      try {
+        const bg = root.getElementById("bg-id").value.trim();
+        if (!bg) return this._feedback("Broadcast Group ID required", "err");
+        const volume = Number(root.getElementById("volume").value);
+        await this.hass.callService("alleycattv", "set_volume_broadcast_group", {
+          broadcast_group_id: bg,
+          volume,
+        });
+        this._feedback("Volume set", "ok");
+      } catch (err) {
+        this._feedback(this._formatErr(err), "err");
+      }
     };
     root.getElementById("btn-interrupt-bg").onclick = async () => {
-      const bg = root.getElementById("bg-id").value.trim();
-      const file_url = root.getElementById("file-url").value.trim();
-      if (!bg || !file_url) return this._feedback("Group + file URL required", "err");
-      await this.hass.callService("alleycattv", "interrupt_broadcast_group", {
-        broadcast_group_id: bg,
-        file_url,
-      });
-      this._feedback("Interrupt sent", "ok");
+      try {
+        const bg = root.getElementById("bg-id").value.trim();
+        const file_url = root.getElementById("file-url").value.trim();
+        if (!bg || !file_url) return this._feedback("Group + file URL required", "err");
+        await this.hass.callService("alleycattv", "interrupt_broadcast_group", {
+          broadcast_group_id: bg,
+          file_url,
+        });
+        this._feedback("Interrupt sent", "ok");
+      } catch (err) {
+        this._feedback(this._formatErr(err), "err");
+      }
     };
     root.getElementById("btn-interrupt-pi").onclick = async () => {
-      const file_url = root.getElementById("file-url").value.trim();
-      if (!this._selected || !file_url) return this._feedback("Select a Pi + file URL", "err");
-      await this.hass.callService("alleycattv", "interrupt_pi", {
-        pi_id: this._selected,
-        file_url,
-      });
-      this._feedback("Pi interrupt sent", "ok");
+      try {
+        const file_url = root.getElementById("file-url").value.trim();
+        if (!this._selected || !file_url) return this._feedback("Select a Pi + file URL", "err");
+        await this.hass.callService("alleycattv", "interrupt_pi", {
+          pi_id: this._selected,
+          file_url,
+        });
+        this._feedback("Pi interrupt sent", "ok");
+      } catch (err) {
+        this._feedback(this._formatErr(err), "err");
+      }
     };
     root.getElementById("btn-place").onclick = async () => {
-      if (!this._selected) return this._feedback("Select a Pi", "err");
-      const area_id = root.getElementById("area-id").value;
-      await this.hass.callWS({
-        type: "alleycattv/set_placement",
-        pi_id: this._selected,
-        area_id: area_id || "",
-      });
-      this._feedback("Placement saved", "ok");
-      await this._boot();
+      try {
+        if (!this._selected) return this._feedback("Select a Pi", "err");
+        const area_id = root.getElementById("area-id").value;
+        await this.hass.callWS({
+          type: "alleycattv/set_placement",
+          pi_id: this._selected,
+          area_id: area_id || "",
+        });
+        this._feedback("Placement saved", "ok");
+        await this._boot();
+      } catch (err) {
+        this._feedback(this._formatErr(err), "err");
+      }
     };
   }
 
   async _callBg(service) {
-    const bg = this.shadowRoot.getElementById("bg-id").value.trim();
-    if (!bg) return this._feedback("Broadcast Group ID required", "err");
-    await this.hass.callService("alleycattv", service, { broadcast_group_id: bg });
-    this._feedback(`${service} sent`, "ok");
+    try {
+      const bg = this.shadowRoot.getElementById("bg-id").value.trim();
+      if (!bg) return this._feedback("Broadcast Group ID required", "err");
+      await this.hass.callService("alleycattv", service, { broadcast_group_id: bg });
+      this._feedback(`${service} sent`, "ok");
+    } catch (err) {
+      this._feedback(this._formatErr(err), "err");
+    }
   }
 
   async _boot() {
@@ -181,7 +214,12 @@ class AlleycatTVPanel extends window.McPanel.Base {
       this._areas = (areas && areas.areas) || [];
       this._paint();
     } catch (err) {
-      this._feedback(String(err), "err");
+      const msg = this._formatErr(err);
+      const hint =
+        /unknown_command|not found/i.test(msg)
+          ? " — add AlleycatTV under Settings → Devices & services, then restart HA"
+          : "";
+      this._feedback(msg + hint, "err");
     }
   }
 
@@ -224,11 +262,6 @@ class AlleycatTVPanel extends window.McPanel.Base {
             }>${this._esc(a.name)}</option>`
         )
         .join("");
-  }
-
-  connectedCallback() {
-    this._render();
-    this._boot();
   }
 }
 

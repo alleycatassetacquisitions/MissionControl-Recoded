@@ -107,15 +107,22 @@ scp -r "z:\CodingProjects\Alleycat\MissionControl\Apps\AlleycatTV\HA_Component\c
 scp -r "z:\CodingProjects\Alleycat\MissionControl\Apps\AlleycatTV\HA_Component\www\alleycattv" root@<HA-IP>:/config/www/
 ```
 
-Merge the AlleycatTV `panel_custom` blocks from [`HomeAssist/configuration.yaml`](../HomeAssist/configuration.yaml) into `/config/configuration.yaml`. Restart:
+Merge from [`HomeAssist/configuration.yaml`](../HomeAssist/configuration.yaml) into `/config/configuration.yaml`:
+
+- the `alleycattv: {}` block (loads the custom component / proxy on start; bare `alleycattv:` is YAML null and will not load)
+- the AlleycatTV `panel_custom` blocks
+
+Restart:
 
 ```bash
 ha core restart
 ```
 
-1. **Settings → Devices & services → Add integration → AlleycatTV** (install-only).
+1. On first boot with `alleycattv: {}`, the install-only config entry is imported automatically. You can also **Settings → Devices & services → Add integration → AlleycatTV**.
 2. Confirm sidebar: **AlleycatTV** and **AlleycatTV Content**.
 3. Hard-refresh the browser. Content panel Refresh should list media/groups via the HA proxy (no LAN `fetch`).
+
+If Content shows “Proxy not registered” or AlleycatTV shows “Unknown command”, the Python package is not loaded: use `alleycattv: {}` (not a bare key), redeploy `custom_components/alleycattv`, restart HA, then confirm **AlleycatTV** appears under Devices & services.
 
 Playback services (examples):
 
@@ -130,13 +137,23 @@ Topics: `mc/tv/…` — see [`MQTT Communication Principles.md`](MQTT%20Communic
 
 Operators run the distro CLI on a Windows (or Linux) prep PC. Do **not** flash Broadcast Group membership (Phase 7).
 
-1. Download **Raspberry Pi OS Lite (64-bit)** image.
-2. Optionally bake player packages once onto a golden image (run `Client_Component/install.sh` on a reference Pi, then clone that image). Otherwise flash Lite and run `install.sh` over SSH after first boot; the distro tool still injects per-unit `alleycattv.env`.
-3. From the Mission Control checkout:
+A successful flash is **plug-and-play**: after first boot the Pi joins Wi‑Fi (preferred over Ethernet), creates the Pi OS user, enables SSH password login, installs the AlleycatTV player from a bootfs bundle, and publishes MQTT presence so **Endpoint** chips appear in the AlleycatTV panel.
+
+### Prerequisites
+
+| Need | Notes |
+| --- | --- |
+| Raspberry Pi OS **Lite 64-bit** (Trixie) | Official `.img.xz` is fine — do **not** convert to ISO |
+| [Raspberry Pi Imager](https://www.raspberrypi.com/software/) | Required on Windows (`rpi-imager.exe`; flash tool locates it under `Program Files\Raspberry Pi Ltd\Imager`) |
+| Elevated PowerShell | Imager needs admin to write disks |
+| OpenSSL | Git for Windows provides `openssl` (used to hash the Pi OS password for `userconf.txt`) |
+| Mosquitto login (Phase 5a) | **Must be saved** in the add-on Configuration → `logins`. Venue default: user `alleycatTV` / password `alleycat` |
+
+### Flash command
 
 ```powershell
 cd z:\CodingProjects\Alleycat\MissionControl\Apps\AlleycatTV\Client_Component\distro
-py -3 flash.py --image path\to\raspios-lite-arm64.img
+py -3 flash.py --image .\2026-09-15-raspios-trixie-arm64-lite.img.xz
 ```
 
 Dry run (no disk write):
@@ -145,26 +162,105 @@ Dry run (no disk write):
 py -3 flash.py --dry-run --inject-only
 ```
 
-4. Session flow:
-   - Enter venue defaults once: content server URL, Mosquitto host/port/creds (HAOS broker)
-   - Per card: Pi ID, hostname, optional Wi‑Fi
-   - Select SD drive (tool refuses system disks / oversized disks)
-   - Write image (Raspberry Pi Imager CLI when available) + inject `alleycattv.env` onto boot
-   - Eject → insert next card → repeat
+### Session prompts (venue defaults)
 
-5. Boot each Pi on the venue LAN. Confirm in HA that `sensor.alleycattv_<pi>_presence` (or Devices list) shows **online**.
+Enter once per flash session (reused for every card):
 
-Pi MQTT broker must be the **Home Assistant Mosquitto** host (Phase 5a credentials), not a Proxmox Mosquitto LXC.
+| Prompt | Example / venue default | Rules |
+| --- | --- | --- |
+| Content server URL | `http://192.168.1.173` | Must include `http://` |
+| MQTT broker | `192.168.1.11` | HAOS LAN IP — **no** `http://` |
+| MQTT port | `1883` | |
+| MQTT username | `alleycatTV` | Exact Mosquitto `logins` user |
+| MQTT password | `alleycat` | Exact Mosquitto `logins` password — blank → Pi gets MQTT `rc=5` and never appears in HA |
+| Pi OS username | `alleycat` | SSH / kiosk user |
+| Pi OS password | `alleycat` | SSH password |
+
+Per card:
+
+| Prompt | Example |
+| --- | --- |
+| Pi ID | `Endpoint-1` (becomes fabric device id / panel chip) |
+| Hostname | defaults to Pi ID |
+| Wi‑Fi SSID / PSK | venue Wi‑Fi (required for headless TV Pis) |
+
+Confirm disk erase with exact `YES` (case-sensitive).
+
+### What the tool writes
+
+After Imager finishes, the tool waits for `bootfs` (often `D:\`) and injects:
+
+| Bootfs artifact | Purpose |
+| --- | --- |
+| `user-data` + `meta-data` | cloud-init: hostname, user, `enable_ssh`, `ssh_pwauth`, first-boot install |
+| `userconf.txt` + empty `ssh` | Legacy fallbacks |
+| `network-config` | Netplan v2 — Wi‑Fi preferred (route metric 100) over Ethernet (700) |
+| `alleycattv.env` | Per-unit MQTT / content server / Pi ID |
+| `alleycattv-client.tgz` | Player sources |
+| `alleycattv-firstboot.sh` | Runs `install.sh --from-env` once |
+
+**Success line must look like:** `Injected config for Endpoint-1 into D:\` (a real drive letter).  
+**Failure:** inject into a Temp path means config never reached the card — reseat the reader and re-run, or `py -3 flash.py --inject-only` and enter `D:\` when asked.
+
+### First boot
+
+1. Safely eject, insert SD in the Pi, power on. First boot can take **several minutes** (apt + player install).
+2. Pi should skip the OS setup wizard and land on a login / kiosk path.
+3. SSH: `ssh alleycat@<pi-ip>` (password from flash). After a reflash, clear a stale host key if OpenSSH complains:
+
+```powershell
+ssh-keygen -R <pi-ip>
+ssh alleycat@<pi-ip>
+```
+
+4. Confirm player + MQTT:
+
+```bash
+systemctl is-active alleycattv-player   # active
+journalctl -u alleycattv-player -n 30 --no-pager
+# expect MQTT connected — NOT "MQTT connect failed rc=5"
+curl http://192.168.1.173/health
+```
+
+5. In HA **AlleycatTV** panel, hard-refresh — chip for the Pi ID (e.g. `Endpoint-1`) should appear from `mc/tv/status/{pi_id}`.
+
+Empty playlist / “Zone playlist has no playable items” is normal until Part E / Phase 7 assigns a broadcast group.
+
+### Troubleshooting
+
+| Symptom | Likely cause | Fix |
+| --- | --- | --- |
+| Setup wizard on first boot | Missing / ignored cloud-init user | Full reflash with current `flash.py` (Trixie needs `user-data`, not only `userconf.txt`) |
+| Online but IP `127.0.1.1` | Wi‑Fi never applied | Trixie ignores `wpa_supplicant.conf`; need `network-config` **before** first boot, or `nmcli` on console |
+| Host key verification failed | Reflashed Pi, new SSH host key | `ssh-keygen -R <ip>` then reconnect |
+| SSH password rejected | User/SSH not applied by cloud-init | Reflash with current tool; or set password on HDMI console |
+| `MQTT connect failed rc=5` | Mosquitto rejected auth | Save `logins` in Mosquitto add-on, then put the same user/pass in `/etc/alleycattv.env` and `sudo systemctl restart alleycattv-player` |
+| Inject to Temp / “no boot mount” | Windows slow to remount `bootfs` | Wait for `bootfs` in Explorer; enter `D:\` at prompt; tool now polls up to 90s |
+| Panel “No devices yet” | No presence publish | Fix MQTT `rc=5` first; confirm `alleycattv-player` is `active` |
+| Imager: destination not removable | USB reader looks like fixed disk | Tool passes `--enable-writing-system-drives`; own picker still blocks system disks |
+
+### Notes
+
+- Pi MQTT broker must be the **Home Assistant Mosquitto** host (Phase 5a), not a Proxmox Mosquitto LXC.
+- Rewriting bootfs after first boot does **not** re-run cloud-init — full re-flash for identity/network/user changes that must apply at first boot. Per-unit MQTT tweaks can be edited live in `/etc/alleycattv.env`.
+- Optional golden-image shortcut: bake once, clone `.img`, then `flash.py --inject-only` for per-unit identity only.
 
 ---
 
 ## E. Smoke test
 
-1. Content: upload a short video via **AlleycatTV Content** or `/manage`; create a broadcast group + playlist id (e.g. `lobby`).
-2. Temporarily set `ALLEYCATV_BROADCAST_GROUP_ID=lobby` on one Pi (env / `/etc/alleycattv.env`) so it can fetch that playlist until Phase 7 owns membership.
-3. From HA: call `alleycattv.play_broadcast_group` with `broadcast_group_id: lobby`.
-4. Pi plays; `media_player` / status JSON updates.
-5. Call `stop_broadcast_group` — playback stops; retained desired topic updates.
+1. Confirm the Pi chip is online in the **AlleycatTV** panel (Part D). Playlist warnings alone are OK at this stage.
+2. Content: upload a short video via **AlleycatTV Content** or `/manage`; create a broadcast group + playlist id (e.g. `lobby`).
+3. Temporarily set membership on the Pi until Phase 7 owns it:
+
+```bash
+sudo sed -i 's/^ALLEYCATV_BROADCAST_GROUP_ID=.*/ALLEYCATV_BROADCAST_GROUP_ID=lobby/' /etc/alleycattv.env
+sudo systemctl restart alleycattv-player
+```
+
+4. From HA: call `alleycattv.play_broadcast_group` with `broadcast_group_id: lobby`.
+5. Pi plays; `media_player` / status JSON updates.
+6. Call `stop_broadcast_group` — playback stops; retained desired topic updates.
 
 ---
 

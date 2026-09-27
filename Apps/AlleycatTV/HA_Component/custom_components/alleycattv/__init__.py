@@ -14,7 +14,7 @@ import logging
 
 import voluptuous as vol
 from homeassistant.components import websocket_api
-from homeassistant.config_entries import ConfigEntry
+from homeassistant.config_entries import SOURCE_IMPORT, ConfigEntry
 from homeassistant.const import Platform
 from homeassistant.core import HomeAssistant, ServiceCall, callback
 from homeassistant.exceptions import ConfigEntryNotReady, HomeAssistantError
@@ -23,6 +23,7 @@ from homeassistant.helpers import config_validation as cv
 from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers.dispatcher import async_dispatcher_send
 from homeassistant.helpers.storage import Store
+from homeassistant.helpers.typing import ConfigType
 
 from .const import (
     DOMAIN,
@@ -59,6 +60,10 @@ from .routing import resolve_cmd_segments
 _LOGGER = logging.getLogger(__name__)
 
 PLATFORMS: list[Platform] = [Platform.MEDIA_PLAYER]
+
+# Allow `alleycattv:` in configuration.yaml so HA loads the component (and
+# registers proxy/WS) even before the install-only config entry is added.
+CONFIG_SCHEMA = cv.empty_config_schema(DOMAIN)
 
 try:
     from custom_components.shared_libraries.fabric import (
@@ -155,6 +160,41 @@ async def _publish_desired(
     )
 
 
+def _register_panel_apis(hass: HomeAssistant) -> None:
+    """Register WS + HTTP views (idempotent). Safe before MQTT is ready."""
+    hass.data.setdefault(DOMAIN, {})
+    _register_ws(hass)
+    if hass.data[DOMAIN].get("http_registered"):
+        return
+    from .http import register_http_views
+
+    try:
+        register_http_views(hass)
+        hass.data[DOMAIN]["http_registered"] = True
+        _LOGGER.info("AlleycatTV: proxy + websocket APIs registered")
+    except Exception as err:  # noqa: BLE001
+        _LOGGER.warning("AlleycatTV HTTP views failed to register: %s", err)
+
+
+async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
+    """Load from YAML: register proxy/WS and import the install-only config entry."""
+    _LOGGER.info("AlleycatTV: async_setup (yaml)")
+    _register_services(hass)
+    _register_panel_apis(hass)
+
+    # YAML ``alleycattv:`` alone does not create a config entry — import it
+    # (same pattern as Core Configurator) so presence/MQTT setup runs.
+    if DOMAIN in config and not hass.config_entries.async_entries(DOMAIN):
+        hass.async_create_task(
+            hass.config_entries.flow.async_init(
+                DOMAIN, context={"source": SOURCE_IMPORT}, data={}
+            )
+        )
+        _LOGGER.info("AlleycatTV: starting config-entry import from YAML")
+
+    return True
+
+
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     """Set up AlleycatTV: fabric presence, services, proxy, media_player."""
     store = Store(hass, STORAGE_VERSION, STORAGE_KEY)
@@ -172,6 +212,10 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             "add shared_libraries to manifest dependencies"
         )
         return False
+
+    # Panel APIs before MQTT so Content Manager / WS work while broker comes up.
+    _register_services(hass)
+    _register_panel_apis(hass)
 
     try:
         await async_ensure_mqtt(hass)
@@ -201,18 +245,6 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             qos=0,
         )
         hass.data[DOMAIN]["telemetry_sub"] = unsub
-
-    _register_services(hass)
-    _register_ws(hass)
-
-    if not hass.data[DOMAIN].get("http_registered"):
-        from .http import register_http_views
-
-        try:
-            register_http_views(hass)
-            hass.data[DOMAIN]["http_registered"] = True
-        except Exception as err:  # noqa: BLE001
-            _LOGGER.warning("AlleycatTV HTTP views failed to register: %s", err)
 
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
 
