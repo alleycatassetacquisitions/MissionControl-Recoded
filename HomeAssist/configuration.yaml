@@ -10,10 +10,12 @@
 #   custom_components/shared_libraries/   ← Libraries/Shared_HA_Helpers/HA_Component/custom_components/shared_libraries/
 #   custom_components/registration/       ← Apps/Registration/HA_Component/custom_components/registration/
 #   custom_components/digital_node_nexus/ ← Apps/Digital_Node_Nexus/HA_Component/custom_components/digital_node_nexus/
+#   custom_components/alleycattv/         ← Apps/AlleycatTV/HA_Component/custom_components/alleycattv/
 #   www/core_configurator/               ← Apps/Core_Configurator/HA_Component/www/core_configurator/
 #   www/shared_libraries/                ← Libraries/Shared_HA_Helpers/HA_Component/www/shared_libraries/
 #   www/registration/                    ← Apps/Registration/HA_Component/www/registration/
 #   www/digital_node_nexus/              ← Apps/Digital_Node_Nexus/HA_Component/www/digital_node_nexus/
+#   www/alleycattv/                      ← Apps/AlleycatTV/HA_Component/www/alleycattv/
 #
 # ─────────────────────────────────────────────────────────────────────────────
 # Core Configurator
@@ -69,3 +71,16 @@ panel_custom:
     sidebar_icon: mdi:access-point
     url_path: digital-node-nexus
     module_url: /local/digital_node_nexus/dnn-panel.js
+
+  # ─── AlleycatTV ───────────────────────────────────────────────────────────
+  - name: alleycattv-panel
+    sidebar_title: AlleycatTV
+    sidebar_icon: mdi:television-play
+    url_path: alleycattv
+    module_url: /local/alleycattv/alleycattv-panel.js
+
+  - name: alleycattv-content-panel
+    sidebar_title: AlleycatTV Content
+    sidebar_icon: mdi:folder-play
+    url_path: alleycattv-content
+    module_url: /local/alleycattv/alleycattv-content-panel.js

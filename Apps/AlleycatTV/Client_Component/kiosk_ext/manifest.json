@@ -1,0 +1,14 @@
+{
+  "manifest_version": 3,
+  "name": "AlleycatTV Kiosk UI",
+  "version": "1.0",
+  "description": "Hides mouse cursor and scrollbars on all pages for kiosk display.",
+  "content_scripts": [
+    {
+      "matches": ["<all_urls>"],
+      "js": ["content.js"],
+      "run_at": "document_start",
+      "all_frames": true
+    }
+  ]
+}

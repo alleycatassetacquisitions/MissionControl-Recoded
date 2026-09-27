@@ -56,3 +56,16 @@ AlleycatTV Pis use the `tv` topic namespace.
 
 
 The playback topic exists so a Pi that was powered off can still start in the right state. When it comes online, it should already be playing or stopped at the Broadcast Group's current volume.
+
+Command action segments under those wildcards (Phase 6 AlleycatTV):
+
+| Action | Topic suffix | Payload |
+| --- | --- | --- |
+| Play | `…/play` | JSON `{}` |
+| Stop | `…/stop` | JSON `{}` |
+| Interrupt | `…/interrupt` | JSON `{"file_url": "…"}` |
+| Reload | `…/reload` | JSON `{}` |
+| Volume | `…/volume` | JSON `{"volume": 0-100}` |
+| Cache | `…/cache_delete` etc. | JSON |
+
+Presence: plain `online` / `offline` (or empty LWT) on `mc/tv/status/{PI_ID}`. Optional playback telemetry on `mc/tv/status/{PI_ID}/json`.

@@ -240,3 +240,50 @@ ha core restart
 
 FDN / Pi firmware must use the **HA host LAN IP** (or a DNS name that resolves to it) and Mosquitto’s listener port (**1883** by default), with the same credentials as the add-on `logins` entry.
 
+### Phase 6 — AlleycatTV on the fabric
+
+TV Pis join the same MQTT fabric as FDNs. Home Assistant is the **only** command publisher. The content server stays on Proxmox and does **not** open an MQTT client.
+
+**Full deployment walkthrough (Proxmox LXC → HA → Pi SD flash):**  
+[`AlleycatTV Config Steps.md`](AlleycatTV%20Config%20Steps.md)
+
+#### 6a. Content server (Proxmox)
+
+On the Proxmox **node** shell:
+
+```bash
+ATV_SRC=/root/MissionControl/Apps/AlleycatTV/Server_Component \
+  bash /root/install-alleycattv-proxmox.sh
+```
+
+(Copy `Docs/install-alleycattv-proxmox.sh` to `/root/` first.) Confirm `curl http://<IP>/health` returns `"mqtt": false`, then set Core Configurator **alleycattv** to `http://<IP>`.
+
+#### 6b. Deploy AlleycatTV HA integration
+
+```powershell
+scp -r "z:\CodingProjects\Alleycat\MissionControl\Apps\AlleycatTV\HA_Component\custom_components\alleycattv" root@<HA-IP>:/config/custom_components/
+scp -r "z:\CodingProjects\Alleycat\MissionControl\Apps\AlleycatTV\HA_Component\www\alleycattv" root@<HA-IP>:/config/www/
+```
+
+Merge the AlleycatTV `panel_custom` blocks from [`HomeAssist/configuration.yaml`](../HomeAssist/configuration.yaml). Restart:
+
+```bash
+ha core restart
+```
+
+1. Settings → Devices & services → Add **AlleycatTV** (install-only). MQTT must already be ready (Phase 5a).
+2. Sidebar: **AlleycatTV** and **AlleycatTV Content**.
+3. Pis that publish `mc/tv/status/{pi_id}` appear as devices; playback commands use `alleycattv.play_broadcast_group` / `stop_broadcast_group`.
+
+#### 6c. Flash TV Pi SD cards (prep PC)
+
+```powershell
+cd z:\CodingProjects\Alleycat\MissionControl\Apps\AlleycatTV\Client_Component\distro
+py -3 flash.py --image path\to\raspios-lite-arm64.img
+```
+
+Enter content-server URL + Mosquitto host once. For each card: Pi ID → select drive (tool refuses system disks) → flash / inject `alleycattv.env` → eject → next card.  
+Do **not** flash Broadcast Group membership (Phase 7). Optional Wi‑Fi SSID/PSK is supported for headless join.
+
+Details + smoke test: [`AlleycatTV Config Steps.md`](AlleycatTV%20Config%20Steps.md) · App README: [`Apps/AlleycatTV/README.md`](../Apps/AlleycatTV/README.md)
+

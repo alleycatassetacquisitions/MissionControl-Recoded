@@ -181,8 +181,13 @@ Master Control Server is **not** under `/config/`. It runs on Proxmox LXC as `/o
 ### AlleycatTV
 
 Media distribution system for playing content on many displays during events.
+Phase 6: HA integration on the MQTT fabric (`mc/tv`), Proxmox content server
+(no MQTT), Pi client, and PC SD distro tool.
 
-**Path:** `Apps\AlleycatTV\`
+**Path:** `Apps\AlleycatTV\`  
+**On HA:** `/config/custom_components/alleycattv/` + `/config/www/alleycattv/`  
+**App README:** [`Apps/AlleycatTV/README.md`](../Apps/AlleycatTV/README.md)  
+**Deploy:** [`Docs/AlleycatTV Config Steps.md`](AlleycatTV%20Config%20Steps.md) · [`Docs/install-alleycattv-proxmox.sh`](install-alleycattv-proxmox.sh)
 
 ### Bug Buster
 
@@ -281,6 +286,8 @@ Standing law:
 - `install-haos-proxmox.sh` — one-shot Proxmox host script that downloads the official HAOS KVM image and creates the Home Assistant VM
 - `Master Control Server Config Steps.md` — Proxmox LXC bootstrap for Master Control Server
 - `install-mcs-proxmox.sh` — one-shot Proxmox host script that creates an Ubuntu 24.04 LXC, installs MCS, and prints URL + token for Core Configurator
+- `AlleycatTV Config Steps.md` — Proxmox content server + HA integration + Pi SD flash (Phase 6)
+- `install-alleycattv-proxmox.sh` — one-shot Proxmox host script that creates the AlleycatTV content LXC (no MQTT) and prints the Core Configurator URL
 
 Companion services on Proxmox follow the same pattern going forward: `install-<app>-proxmox.sh` plus a matching `* Config Steps.md`. The MQTT broker is an exception — use the official **Mosquitto** Home Assistant add-on (see Phase 5a in `Home Assistant Config Steps.md`), not a Proxmox Mosquitto LXC.
 

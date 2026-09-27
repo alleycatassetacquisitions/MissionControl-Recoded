@@ -1,0 +1,36 @@
+[Unit]
+Description=AlleycatTV kiosk compositor (labwc)
+Documentation=file:///opt/alleycattv/kiosk
+Conflicts=getty@tty1.service
+After=systemd-user-sessions.service
+# Lite has no desktop; start on the console VT so HDMI has a Wayland seat.
+
+[Service]
+Type=simple
+User=__USER__
+Group=video
+SupplementaryGroups=input render tty
+PAMName=login
+TTYPath=/dev/tty1
+TTYReset=yes
+TTYVHangup=yes
+StandardInput=tty
+StandardOutput=journal
+StandardError=journal
+UtmpIdentifier=tty1
+UtmpMode=user
+WorkingDirectory=__HOME__
+Environment=HOME=__HOME__
+Environment=XDG_RUNTIME_DIR=/run/user/__UID__
+Environment=XDG_SESSION_TYPE=wayland
+Environment=XDG_CURRENT_DESKTOP=labwc
+Environment=WLR_NO_HARDWARE_CURSORS=1
+ExecStartPre=/bin/mkdir -p /run/user/__UID__
+ExecStartPre=/bin/chown __USER__:__USER__ /run/user/__UID__
+ExecStartPre=/bin/chmod 700 /run/user/__UID__
+ExecStart=/usr/bin/dbus-run-session -- /usr/bin/labwc -C /opt/alleycattv/kiosk/labwc
+Restart=on-failure
+RestartSec=2
+
+[Install]
+WantedBy=multi-user.target

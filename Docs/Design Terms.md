@@ -63,13 +63,14 @@ The Mission Control dashboard for sending messages to FDNs and gathering informa
 
 ### AlleycatTV (ATV)
 
-The media player app used to play content across the event.
+The media player app used to play content across the event. Phase 6: HA integration on the `mc/tv` fabric; content files on Proxmox; Pis subscribe to HA-published commands only.
 
-- **Communication:** MQTT, Protobuf, HTTP
+- **Communication:** MQTT (HA ↔ Pi), HTTP (HA ↔ content server)
 - **Language:** Python
 - **Key tools and formats:** MPV, JSON, IPC
 - **Used for:** premade content, scoreboards, and RTSP streams to displays around the event
 - **Code:** `alleycattv`
+- **Deploy:** `Docs/AlleycatTV Config Steps.md`
 
 ### GBN — Galactic Bounty Network
 

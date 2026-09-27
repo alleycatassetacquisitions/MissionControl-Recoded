@@ -1,0 +1,138 @@
+play_broadcast_group:
+  name: Play Broadcast Group
+  description: Resume playlist playback on all Pis in a Broadcast Group.
+  fields:
+    broadcast_group_id:
+      name: Broadcast Group ID
+      required: true
+      selector:
+        text:
+
+stop_broadcast_group:
+  name: Stop Broadcast Group
+  description: Stop playback on all Pis in a Broadcast Group.
+  fields:
+    broadcast_group_id:
+      name: Broadcast Group ID
+      required: true
+      selector:
+        text:
+
+interrupt_broadcast_group:
+  name: Interrupt Broadcast Group
+  description: >
+    Play an announcement on all Pis in a Broadcast Group, then resume the playlist.
+  fields:
+    broadcast_group_id:
+      name: Broadcast Group ID
+      required: true
+      selector:
+        text:
+    file_url:
+      name: Announcement URL
+      required: true
+      selector:
+        text:
+
+interrupt_pi:
+  name: Interrupt Pi
+  description: Play an announcement on a single Pi, then resume its playlist.
+  fields:
+    pi_id:
+      name: Pi ID
+      required: true
+      selector:
+        text:
+    file_url:
+      name: Announcement URL
+      required: true
+      selector:
+        text:
+
+reload_playlist:
+  name: Reload Playlist
+  description: Tell Pis in a Broadcast Group to re-fetch their playlist.
+  fields:
+    broadcast_group_id:
+      name: Broadcast Group ID
+      required: true
+      selector:
+        text:
+
+set_volume_broadcast_group:
+  name: Set Volume (Broadcast Group)
+  description: Set playback volume on all Pis in a Broadcast Group (0–100).
+  fields:
+    broadcast_group_id:
+      name: Broadcast Group ID
+      required: true
+      selector:
+        text:
+    volume:
+      name: Volume
+      required: true
+      default: 80
+      selector:
+        number:
+          min: 0
+          max: 100
+          unit_of_measurement: "%"
+
+set_placement:
+  name: Set Placement
+  description: Assign this Pi to a Home Assistant Area (physical room). Broadcast Group membership is Phase 7.
+  fields:
+    pi_id:
+      name: Pi ID
+      required: true
+      selector:
+        text:
+    area_id:
+      name: Area ID
+      required: false
+      selector:
+        text:
+
+cache_delete:
+  name: Cache Delete
+  description: Tell a Pi to delete one cached media file (MQTT JSON command).
+  fields:
+    pi_id:
+      name: Pi ID
+      required: true
+      selector:
+        text:
+    subdir:
+      name: Subdir
+      required: true
+      selector:
+        select:
+          options:
+            - videos
+            - photos
+            - announcements
+    filename:
+      name: Filename
+      required: true
+      selector:
+        text:
+
+cache_purge:
+  name: Cache Purge
+  description: Tell a Pi to wipe its local media cache.
+  fields:
+    pi_id:
+      name: Pi ID
+      required: true
+      selector:
+        text:
+
+cache_sync:
+  name: Cache Sync
+  description: Tell a Pi to re-sync its local media cache from the content server.
+  fields:
+    pi_id:
+      name: Pi ID
+      required: true
+      selector:
+        text:

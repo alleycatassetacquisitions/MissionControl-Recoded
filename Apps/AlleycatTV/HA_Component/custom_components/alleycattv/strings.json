@@ -1,0 +1,13 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "AlleycatTV",
+        "description": "Adds AlleycatTV TV Pi presence, media players, and Content Manager proxy. Configure MQTT in Home Assistant and the AlleycatTV content server URL in Core Configurator first."
+      }
+    },
+    "abort": {
+      "single_instance_allowed": "Only one AlleycatTV integration is allowed."
+    }
+  }
+}
