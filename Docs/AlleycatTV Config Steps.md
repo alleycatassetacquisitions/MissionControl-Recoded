@@ -135,7 +135,7 @@ Topics: `mc/tv/…` — see [`MQTT Communication Principles.md`](MQTT%20Communic
 
 ## D. Flash TV Pi SD cards (prep PC)
 
-Operators run the distro CLI on a Windows (or Linux) prep PC. Do **not** flash Broadcast Group membership (Phase 7).
+Operators run the distro CLI on a Windows (or Linux) prep PC. Do **not** flash Broadcast Group membership — assign it in the **Broadcast Groups** panel after the Pi appears.
 
 A successful flash is **plug-and-play**: after first boot the Pi joins Wi‑Fi (preferred over Ethernet), creates the Pi OS user, enables SSH password login, installs the AlleycatTV player from a bootfs bundle, and publishes MQTT presence so **Endpoint** chips appear in the AlleycatTV panel.
 
@@ -250,17 +250,13 @@ Empty playlist / “Zone playlist has no playable items” is normal until Part 
 ## E. Smoke test
 
 1. Confirm the Pi chip is online in the **AlleycatTV** panel (Part D). Playlist warnings alone are OK at this stage.
-2. Content: upload a short video via **AlleycatTV Content** or `/manage`; create a broadcast group + playlist id (e.g. `lobby`).
-3. Temporarily set membership on the Pi until Phase 7 owns it:
-
-```bash
-sudo sed -i 's/^ALLEYCATV_BROADCAST_GROUP_ID=.*/ALLEYCATV_BROADCAST_GROUP_ID=lobby/' /etc/alleycattv.env
-sudo systemctl restart alleycattv-player
-```
-
-4. From HA: call `alleycattv.play_broadcast_group` with `broadcast_group_id: lobby`.
-5. Pi plays; `media_player` / status JSON updates.
+2. Content: upload a short video via **AlleycatTV Content**; create a broadcast group playlist id (e.g. `lobby`).
+3. In the **Broadcast Groups** panel (Broadcast Group Controller): set the Pi’s Area, then assign Broadcast Group `lobby`. The Pi learns membership over MQTT (`mc/tv/cmd/device/{pi_id}/membership`) and resubscribes — do **not** flash membership on the SD card.
+4. From HA / AlleycatTV Player panel: Play group `lobby` (or call `alleycattv.play_broadcast_group`).
+5. Pi plays; `media_player` / status JSON shows `broadcast_group_id: lobby`.
 6. Call `stop_broadcast_group` — playback stops; retained desired topic updates.
+
+Lab-only override (optional): set `ALLEYCATV_BROADCAST_GROUP_ID` in `/etc/alleycattv.env` and restart `alleycattv-player`. Prefer BGC assign for venue ops.
 
 ---
 
@@ -271,7 +267,7 @@ sudo systemctl restart alleycattv-player
 | HA `alleycattv` | MQTT commands, presence via fabric, Content Manager proxy |
 | Proxmox content server | Files + playlists only |
 | Pi client | mpv + subscribe `mc/tv/cmd/…` |
-| Broadcast Group Controller | Membership + area placement — **Phase 7** |
+| Broadcast Group Controller | Membership + area placement |
 
 App overview: [`Apps/AlleycatTV/README.md`](../Apps/AlleycatTV/README.md)  
 HA phase slice: [`Home Assistant Config Steps.md` — Phase 6](Home%20Assistant%20Config%20Steps.md#phase-6--alleycattv-on-the-fabric)

@@ -240,9 +240,10 @@ Talks to Meru, our local LLM agent. Meru is a story component in the overall eve
 
 ### Broadcast Group Controller
 
-Controls Broadcast Group membership and writes Home Assistant Areas for physical placement. Documented, not built. In code this is `broadcast_group_controller`.
+Controls Broadcast Group membership and writes Home Assistant Areas for physical placement. In code this is `broadcast_group_controller`. Membership SoR is BGC Store (not HA Labels); devices learn group over MQTT.
 
 **Path:** `Apps\Broadcast_Group_Controller\`
+**On HA:** `/config/custom_components/broadcast_group_controller/` + `/config/www/broadcast_group_controller/`
 
 ## Other top-level folders
 

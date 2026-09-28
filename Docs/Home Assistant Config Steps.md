@@ -304,7 +304,25 @@ Venue flash prompts (must match Phase 5a Mosquitto `logins`):
 
 Confirm inject lands on `bootfs` (e.g. `D:\`), not a Temp folder. First boot installs the player; AlleycatTV panel chips appear when `mc/tv/status/{pi_id}` is published (MQTT `rc=5` means bad/missing Mosquitto login).
 
-Do **not** flash Broadcast Group membership (Phase 7).
+Do **not** flash Broadcast Group membership — assign it in the **Broadcast Groups** panel after the Pi appears.
 
 Full procedure + troubleshooting: [`AlleycatTV Config Steps.md` § D](AlleycatTV%20Config%20Steps.md#d-flash-tv-pi-sd-cards-prep-pc) · App README: [`Apps/AlleycatTV/README.md`](../Apps/AlleycatTV/README.md)
+
+### Phase 7 — Broadcast Group Controller
+
+One placement service for the venue. Physical = HA Area. Membership = Broadcast Group (not Labels — see app README).
+
+```powershell
+scp -r "z:\CodingProjects\Alleycat\MissionControl\Apps\Broadcast_Group_Controller\HA_Component\custom_components\broadcast_group_controller" root@<HA-IP>:/config/custom_components/
+scp -r "z:\CodingProjects\Alleycat\MissionControl\Apps\Broadcast_Group_Controller\HA_Component\www\broadcast_group_controller" root@<HA-IP>:/config/www/
+```
+
+Merge from [`HomeAssist/configuration.yaml`](../HomeAssist/configuration.yaml): `broadcast_group_controller: {}` and the Broadcast Groups `panel_custom` entry. Redeploy AlleycatTV panels/www if you have not already (full Content + Player panels). Restart HA.
+
+1. Settings → Devices & services → Add **Broadcast Group Controller**.
+2. Sidebar **Broadcast Groups**: select a TV Pi or FDN → Set area → Set broadcast group (e.g. `lobby`).
+3. Pi receives `mc/tv/cmd/device/{id}/membership` and resubscribes to `cmd/broadcast/lobby/#`.
+4. AlleycatTV Content owns playlist buckets for that id; Player panel owns play/stop/interrupt.
+
+App README: [`Apps/Broadcast_Group_Controller/README.md`](../Apps/Broadcast_Group_Controller/README.md)
 

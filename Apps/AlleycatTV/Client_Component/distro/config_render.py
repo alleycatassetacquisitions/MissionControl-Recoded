@@ -74,7 +74,7 @@ class UnitConfig:
     os_user: str = "alleycat"
     os_password: str = "alleycat"
     os_password_hash: str = ""
-    # Not membership — optional playlist key only; prefer blank until Phase 7.
+    # Not membership — optional playlist key only; prefer blank (BGC assigns over MQTT).
     broadcast_group_id: str = ""
 
     def env_file(self) -> str:

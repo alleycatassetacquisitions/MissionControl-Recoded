@@ -80,7 +80,10 @@ set_volume_broadcast_group:
 
 set_placement:
   name: Set Placement
-  description: Assign this Pi to a Home Assistant Area (physical room). Broadcast Group membership is Phase 7.
+  description: >
+    Assign this Pi to a Home Assistant Area (physical room). Forwards to
+    Broadcast Group Controller when installed. Broadcast Group membership is
+    owned by broadcast_group_controller.set_broadcast_group.
   fields:
     pi_id:
       name: Pi ID

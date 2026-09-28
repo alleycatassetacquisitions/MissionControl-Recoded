@@ -114,25 +114,25 @@
     <div class="announce-list" id="announce-list"><p style="color:#555;font-size:13px">Loadingâ€¦</p></div>
   </div>
 
-  <p class="section-title">Zones</p>
-  <p class="section-hint">Drop videos and photos onto a zone to add them to its playlist. Drag items to reorder. Photos play randomly every N videos.</p>
+  <p class="section-title">Broadcast groups</p>
+  <p class="section-hint">Drop videos and photos onto a broadcast group to add them to its playlist. Drag items to reorder. Photos play randomly every N videos.</p>
   <div id="zones">
-    <div id="add-zone-card"><div class="plus">+</div><span>Create new zone</span></div>
+    <div id="add-zone-card"><div class="plus">+</div><span>Create broadcast group</span></div>
   </div>
   <div id="new-zone-form">
-    <label>Zone ID <small style="color:#555">(e.g. zone-lobby)</small></label>
-    <input id="nz-id" type="text" placeholder="zone-lobby" />
+    <label>Broadcast Group ID <small style="color:#555">(e.g. lobby)</small></label>
+    <input id="nz-id" type="text" placeholder="lobby" />
     <label>Display name</label>
     <input id="nz-name" type="text" placeholder="Lobby Screens" />
     <div class="form-buttons">
-      <button class="btn btn-primary" onclick="submitNewZone()">Create Zone</button>
+      <button class="btn btn-primary" onclick="submitNewZone()">Create</button>
       <button class="btn btn-ghost" onclick="cancelNewZone()">Cancel</button>
     </div>
   </div>
 
   <hr class="divider" />
   <p class="section-title">Content Library</p>
-  <p class="section-hint">Drag a video or photo onto a zone card to add it to that playlist. Deleting here also removes the file from any zone playlists that use it.</p>
+  <p class="section-hint">Drag a video or photo onto a broadcast group card to add it to that playlist. Deleting here also removes the file from any playlists that use it.</p>
   <div id="library"><p style="color:#555;font-size:13px">Loadingâ€¦</p></div>
 </main>
 <div id="confirm-backdrop" hidden>

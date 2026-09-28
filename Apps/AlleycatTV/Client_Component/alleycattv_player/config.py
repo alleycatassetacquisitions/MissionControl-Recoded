@@ -1,11 +1,11 @@
 """AlleycatTV Pi player configuration.
 
 Per-device: PI_ID, SERVER_URL, MQTT (HAOS Mosquitto).
-Optional BROADCAST_GROUP_ID selects the content-server playlist key and the
-cmd/broadcast/{id} subscription until Broadcast Group Controller (Phase 7)
-assigns membership over MQTT.
+Optional env BROADCAST_GROUP_ID is bootstrap only. Broadcast Group Controller
+assigns live membership over MQTT (mc/tv/cmd/device/{id}/membership).
 """
 import os
+from typing import Optional
 
 # -- Per-device identity ------------------------------------------------------
 PI_ID = os.getenv("ALLEYCATV_PI_ID", "pi-01")
@@ -13,6 +13,24 @@ BROADCAST_GROUP_ID = os.getenv(
     "ALLEYCATV_BROADCAST_GROUP_ID",
     os.getenv("ALLEYCATV_ZONE_ID", ""),  # legacy env alias
 )
+
+# Runtime override from BGC membership assign (None = use env bootstrap).
+_runtime_broadcast_group_id: Optional[str] = None
+
+
+def get_broadcast_group_id() -> str:
+    """Return the active Broadcast Group id (BGC assign wins over env)."""
+    if _runtime_broadcast_group_id is not None:
+        return _runtime_broadcast_group_id
+    return (BROADCAST_GROUP_ID or "").strip()
+
+
+def set_broadcast_group_id(group_id: str | None) -> str:
+    """Apply BGC membership; empty string clears. Returns the new id."""
+    global _runtime_broadcast_group_id, ZONE_ID
+    _runtime_broadcast_group_id = (group_id or "").strip()
+    ZONE_ID = _runtime_broadcast_group_id
+    return _runtime_broadcast_group_id
 
 # -- Network ------------------------------------------------------------------
 SERVER_URL = os.getenv(

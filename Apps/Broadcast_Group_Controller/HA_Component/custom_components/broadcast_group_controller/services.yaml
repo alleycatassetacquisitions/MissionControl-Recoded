@@ -1,0 +1,72 @@
+set_area:
+  name: Set Area
+  description: Assign a fabric device to a Home Assistant Area (physical placement).
+  fields:
+    kind:
+      name: Kind
+      description: Fabric kind — tv or dnn.
+      required: true
+      example: "tv"
+      selector:
+        select:
+          options:
+            - "tv"
+            - "dnn"
+    device_id:
+      name: Device ID
+      description: Pi id or FDN id (e.g. pi-lobby-1).
+      required: true
+      selector:
+        text:
+    area_id:
+      name: Area ID
+      description: Home Assistant area_id (empty to clear).
+      required: false
+      selector:
+        text:
+
+set_broadcast_group:
+  name: Set Broadcast Group
+  description: >
+    Assign Broadcast Group membership, write it to BGC storage, and publish
+    mc/{kind}/cmd/device/{id}/membership so the device resubscribes.
+  fields:
+    kind:
+      name: Kind
+      required: true
+      example: "tv"
+      selector:
+        select:
+          options:
+            - "tv"
+            - "dnn"
+    device_id:
+      name: Device ID
+      required: true
+      selector:
+        text:
+    broadcast_group_id:
+      name: Broadcast Group ID
+      description: Membership id (e.g. lobby). Empty clears membership.
+      required: false
+      example: "lobby"
+      selector:
+        text:
+
+clear_broadcast_group:
+  name: Clear Broadcast Group
+  description: Remove Broadcast Group membership and notify the device over MQTT.
+  fields:
+    kind:
+      name: Kind
+      required: true
+      selector:
+        select:
+          options:
+            - "tv"
+            - "dnn"
+    device_id:
+      name: Device ID
+      required: true
+      selector:
+        text:

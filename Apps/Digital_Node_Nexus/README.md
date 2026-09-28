@@ -35,7 +35,18 @@ DNN never talks to Central Server. Registration owns player writes. DNN never op
 
 - `device_id` → one FDN  
 - `target: all` → every FDN  
-- `broadcast_group_id` → Broadcast Group topic (membership is Phase 7)  
+- `broadcast_group_id` → Broadcast Group topic (membership owned by **Broadcast Group Controller**)
+
+**Membership assign (Phase 7):** BGC publishes
+
+```
+mc/dnn/cmd/device/{device_id}/membership
+{"broadcast_group_id": "lobby" | null}
+```
+
+FDN firmware must resubscribe to `mc/dnn/cmd/broadcast/{id}/#` when this arrives.
+Placement and membership are set in the Broadcast Groups sidebar — not in DNN.
+
 - `player_id` / `role` / `neocorp` → stamped into the payload; routes via `cmd/all` when no device/broadcast is set  
 
 Payload schema: [`docs/dnn_commands.proto`](docs/dnn_commands.proto) (HA publishes UTF-8 JSON with the same field names).

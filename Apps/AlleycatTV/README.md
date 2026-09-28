@@ -42,6 +42,10 @@ Home Assistant is the **only** MQTT command publisher.
 | `set_volume_broadcast_group` | `cmd/broadcast/{id}/volume` |
 | `cache_*` | `cmd/device/{pi_id}/cache_*` |
 
+**Panels:** AlleycatTV (live control) + AlleycatTV Content (full library/playlists via HA proxy). Placement and Broadcast Group membership: **Broadcast Group Controller**.
+
+**Membership:** Pis learn `broadcast_group_id` from `mc/tv/cmd/device/{id}/membership` (Phase 7). Env `ALLEYCATV_BROADCAST_GROUP_ID` is lab bootstrap only.
+
 ---
 
 ## Quick deploy pointers

@@ -11,7 +11,12 @@ import urllib.request
 import urllib.parse
 
 from config import (
-    SERVER_URL, ZONE_ID, PHOTO_INTERVAL, PHOTO_DURATION, MEDIA_BASE_URL, CACHE_ENABLED
+    SERVER_URL,
+    PHOTO_INTERVAL,
+    PHOTO_DURATION,
+    MEDIA_BASE_URL,
+    CACHE_ENABLED,
+    get_broadcast_group_id,
 )
 
 _LOGGER = logging.getLogger(__name__)
@@ -143,7 +148,11 @@ class PlaylistManager:
 
     def fetch_playlist(self) -> bool:
         """Fetch/refresh the zone playlist from the server.  Returns True on success."""
-        url = f"{SERVER_URL}/api/playlists/{urllib.parse.quote(ZONE_ID, safe='')}"
+        zone_id = get_broadcast_group_id()
+        if not zone_id:
+            _LOGGER.warning("No Broadcast Group assigned — playlist fetch skipped")
+            return
+        url = f"{SERVER_URL}/api/playlists/{urllib.parse.quote(zone_id, safe='')}"
         try:
             with urllib.request.urlopen(url, timeout=10) as resp:
                 data = json.loads(resp.read())
@@ -214,7 +223,10 @@ class PlaylistManager:
             photo_pool = []
 
         if not loop_items:
-            _LOGGER.warning("Zone %s playlist has no playable items", ZONE_ID)
+            _LOGGER.warning(
+                "Broadcast Group %s playlist has no playable items",
+                get_broadcast_group_id() or "(none)",
+            )
             return False
 
         self._loop_items = loop_items

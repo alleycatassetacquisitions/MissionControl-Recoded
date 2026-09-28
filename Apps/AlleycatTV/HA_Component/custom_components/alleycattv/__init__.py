@@ -301,6 +301,10 @@ def _make_status_json_handler(hass: HomeAssistant):
             }
             async_dispatcher_send(hass, SIGNAL_NEW_DEVICE, pi_id)
             async_dispatcher_send(hass, SIGNAL_UPDATE, pi_id)
+            hass.bus.async_fire(
+                "alleycattv_device_update",
+                dict(hass.data[DOMAIN]["devices"][pi_id]),
+            )
         except Exception as err:  # noqa: BLE001
             _LOGGER.debug("AlleycatTV status json parse failed: %s", err)
 
@@ -346,7 +350,18 @@ def _register_services(hass: HomeAssistant) -> None:
         )
 
     async def handle_set_placement(call: ServiceCall) -> None:
-        await _set_placement(hass, call.data["pi_id"], call.data.get("area_id"))
+        """Forward to Broadcast Group Controller when available; else local area write."""
+        pi_id = call.data["pi_id"]
+        area_id = call.data.get("area_id") or ""
+        if hass.services.has_service("broadcast_group_controller", "set_area"):
+            await hass.services.async_call(
+                "broadcast_group_controller",
+                "set_area",
+                {"kind": "tv", "device_id": pi_id, "area_id": area_id},
+                blocking=True,
+            )
+            return
+        await _set_placement(hass, pi_id, area_id)
 
     async def handle_cache_delete(call: ServiceCall) -> None:
         segments = resolve_cmd_segments(pi_id=call.data["pi_id"])
@@ -409,15 +424,22 @@ async def ws_get_devices(hass: HomeAssistant, connection, msg) -> None:
     # Merge playback telemetry when present.
     telemetry = hass.data.get(DOMAIN, {}).get("devices", {})
     meta = hass.data.get(DOMAIN, {}).get("device_meta", {})
+    bgc_mem = hass.data.get("broadcast_group_controller", {}).get("membership", {})
     out = []
     for d in devices:
         item = dict(d)
         pi_id = item.get("device_id") or ""
         tel = telemetry.get(pi_id, {})
-        item["broadcast_group_id"] = tel.get("broadcast_group_id") or ""
+        bgc = bgc_mem.get(f"tv:{pi_id}", {})
+        item["broadcast_group_id"] = (
+            bgc.get("broadcast_group_id")
+            or tel.get("broadcast_group_id")
+            or ""
+        )
         item["state"] = tel.get("state") or ""
         item["current_file"] = tel.get("current_file") or ""
-        item["area_id"] = meta.get(pi_id, {}).get("area_id", "")
+        item["next_file"] = tel.get("next_file") or ""
+        item["area_id"] = bgc.get("area_id") or meta.get(pi_id, {}).get("area_id", "")
         out.append(item)
     connection.send_result(msg["id"], {"devices": out})
 
@@ -439,7 +461,17 @@ async def ws_list_areas(hass: HomeAssistant, connection, msg) -> None:
 )
 @websocket_api.async_response
 async def ws_set_placement(hass: HomeAssistant, connection, msg) -> None:
-    await _set_placement(hass, msg["pi_id"], msg.get("area_id"))
+    pi_id = msg["pi_id"]
+    area_id = msg.get("area_id") or ""
+    if hass.services.has_service("broadcast_group_controller", "set_area"):
+        await hass.services.async_call(
+            "broadcast_group_controller",
+            "set_area",
+            {"kind": "tv", "device_id": pi_id, "area_id": area_id},
+            blocking=True,
+        )
+    else:
+        await _set_placement(hass, pi_id, area_id)
     connection.send_result(msg["id"], {"ok": True})
 
 

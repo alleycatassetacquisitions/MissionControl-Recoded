@@ -11,11 +11,13 @@
 #   custom_components/registration/       ← Apps/Registration/HA_Component/custom_components/registration/
 #   custom_components/digital_node_nexus/ ← Apps/Digital_Node_Nexus/HA_Component/custom_components/digital_node_nexus/
 #   custom_components/alleycattv/         ← Apps/AlleycatTV/HA_Component/custom_components/alleycattv/
+#   custom_components/broadcast_group_controller/ ← Apps/Broadcast_Group_Controller/HA_Component/custom_components/broadcast_group_controller/
 #   www/core_configurator/               ← Apps/Core_Configurator/HA_Component/www/core_configurator/
 #   www/shared_libraries/                ← Libraries/Shared_HA_Helpers/HA_Component/www/shared_libraries/
 #   www/registration/                    ← Apps/Registration/HA_Component/www/registration/
 #   www/digital_node_nexus/              ← Apps/Digital_Node_Nexus/HA_Component/www/digital_node_nexus/
 #   www/alleycattv/                      ← Apps/AlleycatTV/HA_Component/www/alleycattv/
+#   www/broadcast_group_controller/      ← Apps/Broadcast_Group_Controller/HA_Component/www/broadcast_group_controller/
 #
 # ─────────────────────────────────────────────────────────────────────────────
 # Core Configurator
@@ -42,10 +44,11 @@ core_configurator:
   proxmox: !secret cc_proxmox
   proxmox_node: !secret cc_proxmox_node
 
-# Loads the AlleycatTV custom component (proxy + WS) on HA start.
-# Must be `{}` — a bare `alleycattv:` is YAML null and will not set up the integration.
-# Also creates the install-only config entry on first boot (MQTT presence / media_player).
+# Loads AlleycatTV (proxy + WS). Must be `{}` — bare `alleycattv:` is YAML null.
 alleycattv: {}
+
+# Loads Broadcast Group Controller (placement + membership).
+broadcast_group_controller: {}
 
 frontend:
   extra_module_url:
@@ -89,3 +92,10 @@ panel_custom:
     sidebar_icon: mdi:folder-play
     url_path: alleycattv-content
     module_url: /local/alleycattv/alleycattv-content-panel.js
+
+  # ─── Broadcast Group Controller ───────────────────────────────────────────
+  - name: broadcast-group-controller-panel
+    sidebar_title: Broadcast Groups
+    sidebar_icon: mdi:broadcast
+    url_path: broadcast-groups
+    module_url: /local/broadcast_group_controller/bgc-panel.js
