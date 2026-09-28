@@ -1,0 +1,6 @@
+[tool.pytest.ini_options]
+# Run pytest from Apps/Bug_Buster/HA_Component/
+# custom_components/ is a direct child, so it is importable.
+testpaths = ["tests"]
+pythonpath = ["."]
+asyncio_mode = "auto"

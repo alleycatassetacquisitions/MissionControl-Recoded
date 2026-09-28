@@ -17,20 +17,21 @@ from custom_components.bug_buster.proxmox import (
 
 
 class TestProxmoxHelpers:
-    def test_normalize_adds_https_and_port(self):
+    # Async so pytest 9 can apply HA's async autouse fixtures (enable_event_loop_debug).
+    async def test_normalize_adds_https_and_port(self):
         assert normalize_proxmox_url("192.168.1.1") == "https://192.168.1.1:8006"
 
-    def test_normalize_preserves_full_url(self):
+    async def test_normalize_preserves_full_url(self):
         assert normalize_proxmox_url("https://pve.local:8006") == "https://pve.local:8006"
 
-    def test_error_kind_auth(self):
+    async def test_error_kind_auth(self):
         assert error_kind("HTTP 401") == "auth"
         assert error_kind("API token missing") == "auth"
 
-    def test_error_kind_connect(self):
+    async def test_error_kind_connect(self):
         assert error_kind("Connection timeout") == "connect"
 
-    def test_token_ready_requires_bang(self):
+    async def test_token_ready_requires_bang(self):
         client = ProxmoxClient(
             MagicMock(), "https://192.168.1.1:8006", "hass", "secret", verify_ssl=False
         )
@@ -38,7 +39,7 @@ class TestProxmoxHelpers:
         client.set_token("hass@pve!mc", "uuid-secret")
         assert client.token_ready is True
 
-    def test_snapshot_from_resource(self):
+    async def test_snapshot_from_resource(self):
         client = ProxmoxClient(
             MagicMock(),
             "https://192.168.1.1:8006",
@@ -56,13 +57,13 @@ class TestProxmoxHelpers:
 
 
 class TestMqttPreview:
-    def test_json_payload(self):
+    async def test_json_payload(self):
         raw = b'{"a": 1}'
         preview = preview_payload(raw)
         assert preview["kind"] == "json"
         assert '"a"' in preview["text"]
 
-    def test_binary_payload(self):
+    async def test_binary_payload(self):
         preview = preview_payload(bytes(range(32)))
         assert preview["kind"] == "binary"
 
