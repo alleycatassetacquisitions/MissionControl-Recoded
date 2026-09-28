@@ -119,6 +119,11 @@ MissionControl\
 │   ├── configuration.yaml
 │   ├── secrets.yaml.example
 │   └── themes\
+├── ProxmoxInstallFiles\               ← one-shot host scripts (copy to Proxmox /root/)
+│   ├── install-haos-proxmox.sh
+│   ├── install-mcs-proxmox.sh
+│   ├── install-alleycattv-proxmox.sh
+│   └── install-gbn-proxmox.sh
 └── Docs\
 ```
 
@@ -187,7 +192,7 @@ Phase 6: HA integration on the MQTT fabric (`mc/tv`), Proxmox content server
 **Path:** `Apps\AlleycatTV\`  
 **On HA:** `/config/custom_components/alleycattv/` + `/config/www/alleycattv/`  
 **App README:** [`Apps/AlleycatTV/README.md`](../Apps/AlleycatTV/README.md)  
-**Deploy:** [`Docs/AlleycatTV Config Steps.md`](AlleycatTV%20Config%20Steps.md) · [`Docs/install-alleycattv-proxmox.sh`](install-alleycattv-proxmox.sh)
+**Deploy:** [`Docs/AlleycatTV Config Steps.md`](AlleycatTV%20Config%20Steps.md) · [`ProxmoxInstallFiles/install-alleycattv-proxmox.sh`](../ProxmoxInstallFiles/install-alleycattv-proxmox.sh)
 
 ### Bug Buster
 
@@ -220,7 +225,7 @@ Manages bounty posters, bounty boards, and poster capture. In code this is `gbn`
 **Path:** `Apps\Galactic_Bounty_Network\`  
 **On HA:** `/config/custom_components/gbn/` + `/config/www/gbn/`  
 **App README:** [`Apps/Galactic_Bounty_Network/README.md`](../Apps/Galactic_Bounty_Network/README.md)  
-**Deploy:** [`Docs/GBN Config Steps.md`](GBN%20Config%20Steps.md) · [`Docs/install-gbn-proxmox.sh`](install-gbn-proxmox.sh)
+**Deploy:** [`Docs/GBN Config Steps.md`](GBN%20Config%20Steps.md) · [`ProxmoxInstallFiles/install-gbn-proxmox.sh`](../ProxmoxInstallFiles/install-gbn-proxmox.sh)
 
 ### Registration
 
@@ -290,14 +295,24 @@ Standing law:
 - `MQTT Communication Principles.md` — topics and MQTT ownership
 - `File Structure.md` — this file (repo **and** HA/LXC layouts)
 - `Home Assistant Config Steps.md` — Proxmox VM bootstrap + deploying files onto HA
-- `install-haos-proxmox.sh` — one-shot Proxmox host script that downloads the official HAOS KVM image and creates the Home Assistant VM
 - `Master Control Server Config Steps.md` — Proxmox LXC bootstrap for Master Control Server
-- `install-mcs-proxmox.sh` — one-shot Proxmox host script that creates an Ubuntu 24.04 LXC, installs MCS, and prints URL + token for Core Configurator
 - `AlleycatTV Config Steps.md` — Proxmox content server + HA integration + Pi SD flash (Phase 6)
-- `install-alleycattv-proxmox.sh` — one-shot Proxmox host script that creates the AlleycatTV content LXC (no MQTT) and prints the Core Configurator URL
+- `GBN Config Steps.md` — Proxmox poster server + HA integration
+- `Bug Buster Config Steps.md` — Proxmox monitoring companion on HA
 
-Companion services on Proxmox follow the same pattern going forward: `install-<app>-proxmox.sh` plus a matching `* Config Steps.md`. The MQTT broker is an exception — use the official **Mosquitto** Home Assistant add-on (see Phase 5a in `Home Assistant Config Steps.md`), not a Proxmox Mosquitto LXC.
+**Path:** `Docs\`
+
+### ProxmoxInstallFiles
+
+One-shot scripts run on the **Proxmox node** shell (copy to `/root/` first). Config Steps stay in `Docs\`; these scripts only create VMs/LXCs.
+
+- `install-haos-proxmox.sh` — downloads the official HAOS KVM image and creates the Home Assistant VM
+- `install-mcs-proxmox.sh` — Ubuntu 24.04 LXC for Master Control Server; prints URL + token for Core Configurator
+- `install-alleycattv-proxmox.sh` — AlleycatTV content LXC (no MQTT); prints the Core Configurator URL
+- `install-gbn-proxmox.sh` — Galactic Bounty Network poster-server LXC
+
+Companion services on Proxmox follow the same pattern going forward: `install-<app>-proxmox.sh` in this folder plus a matching `* Config Steps.md` in `Docs\`. The MQTT broker is an exception — use the official **Mosquitto** Home Assistant add-on (see Phase 5a in `Home Assistant Config Steps.md`), not a Proxmox Mosquitto LXC.
 
 The build-phase sequence stays on the Mission Control Build Plan canvas, not in these files.
 
-**Path:** `Docs\`
+**Path:** `ProxmoxInstallFiles\`

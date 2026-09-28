@@ -28,7 +28,7 @@ Home Assistant is the **only** MQTT command publisher. The content LXC must not 
 
 Run this on the **Proxmox node shell** (not inside a guest).
 
-1. Copy `Docs/install-alleycattv-proxmox.sh` onto the host as `/root/install-alleycattv-proxmox.sh`.
+1. Copy `ProxmoxInstallFiles/install-alleycattv-proxmox.sh` onto the host as `/root/install-alleycattv-proxmox.sh`.
 2. Prefer a local checkout (no GitHub login):
 
 ```bash

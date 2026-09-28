@@ -74,7 +74,7 @@ py -3 -m pytest tests -q
 
 ## Deploy
 
-Proxmox: [`Docs/install-gbn-proxmox.sh`](../../Docs/install-gbn-proxmox.sh) ·  
+Proxmox: [`ProxmoxInstallFiles/install-gbn-proxmox.sh`](../../ProxmoxInstallFiles/install-gbn-proxmox.sh) ·  
 Config steps: [`Docs/GBN Config Steps.md`](../../Docs/GBN%20Config%20Steps.md) ·  
 HA Phase 8: [`Docs/Home Assistant Config Steps.md`](../../Docs/Home%20Assistant%20Config%20Steps.md)
 

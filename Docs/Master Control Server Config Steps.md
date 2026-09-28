@@ -8,7 +8,7 @@ This assumes you are using **Proxmox**. Prefer the installer script below so som
 
 Run this on the **Proxmox node shell** (Datacenter → the host → **Shell**). Do not open a guest console.
 
-1. Copy `Docs/install-mcs-proxmox.sh` onto the Proxmox host as `/root/install-mcs-proxmox.sh` (USB, SCP, or paste into `nano`).
+1. Copy `ProxmoxInstallFiles/install-mcs-proxmox.sh` onto the Proxmox host as `/root/install-mcs-proxmox.sh` (USB, SCP, or paste into `nano`).
 2. Make it executable and run:
 
 ```bash

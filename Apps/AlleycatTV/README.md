@@ -53,7 +53,7 @@ Home Assistant is the **only** MQTT command publisher.
 
 | Step | Doc / command |
 |---|---|
-| Content LXC | [`Docs/install-alleycattv-proxmox.sh`](../../Docs/install-alleycattv-proxmox.sh) |
+| Content LXC | [`ProxmoxInstallFiles/install-alleycattv-proxmox.sh`](../../ProxmoxInstallFiles/install-alleycattv-proxmox.sh) |
 | Full checklist | [`Docs/AlleycatTV Config Steps.md`](../../Docs/AlleycatTV%20Config%20Steps.md) |
 | HA scp + panels | Phase 6b in [`Home Assistant Config Steps.md`](../../Docs/Home%20Assistant%20Config%20Steps.md#phase-6--alleycattv-on-the-fabric) |
 | Mosquitto login | Phase 5a — venue `alleycatTV` / `alleycat` (must **Save** in add-on) |

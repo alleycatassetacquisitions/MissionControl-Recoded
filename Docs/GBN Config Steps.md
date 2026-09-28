@@ -13,7 +13,7 @@ App README: [`Apps/Galactic_Bounty_Network/README.md`](../Apps/Galactic_Bounty_N
 
 ## A. Proxmox LXC (poster server)
 
-On the Proxmox **node** shell:
+Copy `ProxmoxInstallFiles/install-gbn-proxmox.sh` to `/root/` on the Proxmox host, then on the **node** shell:
 
 ```bash
 bash install-gbn-proxmox.sh

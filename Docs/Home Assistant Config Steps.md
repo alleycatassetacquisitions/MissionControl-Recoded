@@ -10,7 +10,7 @@ The installer script does the work shown in [Installing Home Assistant on Proxmo
 
 Run this on the **Proxmox node shell** (Datacenter → the host → **Shell**). Do not open a guest console.
 
-1. Copy `Docs/install-haos-proxmox.sh` onto the Proxmox host as `/root/install-haos-proxmox.sh` (USB, SCP, or paste into `nano`).
+1. Copy `ProxmoxInstallFiles/install-haos-proxmox.sh` onto the Proxmox host as `/root/install-haos-proxmox.sh` (USB, SCP, or paste into `nano`).
 2. In the node Shell:
 
 ```bash
@@ -265,7 +265,7 @@ ATV_SRC=/root/MissionControl/Apps/AlleycatTV/Server_Component \
   bash /root/install-alleycattv-proxmox.sh
 ```
 
-(Copy `Docs/install-alleycattv-proxmox.sh` to `/root/` first.) Confirm `curl http://<IP>/health` returns `"mqtt": false`, then set Core Configurator **alleycattv** to `http://<IP>`.
+(Copy `ProxmoxInstallFiles/install-alleycattv-proxmox.sh` to `/root/` first.) Confirm `curl http://<IP>/health` returns `"mqtt": false`, then set Core Configurator **alleycattv** to `http://<IP>`.
 
 #### 6b. Deploy AlleycatTV HA integration
 
@@ -330,7 +330,7 @@ App README: [`Apps/Broadcast_Group_Controller/README.md`](../Apps/Broadcast_Grou
 
 Posters own media and flavor. `player_id` is a foreign key to MCS. HA proxies the poster API; panels do not fetch LAN URLs.
 
-**Proxmox:** [`GBN Config Steps.md`](GBN%20Config%20Steps.md) · [`install-gbn-proxmox.sh`](install-gbn-proxmox.sh)
+**Proxmox:** [`GBN Config Steps.md`](GBN%20Config%20Steps.md) · [`install-gbn-proxmox.sh`](../ProxmoxInstallFiles/install-gbn-proxmox.sh)
 
 ```powershell
 scp -r "z:\CodingProjects\Alleycat\MissionControl\Apps\Galactic_Bounty_Network\HA_Component\custom_components\gbn" root@<HA-IP>:/config/custom_components/

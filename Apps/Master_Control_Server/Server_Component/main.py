@@ -8,7 +8,7 @@ Design contracts:
     defaults only. HA overwrites them on every setup.
   - MCS_API_TOKEN guards /players and /config. The same token is stored in
     Core Configurator (master_control_server extra.token) and set as this
-    env var on the Proxmox LXC (see Docs/install-mcs-proxmox.sh).
+    env var on the Proxmox LXC (see ProxmoxInstallFiles/install-mcs-proxmox.sh).
   - Players are game records, not Home Assistant devices.
   - Central legacy keys (allegiance, hunter/mode) are normalized to canonical
     Design Terms fields (neocorp, role) on read; writes reverse-map.
