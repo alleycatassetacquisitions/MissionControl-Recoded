@@ -1,4 +1,4 @@
-﻿"""Content management router â€” upload, list, and delete media files."""
+"""Content management router â€” upload, list, and delete media files."""
 from __future__ import annotations
 
 import json

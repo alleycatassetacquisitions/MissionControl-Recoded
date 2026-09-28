@@ -1,4 +1,4 @@
-﻿/**
+/**
  * AlleycatTV Player Panel — live playback via HA services + proxy reads.
  * Placement/membership: Broadcast Group Controller.
  *
