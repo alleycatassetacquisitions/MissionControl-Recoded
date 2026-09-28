@@ -14,8 +14,13 @@ from .const import (
     KEY_GBN,
     KEY_MASTER_CONTROL_SERVER,
     KEY_PROXMOX,
+    KEY_RTSP,
     SERVICE_CATALOG,
     YAML_MCS_TOKEN,
+    YAML_PROXMOX_TOKEN_ID,
+    YAML_PROXMOX_TOKEN_SECRET,
+    YAML_RTSP_ENABLED,
+    YAML_RTSP_LABEL,
 )
 from .urlutil import services_from_mapping
 
@@ -76,6 +81,17 @@ class CoreConfiguratorConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                         "proxmox_node",
                         description={"suggested_value": "pve"},
                     ): str,
+                    vol.Optional(YAML_PROXMOX_TOKEN_ID): str,
+                    vol.Optional(YAML_PROXMOX_TOKEN_SECRET): str,
+                    vol.Optional(
+                        KEY_RTSP,
+                        description={"suggested_value": _placeholder(KEY_RTSP)},
+                    ): str,
+                    vol.Optional(
+                        YAML_RTSP_LABEL,
+                        description={"suggested_value": "Live RTSP"},
+                    ): str,
+                    vol.Optional(YAML_RTSP_ENABLED, default=False): bool,
                 }
             ),
         )

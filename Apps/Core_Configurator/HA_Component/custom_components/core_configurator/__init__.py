@@ -23,17 +23,27 @@ from homeassistant.components import websocket_api
 from .const import (
     DOMAIN,
     EVENT_UPDATED,
+    EXTRA_ENABLED,
+    KEY_RTSP,
     YAML_KEYS,
+    YAML_RTSP_ENABLED,
 )
 from .helpers import catalog_public, get_url, save_services
-from .urlutil import empty_services, normalize_url, services_from_mapping
+from .urlutil import _truthy, empty_services, normalize_url, services_from_mapping
 
 _LOGGER = logging.getLogger(__name__)
+
+_YAML_FIELD_SCHEMA = {
+    vol.Optional(key): cv.string
+    for key in YAML_KEYS
+    if key != YAML_RTSP_ENABLED
+}
+_YAML_FIELD_SCHEMA[vol.Optional(YAML_RTSP_ENABLED)] = vol.Any(cv.boolean, cv.string)
 
 CONFIG_SCHEMA = vol.Schema(
     {
         vol.Optional(DOMAIN): vol.Schema(
-            {vol.Optional(key): cv.string for key in YAML_KEYS},
+            _YAML_FIELD_SCHEMA,
             extra=vol.ALLOW_EXTRA,
         )
     },
@@ -94,7 +104,10 @@ async def ws_set_service(hass: HomeAssistant, connection, msg) -> None:
     if "url" in msg and msg["url"] is not None:
         current["url"] = normalize_url(str(msg["url"]), key=key)
     if msg.get("extra") is not None:
-        current["extra"] = {**dict(current.get("extra") or {}), **dict(msg["extra"])}
+        merged = {**dict(current.get("extra") or {}), **dict(msg["extra"])}
+        if key == KEY_RTSP and EXTRA_ENABLED in merged:
+            merged[EXTRA_ENABLED] = _truthy(merged[EXTRA_ENABLED])
+        current["extra"] = merged
     services[key] = current
     save_services(hass, services, changed_key=key)
     _LOGGER.info("Core Configurator: %s → %s", key, current.get("url"))

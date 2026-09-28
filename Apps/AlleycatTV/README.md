@@ -23,6 +23,7 @@ Proxmox content server and Pi client.
 | Official **Mosquitto** add-on + HA `mqtt` | Broker + command path |
 | Shared HA Helpers fabric | Presence (`mc/tv/status/#`) |
 | AlleycatTV HA integration | Playback commands, media_player, Content Manager proxy |
+| Core Configurator `rtsp` | Live RTSP URL / label / enabled (not Content Manager) |
 | Proxmox content server | Media files + playlists — **no MQTT client** |
 | Pi client | mpv playback; subscribes to `mc/tv/cmd/…` |
 

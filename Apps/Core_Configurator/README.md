@@ -19,9 +19,10 @@ Each key maps to one external service. Other integrations call `get_url(hass, ke
 | `central_secondary` | Central Server · local | Master Control Server (via Registration push) |
 | `alleycattv` | AlleycatTV streaming server | AlleycatTV, Content Manager, Digital Node Nexus |
 | `gbn` | Galactic Bounty Network | GBN, Registration poster column |
-| `proxmox` | Proxmox | Bug Buster (URL + `extra.node`; API tokens later) |
+| `proxmox` | Proxmox | Bug Buster (URL + `extra.node` / `token_id` / `token_secret`) |
+| `rtsp` | Live RTSP | AlleycatTV live interrupt (`extra.label` / `extra.enabled`) |
 
-> **Credentials live here.** MCS Bearer (`extra.token` on `master_control_server`) and future Proxmox API auth are Core Configurator fields. Bug Buster is monitoring, health checks, and SSH into sessions — it does not own tokens.
+> **Credentials live here.** MCS Bearer (`extra.token` on `master_control_server`) and Proxmox API tokens (`extra.token_id` / `extra.token_secret` on `proxmox`) are Core Configurator fields. Paste the same Proxmox token into HA Core **Proxmox VE** for monitoring entities. Bug Buster is Proxmox console, MQTT spy, and companion health — it does not own tokens. RTSP camera/encoder URLs also live here (not in AlleycatTV Content Manager).
 
 ---
 
@@ -112,6 +113,11 @@ core_configurator:
   gbn: !secret cc_gbn
   proxmox: !secret cc_proxmox
   proxmox_node: !secret cc_proxmox_node
+  proxmox_token_id: !secret cc_proxmox_token_id
+  proxmox_token_secret: !secret cc_proxmox_token_secret
+  rtsp: !secret cc_rtsp
+  rtsp_label: !secret cc_rtsp_label
+  rtsp_enabled: !secret cc_rtsp_enabled
 ```
 
 Sidebar panel registration and `extra_module_url` are in [`HomeAssist/configuration.yaml`](../../HomeAssist/configuration.yaml).

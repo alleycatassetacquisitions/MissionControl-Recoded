@@ -12,7 +12,12 @@
           "alleycattv": "AlleycatTV streaming server",
           "gbn": "Galactic Bounty Network server",
           "proxmox": "Proxmox URL",
-          "proxmox_node": "Proxmox node name"
+          "proxmox_node": "Proxmox node name",
+          "proxmox_token_id": "Proxmox API token ID",
+          "proxmox_token_secret": "Proxmox API token secret",
+          "rtsp": "Live RTSP URL",
+          "rtsp_label": "Live RTSP display label",
+          "rtsp_enabled": "Enable Live RTSP"
         }
       }
     },

@@ -92,6 +92,17 @@ class CoreConfiguratorPanel extends HTMLElement {
     list.innerHTML = this._services.map((svc) => {
       const extras = (svc.extra_fields || []).map((f) => {
         const raw = (svc.extra || {})[f.key] || "";
+        if (f.type === "checkbox") {
+          const checked = String(raw).toLowerCase() === "true" ? "checked" : "";
+          return `
+          <label class="check" for="extra-${this._esc(svc.key)}-${this._esc(f.key)}">
+            <input id="extra-${this._esc(svc.key)}-${this._esc(f.key)}"
+              data-extra="${this._esc(f.key)}" data-kind="checkbox"
+              type="checkbox" ${checked} />
+            ${this._esc(f.label)}
+          </label>
+        `;
+        }
         const inputType = f.sensitive ? "password" : "text";
         return `
           <label for="extra-${this._esc(svc.key)}-${this._esc(f.key)}">${this._esc(f.label)}</label>
@@ -136,7 +147,11 @@ class CoreConfiguratorPanel extends HTMLElement {
     const url = (card.querySelector(".url")?.value || "").trim();
     const extra = {};
     card.querySelectorAll("[data-extra]").forEach((inp) => {
-      extra[inp.dataset.extra] = inp.value.trim();
+      if (inp.dataset.kind === "checkbox") {
+        extra[inp.dataset.extra] = inp.checked ? "true" : "false";
+      } else {
+        extra[inp.dataset.extra] = inp.value.trim();
+      }
     });
     const cc = this._cc();
     try {
@@ -224,6 +239,12 @@ class CoreConfiguratorPanel extends HTMLElement {
           text-transform: uppercase; color: var(--secondary-text-color, #9aa8c7);
           margin: 10px 0 4px;
         }
+        label.check {
+          display: flex; align-items: center; gap: 8px;
+          text-transform: none; letter-spacing: 0; font-size: 13px;
+          color: var(--primary-text-color, #e8eefc); margin-top: 12px;
+        }
+        label.check input { width: auto; margin: 0; }
         input {
           width: 100%; box-sizing: border-box; font-family: inherit; font-size: 14px;
           background: var(--secondary-background-color, #0d1426);

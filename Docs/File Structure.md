@@ -191,13 +191,16 @@ Phase 6: HA integration on the MQTT fabric (`mc/tv`), Proxmox content server
 
 ### Bug Buster
 
-Proxmox guest inventory, console, and MQTT spy. Ops only — it does not own players, Broadcast Groups, or posters. In code this is `bug_buster`.
+Proxmox guest console (termproxy), MQTT spy, and companion health. Ops only — it does not own players, Broadcast Groups, or posters. Monitoring sensors/power buttons are HA Core Proxmox VE. In code this is `bug_buster`.
 
-**Path:** `Apps\Bug_Buster\`
+**Path:** `Apps\Bug_Buster\`  
+**On HA:** `/config/custom_components/bug_buster/` + `/config/www/bug_buster/`  
+**App README:** [`Apps/Bug_Buster/README.md`](../Apps/Bug_Buster/README.md)  
+**Deploy:** [`Docs/Bug Buster Config Steps.md`](Bug%20Buster%20Config%20Steps.md)
 
 ### Core Configurator
 
-Single source of truth for Alleycat service **URLs and API tokens** (MCS URL + Bearer, Central primary/secondary, AlleycatTV, GBN, Proxmox). Other apps call `get_url` / `get_extra`. In code this is `core_configurator` — not Directory.
+Single source of truth for Alleycat service **URLs and API tokens** (MCS URL + Bearer, Central primary/secondary, AlleycatTV, GBN, Proxmox URL/node/token, Live RTSP). Other apps call `get_url` / `get_extra`. In code this is `core_configurator` — not Directory.
 
 **Path:** `Apps\Core_Configurator\`  
 **On HA:** `/config/custom_components/core_configurator/` + `/config/www/core_configurator/`

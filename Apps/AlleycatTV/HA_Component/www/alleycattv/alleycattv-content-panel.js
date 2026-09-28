@@ -19,7 +19,7 @@ class AlleycatTVContentPanel extends HTMLElement {
     this._confirmCb = null;
     this._promptCb = null;
     this._libDrag = null;
-    this._cachedServerUrl = "http://headless-alleycat-streaming-server.local";
+    this._cachedServerUrl = "";
   }
 
   set hass(hass) {
@@ -46,21 +46,16 @@ class AlleycatTVContentPanel extends HTMLElement {
   }
 
   _serverUrl() {
-    return String(this._cachedServerUrl || "http://headless-alleycat-streaming-server.local").replace(/\/$/, "");
+    return String(this._cachedServerUrl || "").replace(/\/$/, "");
   }
 
   async _loadDirectoryUrl() {
-    const fallback = this._panel?.config?.server_url || this._cachedServerUrl;
     try {
       if (window.CoreConfigurator && this._hass) {
-        this._cachedServerUrl = await window.CoreConfigurator.getUrl(this._hass, "alleycattv", fallback);
-      } else if (this._panel?.config?.server_url) {
-        this._cachedServerUrl = String(this._panel.config.server_url).replace(/\/$/, "");
+        this._cachedServerUrl = await window.CoreConfigurator.getUrl(this._hass, "alleycattv");
       }
     } catch (_) {
-      if (this._panel?.config?.server_url) {
-        this._cachedServerUrl = String(this._panel.config.server_url).replace(/\/$/, "");
-      }
+      this._cachedServerUrl = "";
     }
   }
 
@@ -69,27 +64,6 @@ class AlleycatTVContentPanel extends HTMLElement {
     const inp = this.shadowRoot.getElementById("server-url-input");
     if (!dlg || !inp) return;
     inp.value = this._serverUrl() || "";
-
-    // Prefill RTSP settings from server (single live-1 source for now)
-    const rtspUrl = this.shadowRoot.getElementById("rtsp-url-input");
-    const rtspLabel = this.shadowRoot.getElementById("rtsp-label-input");
-    const rtspEnabled = this.shadowRoot.getElementById("rtsp-enabled-input");
-    if (rtspUrl) rtspUrl.value = "";
-    if (rtspLabel) rtspLabel.value = "Live RTSP";
-    if (rtspEnabled) rtspEnabled.checked = false;
-    try {
-      const settings = await this._api("GET", "/api/settings/");
-      const sources = Array.isArray(settings?.rtsp_sources) ? settings.rtsp_sources : [];
-      const live = sources.find((s) => s.id === "live-1") || sources[0];
-      if (live) {
-        if (rtspUrl) rtspUrl.value = live.url || "";
-        if (rtspLabel) rtspLabel.value = live.label || "Live RTSP";
-        if (rtspEnabled) rtspEnabled.checked = !!live.enabled;
-      }
-    } catch (_) {
-      // settings optional if older server
-    }
-
     dlg.style.display = "flex";
     inp.focus();
     inp.select();
@@ -682,23 +656,6 @@ class AlleycatTVContentPanel extends HTMLElement {
         return;
       }
 
-      const rtspUrl = (root.getElementById("rtsp-url-input")?.value || "").trim();
-      const rtspLabel = (root.getElementById("rtsp-label-input")?.value || "").trim() || "Live RTSP";
-      const rtspEnabled = !!root.getElementById("rtsp-enabled-input")?.checked;
-      try {
-        await this._api("PUT", "/api/settings/", {
-          rtsp_sources: [{
-            id: "live-1",
-            label: rtspLabel,
-            url: rtspUrl,
-            enabled: rtspEnabled && !!rtspUrl,
-          }],
-        });
-      } catch (err) {
-        this._toast(`RTSP settings save failed: ${err.message}`, "err");
-        return;
-      }
-
       root.getElementById("server-url-dialog").style.display = "none";
       this._toast("Settings saved — reloading…", "ok");
       setTimeout(() => location.reload(), 1200);
@@ -1072,23 +1029,10 @@ class AlleycatTVContentPanel extends HTMLElement {
       </style>
       <div class="url-dialog-overlay" id="server-url-dialog">
         <div class="url-dialog">
-          <h3>Server Connection</h3>
-          <p>Set the AlleycatTV streaming server URL. Saved in your browser — persists across HA restarts.</p>
+          <h3>Content server URL</h3>
+          <p>Saved in Core Configurator — the only place for Alleycat LAN URLs and tokens.</p>
           <input id="server-url-input" type="url" placeholder="http://alleycat-streaming-server.local" autocomplete="off" />
-          <p class="url-dialog-hint">Tip: use a hostname like <code>alleycat-streaming-server.local</code> so the URL never changes when the server gets a new IP.</p>
-          <hr class="url-dialog-sep" />
-          <h3>Live RTSP Interrupt</h3>
-          <p>One shared live stream for venue broadcasts. When enabled, it appears in AlleycatTV announcement pickers.</p>
-          <label class="url-dialog-label">Label
-            <input id="rtsp-label-input" type="text" placeholder="Live RTSP" autocomplete="off" />
-          </label>
-          <label class="url-dialog-label">RTSP URL
-            <input id="rtsp-url-input" type="url" placeholder="rtsp://192.168.1.50:554/stream1" autocomplete="off" />
-          </label>
-          <label class="url-dialog-check">
-            <input id="rtsp-enabled-input" type="checkbox" />
-            Enable as announcement source
-          </label>
+          <p class="url-dialog-hint">Live RTSP interrupt URL/label/enabled also live in <strong>Core Configurator</strong> (Live RTSP card) — not here.</p>
           <div class="url-dialog-actions">
             <button class="btn ghost" id="btn-url-clear" type="button">Clear override</button>
             <button class="btn ghost" id="btn-url-cancel" type="button">Cancel</button>

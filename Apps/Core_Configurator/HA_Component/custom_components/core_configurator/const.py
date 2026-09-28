@@ -10,13 +10,22 @@ KEY_CENTRAL_SECONDARY = "central_secondary"
 KEY_ALLEYCATTV = "alleycattv"
 KEY_GBN = "gbn"
 KEY_PROXMOX = "proxmox"
+KEY_RTSP = "rtsp"
 
 # Extra field keys stored under a service entry's ``extra`` dict.
 EXTRA_TOKEN = "token"
 EXTRA_NODE = "node"
+EXTRA_TOKEN_ID = "token_id"
+EXTRA_TOKEN_SECRET = "token_secret"
+EXTRA_LABEL = "label"
+EXTRA_ENABLED = "enabled"
 
-# YAML / config-flow field that seeds the MCS Bearer into ``extra.token``.
+# YAML / config-flow fields that seed extras.
 YAML_MCS_TOKEN = "master_control_server_token"
+YAML_PROXMOX_TOKEN_ID = "proxmox_token_id"
+YAML_PROXMOX_TOKEN_SECRET = "proxmox_token_secret"
+YAML_RTSP_LABEL = "rtsp_label"
+YAML_RTSP_ENABLED = "rtsp_enabled"
 
 SERVICE_CATALOG = (
     {
@@ -65,11 +74,44 @@ SERVICE_CATALOG = (
     {
         "key": KEY_PROXMOX,
         "label": "Proxmox",
-        "hint": "Hypervisor API — Bug Buster reads URL/node (and later tokens) from here",
+        "hint": "Hypervisor API — Bug Buster console reads URL/node/token from here "
+        "(also paste the same token into HA Core Proxmox VE for monitoring)",
         "apps": ["Bug Buster"],
         "placeholder": "https://192.168.1.1:8006",
         "extra_fields": (
             {"key": EXTRA_NODE, "label": "Node name", "placeholder": "pve"},
+            {
+                "key": EXTRA_TOKEN_ID,
+                "label": "API token ID",
+                "placeholder": "hass@pve!missioncontrol",
+                "sensitive": False,
+            },
+            {
+                "key": EXTRA_TOKEN_SECRET,
+                "label": "API token secret",
+                "placeholder": "uuid from Proxmox API Tokens dialog",
+                "sensitive": True,
+            },
+        ),
+    },
+    {
+        "key": KEY_RTSP,
+        "label": "Live RTSP",
+        "hint": "Camera / encoder stream for AlleycatTV live interrupt — not the content server",
+        "apps": ["AlleycatTV"],
+        "placeholder": "rtsp://192.168.1.50:554/stream1",
+        "extra_fields": (
+            {
+                "key": EXTRA_LABEL,
+                "label": "Display label",
+                "placeholder": "Live RTSP",
+            },
+            {
+                "key": EXTRA_ENABLED,
+                "label": "Enabled",
+                "placeholder": "true",
+                "type": "checkbox",
+            },
         ),
     },
 )
@@ -84,4 +126,9 @@ YAML_KEYS = (
     KEY_GBN,
     KEY_PROXMOX,
     "proxmox_node",
+    YAML_PROXMOX_TOKEN_ID,
+    YAML_PROXMOX_TOKEN_SECRET,
+    KEY_RTSP,
+    YAML_RTSP_LABEL,
+    YAML_RTSP_ENABLED,
 )

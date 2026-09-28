@@ -96,7 +96,7 @@ The Mission Control dashboard for adding, editing, and deleting player registrat
 
 ### Bug Buster
 
-The Mission Control ops tools for monitoring Proxmox guests, health checks, MQTT debug, and SSH into sessions. It reads Proxmox URL/credentials from Core Configurator. It does not own players, Broadcast Groups, posters, or API tokens.
+The Mission Control ops tools for Proxmox console (termproxy), health checks, and MQTT debug. It reads Proxmox URL/credentials from Core Configurator. Monitoring sensors and power controls are HA Core Proxmox VE. It does not own players, Broadcast Groups, posters, or API tokens.
 
 - **Code:** `bug_buster`
 

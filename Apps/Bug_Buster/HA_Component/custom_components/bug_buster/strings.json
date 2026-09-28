@@ -1,0 +1,17 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "Bug Buster",
+        "description": "Ops console for Proxmox guests, MQTT spy, and companion health. Proxmox URL and API tokens come from Core Configurator.",
+        "data": {
+          "verify_ssl": "Verify Proxmox SSL certificate",
+          "mqtt_topic": "MQTT spy topic filter"
+        }
+      }
+    },
+    "abort": {
+      "single_instance_allowed": "Bug Buster is already configured."
+    }
+  }
+}

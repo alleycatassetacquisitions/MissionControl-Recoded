@@ -56,16 +56,14 @@ class AlleycatTVPanel extends HTMLElement {
   }
 
   _resolveServerUrl() {
-    return (this._serverUrl || "http://headless-alleycat-streaming-server.local").replace(/\/$/, "");
+    return String(this._serverUrl || "").replace(/\/$/, "");
   }
 
   async _loadDirectoryUrl() {
-    const fallback = this._panel?.config?.server_url
-      || "http://headless-alleycat-streaming-server.local";
     if (window.CoreConfigurator && this._hass) {
-      this._serverUrl = await window.CoreConfigurator.getUrl(this._hass, "alleycattv", fallback);
+      this._serverUrl = await window.CoreConfigurator.getUrl(this._hass, "alleycattv");
     } else if (!this._serverUrl) {
-      this._serverUrl = String(fallback).replace(/\/$/, "");
+      this._serverUrl = "";
     }
   }
 

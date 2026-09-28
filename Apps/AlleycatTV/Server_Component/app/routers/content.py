@@ -155,21 +155,8 @@ async def list_content(base_url: str = "http://localhost:8000"):
             entry_id=entry.entry_id,
         ))
 
-    # Inject enabled RTSP live sources as selectable announcement items
-    try:
-        from app.routers.settings import enabled_rtsp_sources
-        for src in enabled_rtsp_sources():
-            files.append(ContentFile(
-                filename=src.get("label") or "Live RTSP",
-                media_type=MediaType.rtsp,
-                size_bytes=0,
-                url=src["url"],
-                subdir="announcements",
-                duration=None,
-                entry_id=src.get("id") or "live-1",
-            ))
-    except Exception:
-        pass
+    # Live RTSP is owned by Core Configurator / HA AlleycatTV proxy overlay.
+    # Do not inject from local settings.json (legacy path).
 
     return files
 

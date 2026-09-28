@@ -13,6 +13,7 @@
 #   custom_components/alleycattv/         ← Apps/AlleycatTV/HA_Component/custom_components/alleycattv/
 #   custom_components/broadcast_group_controller/ ← Apps/Broadcast_Group_Controller/HA_Component/custom_components/broadcast_group_controller/
 #   custom_components/gbn/                ← Apps/Galactic_Bounty_Network/HA_Component/custom_components/gbn/
+#   custom_components/bug_buster/         ← Apps/Bug_Buster/HA_Component/custom_components/bug_buster/
 #   www/core_configurator/               ← Apps/Core_Configurator/HA_Component/www/core_configurator/
 #   www/shared_libraries/                ← Libraries/Shared_HA_Helpers/HA_Component/www/shared_libraries/
 #   www/registration/                    ← Apps/Registration/HA_Component/www/registration/
@@ -20,6 +21,7 @@
 #   www/alleycattv/                      ← Apps/AlleycatTV/HA_Component/www/alleycattv/
 #   www/broadcast_group_controller/      ← Apps/Broadcast_Group_Controller/HA_Component/www/broadcast_group_controller/
 #   www/gbn/                             ← Apps/Galactic_Bounty_Network/HA_Component/www/gbn/
+#   www/bug_buster/                      ← Apps/Bug_Buster/HA_Component/www/bug_buster/
 #
 # ─────────────────────────────────────────────────────────────────────────────
 # Core Configurator
@@ -45,6 +47,12 @@ core_configurator:
   gbn: !secret cc_gbn
   proxmox: !secret cc_proxmox
   proxmox_node: !secret cc_proxmox_node
+  proxmox_token_id: !secret cc_proxmox_token_id
+  proxmox_token_secret: !secret cc_proxmox_token_secret
+  # Live RTSP for AlleycatTV interrupt — set URL here, not in Content Manager.
+  rtsp: !secret cc_rtsp
+  rtsp_label: !secret cc_rtsp_label
+  rtsp_enabled: !secret cc_rtsp_enabled
 
 # Loads AlleycatTV (proxy + WS). Must be `{}` — bare `alleycattv:` is YAML null.
 alleycattv: {}
@@ -54,6 +62,10 @@ broadcast_group_controller: {}
 
 # Loads Galactic Bounty Network (poster proxy + panel).
 gbn: {}
+
+# Loads Bug Buster (Proxmox console + MQTT spy + companion health).
+# Proxmox URL/tokens come from Core Configurator — not from this block.
+bug_buster: {}
 
 frontend:
   extra_module_url:
@@ -111,3 +123,10 @@ panel_custom:
     sidebar_icon: mdi:skull-crossbones
     url_path: gbn
     module_url: /local/gbn/gbn-panel.js
+
+  # ─── Bug Buster ────────────────────────────────────────────────────────────
+  - name: bug-buster-panel
+    sidebar_title: Bug Buster
+    sidebar_icon: mdi:ladybug
+    url_path: bug-buster
+    module_url: /local/bug_buster/bug-buster-panel.js

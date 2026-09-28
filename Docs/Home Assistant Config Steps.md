@@ -347,3 +347,25 @@ Merge from [`HomeAssist/configuration.yaml`](../HomeAssist/configuration.yaml): 
 
 App README: [`Apps/Galactic_Bounty_Network/README.md`](../Apps/Galactic_Bounty_Network/README.md)
 
+### Phase 9 — Bug Buster + Core Proxmox VE
+
+Monitoring = HA Core **Proxmox VE**. Bug Buster = console + MQTT spy + companion health. Proxmox tokens and Live RTSP live in Core Configurator.
+
+**Walkthrough:** [`Bug Buster Config Steps.md`](Bug%20Buster%20Config%20Steps.md)
+
+```powershell
+scp -r "z:\CodingProjects\Alleycat\MissionControl\Apps\Bug_Buster\HA_Component\custom_components\bug_buster" root@<HA-IP>:/config/custom_components/
+scp -r "z:\CodingProjects\Alleycat\MissionControl\Apps\Bug_Buster\HA_Component\www\bug_buster" root@<HA-IP>:/config/www/
+scp -r "z:\CodingProjects\Alleycat\MissionControl\Apps\Core_Configurator\HA_Component\custom_components\core_configurator" root@<HA-IP>:/config/custom_components/
+scp -r "z:\CodingProjects\Alleycat\MissionControl\Apps\Core_Configurator\HA_Component\www\core_configurator" root@<HA-IP>:/config/www/
+```
+
+Merge from [`HomeAssist/configuration.yaml`](../HomeAssist/configuration.yaml): `bug_buster: {}`, Bug Buster `panel_custom`, and Core Configurator Proxmox token / RTSP secrets. Restart HA.
+
+1. Add **Proxmox VE** (Core) for sensors/buttons.
+2. Set Proxmox URL + token (+ Live RTSP) in **Core Configurator**.
+3. Add **Bug Buster** — confirm console, MQTT spy, and companion health.
+4. AlleycatTV Content Manager no longer edits RTSP URL — use Core Configurator.
+
+App README: [`Apps/Bug_Buster/README.md`](../Apps/Bug_Buster/README.md)
+

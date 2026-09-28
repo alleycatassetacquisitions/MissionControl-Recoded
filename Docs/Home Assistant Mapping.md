@@ -32,7 +32,7 @@ Build on these. A custom MQTT client, a second device list, or a panel that `fet
 | AlleycatTV | Home Assistant integration `alleycattv` + Proxmox content server | Playback and content files. Home Assistant is the only MQTT command publisher. Deploy: `Docs/AlleycatTV Config Steps.md`. |
 | Galactic Bounty Network | Home Assistant integration `gbn` + Proxmox poster server | Posters and capture. `player_id` is a foreign key to Master Control Server. Panel goes through Home Assistant, not a raw LAN URL. |
 | Broadcast Group Controller | Home Assistant integration `broadcast_group_controller` | Physical = Area. Membership = Broadcast Group (BGC Store + MQTT assign). See `Apps/Broadcast_Group_Controller/README.md`. |
-| Bug Buster | Home Assistant integration `bug_buster` | Monitoring, health, MQTT spy, SSH into sessions. Reads Proxmox credentials from Core Configurator. Ops only. Does not own venue types or tokens. |
+| Bug Buster | Home Assistant integration `bug_buster` | Proxmox console (termproxy), MQTT spy, companion health. Reads Proxmox credentials from Core Configurator. Guest sensors/power buttons are Core `proxmoxve`. Ops only. Does not own venue types or tokens. |
 
 Players are not devices. Home Assistant devices are hardware (FDN, Pi, Proxmox guest). A Player is a Central record. Registration must not create one device per Player.
 

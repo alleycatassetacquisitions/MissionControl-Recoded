@@ -89,3 +89,12 @@ jobs:
             --tb=short \
             --cov=custom_components/gbn \
             --cov-report=term-missing
+
+      - name: Run Bug Buster HA tests
+        working-directory: Apps/Bug_Buster/HA_Component
+        run: |
+          pytest tests/ \
+            -v \
+            --tb=short \
+            --cov=custom_components/bug_buster \
+            --cov-report=term-missing

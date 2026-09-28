@@ -66,6 +66,7 @@ async def async_request(
     token: str | None = None,
     headers: dict[str, str] | None = None,
     json: Any | None = None,
+    data: Any | None = None,
     timeout: ClientTimeout = _DEFAULT_TIMEOUT,
 ) -> ClientResponse | None:
     """Make an authenticated HTTP request via the HA-managed session.
@@ -81,6 +82,7 @@ async def async_request(
         HTTP method string, e.g. ``"GET"``, ``"POST"``.
     path:
         URL path starting with ``/``, e.g. ``"/api/posters"``.
+        Query strings may be included (``"/api/x?y=1"``).
     token:
         Optional bearer token.  When provided, an ``Authorization: Bearer``
         header is added.  Passing ``None`` skips auth entirely.
@@ -89,7 +91,9 @@ async def async_request(
         header so callers can override if necessary.
     json:
         Optional JSON-serialisable body.  Passed to the underlying session
-        request as ``json=``.
+        request as ``json=``.  Mutually exclusive with ``data`` in practice.
+    data:
+        Optional raw body (bytes / form).  For proxies that forward multipart.
     timeout:
         Request timeout.  Defaults to 10 s total.
 
@@ -129,6 +133,7 @@ async def async_request(
             url,
             headers=merged_headers or None,
             json=json,
+            data=data,
             timeout=timeout,
         )
         _LOGGER.debug(

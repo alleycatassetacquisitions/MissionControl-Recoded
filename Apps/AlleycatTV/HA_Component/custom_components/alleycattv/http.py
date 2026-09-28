@@ -1,10 +1,11 @@
 """Authenticated HA HTTP views that proxy AlleycatTV content-server APIs.
 
-Uses Core Configurator ``alleycattv`` URL via shared_libraries.http — no
-hardcoded LAN fallbacks.
+Uses ``shared_libraries.http.async_request`` + Core Configurator. Live RTSP
+comes from Core Configurator (not content-server settings.json).
 """
 from __future__ import annotations
 
+import json
 import logging
 
 import aiohttp
@@ -12,7 +13,6 @@ from aiohttp import web
 
 from homeassistant.components.http import HomeAssistantView
 from homeassistant.core import HomeAssistant
-from homeassistant.helpers.aiohttp_client import async_get_clientsession
 
 from .const import KEY_ALLEYCATTV
 
@@ -21,19 +21,15 @@ _LOGGER = logging.getLogger(__name__)
 CHUNK_MAX = 8 * 1024 * 1024
 
 try:
-    from custom_components.core_configurator.helpers import get_url
+    from custom_components.shared_libraries.http import async_request
 except ImportError:  # pragma: no cover
+    async_request = None  # type: ignore[assignment]
+
+try:
+    from custom_components.core_configurator.helpers import get_extra, get_url
+except ImportError:  # pragma: no cover
+    get_extra = None  # type: ignore[assignment]
     get_url = None  # type: ignore[assignment]
-
-
-def _server_url(hass: HomeAssistant) -> str | None:
-    """Return content-server base URL or None (fail-closed)."""
-    if get_url is None:
-        return None
-    url = get_url(hass, KEY_ALLEYCATTV)
-    if not url:
-        return None
-    return str(url).rstrip("/")
 
 
 def register_http_views(hass: HomeAssistant) -> None:
@@ -46,6 +42,138 @@ def register_http_views(hass: HomeAssistant) -> None:
 
 def _hass(request: web.Request) -> HomeAssistant:
     return request.app["hass"]
+
+
+def _not_configured() -> web.Response:
+    return web.json_response(
+        {"error": "AlleycatTV URL not configured in Core Configurator"},
+        status=503,
+    )
+
+
+def _rtsp_source(hass: HomeAssistant) -> dict:
+    """Single live-1 RTSP entry from Core Configurator (SoR)."""
+    url = ""
+    label = "Live RTSP"
+    enabled = False
+    if get_url is not None:
+        url = (get_url(hass, "rtsp") or "").strip()
+    if get_extra is not None:
+        label = (get_extra(hass, "rtsp", "label", "Live RTSP") or "Live RTSP").strip()
+        enabled = get_extra(hass, "rtsp", "enabled", "false").strip().lower() == "true"
+    return {
+        "id": "live-1",
+        "label": label or "Live RTSP",
+        "url": url,
+        "enabled": bool(enabled and url),
+    }
+
+
+def _overlay_rtsp_payload(hass: HomeAssistant, path: str, payload: bytes, content_type: str) -> tuple[bytes, str]:
+    """Inject Core Configurator RTSP into content list / settings responses."""
+    clean = path.lstrip("/")
+    if not clean.startswith("api/"):
+        return payload, content_type
+    try:
+        data = json.loads(payload.decode("utf-8"))
+    except (UnicodeDecodeError, json.JSONDecodeError, AttributeError):
+        return payload, content_type
+
+    src = _rtsp_source(hass)
+
+    path_only = clean.split("?", 1)[0].rstrip("/")
+
+    if path_only == "api/settings" or path_only.startswith("api/settings/"):
+        if isinstance(data, dict):
+            data["rtsp_sources"] = [src]
+            return json.dumps(data).encode("utf-8"), "application/json"
+        return payload, content_type
+
+    if path_only == "api/content":
+        # GET /api/content/ — list may be a bare array or {files: [...]}
+        files = data if isinstance(data, list) else (
+            data.get("files") if isinstance(data, dict) else None
+        )
+        if isinstance(files, list):
+            files = [f for f in files if not (
+                isinstance(f, dict) and (
+                    f.get("media_type") == "rtsp"
+                    or f.get("entry_id") == "live-1"
+                )
+            )]
+            if src["enabled"]:
+                files.append(
+                    {
+                        "filename": src["label"],
+                        "media_type": "rtsp",
+                        "size_bytes": 0,
+                        "url": src["url"],
+                        "subdir": "announcements",
+                        "duration": None,
+                        "entry_id": "live-1",
+                    }
+                )
+            if isinstance(data, list):
+                return json.dumps(files).encode("utf-8"), "application/json"
+            data["files"] = files
+            return json.dumps(data).encode("utf-8"), "application/json"
+
+    return payload, content_type
+
+
+async def _proxy(
+    hass: HomeAssistant,
+    method: str,
+    path: str,
+    *,
+    body: bytes | None = None,
+    headers: dict[str, str] | None = None,
+    timeout_total: int = 60,
+) -> web.Response:
+    if async_request is None:
+        return _not_configured()
+    if get_url is not None and not get_url(hass, KEY_ALLEYCATTV):
+        return _not_configured()
+
+    api_path = "/" + path.lstrip("/")
+    timeout = aiohttp.ClientTimeout(total=timeout_total)
+    resp = await async_request(
+        hass,
+        KEY_ALLEYCATTV,
+        method,
+        api_path,
+        headers=headers,
+        data=body,
+        timeout=timeout,
+    )
+    if resp is None:
+        return web.json_response(
+            {"error": "Cannot reach content server"},
+            status=502,
+        )
+    try:
+        payload = await resp.read()
+        ctype = resp.content_type or "application/json"
+        if method.upper() == "GET" and resp.status < 400:
+            payload, ctype = _overlay_rtsp_payload(hass, path, payload, ctype)
+        # Strip rtsp_sources writes — Core Configurator is SoR
+        if method.upper() == "PUT" and path.lstrip("/").startswith("api/settings"):
+            src = _rtsp_source(hass)
+            try:
+                data = json.loads(payload.decode("utf-8"))
+                if isinstance(data, dict):
+                    data["rtsp_sources"] = [src]
+                    payload = json.dumps(data).encode("utf-8")
+                    ctype = "application/json"
+            except (UnicodeDecodeError, json.JSONDecodeError):
+                pass
+        if resp.status >= 400:
+            _LOGGER.warning(
+                "AlleycatTV proxy upstream %s %s -> %s", method, api_path, resp.status
+            )
+        return web.Response(body=payload, status=resp.status, content_type=ctype)
+    finally:
+        resp.release()
 
 
 class AlleycatTVProxyView(HomeAssistantView):
@@ -71,44 +199,26 @@ class AlleycatTVProxyView(HomeAssistantView):
         hass = getattr(self, "hass", None) or request.app.get("hass")
         if hass is None:
             return web.Response(text="Home Assistant not ready", status=503)
-        base = _server_url(hass)
-        if not base:
-            return web.json_response(
-                {"error": "AlleycatTV URL not configured in Core Configurator"},
-                status=503,
-            )
-        qs = request.query_string
-        url = f"{base}/{path.lstrip('/')}"
-        if qs:
-            url = f"{url}?{qs}"
+        # Ignore client attempts to write RTSP via settings — CC is SoR.
         body = await request.read() if method in ("POST", "PUT") else None
+        if method == "PUT" and path.lstrip("/").startswith("api/settings") and body:
+            try:
+                data = json.loads(body.decode("utf-8"))
+                if isinstance(data, dict) and "rtsp_sources" in data:
+                    data.pop("rtsp_sources", None)
+                    body = json.dumps(data).encode("utf-8")
+            except (UnicodeDecodeError, json.JSONDecodeError):
+                pass
+        qs = request.query_string
+        api_path = path
+        if qs:
+            api_path = f"{path}?{qs}"
         headers = {}
         if request.content_type:
             headers["Content-Type"] = request.content_type
-        session = async_get_clientsession(hass)
-        timeout = aiohttp.ClientTimeout(total=60)
-        try:
-            async with session.request(
-                method, url, data=body, headers=headers, timeout=timeout
-            ) as resp:
-                payload = await resp.read()
-                if resp.status >= 400:
-                    _LOGGER.warning(
-                        "AlleycatTV proxy upstream %s %s -> %s",
-                        method,
-                        url,
-                        resp.status,
-                    )
-                return web.Response(
-                    body=payload,
-                    status=resp.status,
-                    content_type=resp.content_type or "application/json",
-                )
-        except Exception as err:  # noqa: BLE001
-            _LOGGER.warning("AlleycatTV proxy %s %s failed: %s", method, url, err)
-            return web.json_response(
-                {"error": f"Cannot reach content server: {err}"}, status=502
-            )
+        return await _proxy(
+            hass, method, api_path, body=body, headers=headers or None, timeout_total=60
+        )
 
 
 class AlleycatTVUploadStartView(HomeAssistantView):
@@ -118,23 +228,15 @@ class AlleycatTVUploadStartView(HomeAssistantView):
 
     async def post(self, request: web.Request) -> web.Response:
         hass = _hass(request)
-        base = _server_url(hass)
-        if not base:
-            return web.json_response(
-                {"error": "AlleycatTV URL not configured in Core Configurator"},
-                status=503,
-            )
         payload = await request.json()
-        session = async_get_clientsession(hass)
-        url = f"{base}/api/content/uploads"
-        async with session.post(
-            url, json=payload, timeout=aiohttp.ClientTimeout(total=30)
-        ) as resp:
-            return web.Response(
-                body=await resp.read(),
-                status=resp.status,
-                content_type=resp.content_type,
-            )
+        return await _proxy(
+            hass,
+            "POST",
+            "api/content/uploads",
+            body=json.dumps(payload).encode("utf-8"),
+            headers={"Content-Type": "application/json"},
+            timeout_total=30,
+        )
 
 
 class AlleycatTVChunkView(HomeAssistantView):
@@ -147,22 +249,14 @@ class AlleycatTVChunkView(HomeAssistantView):
     ) -> web.Response:
         request._client_max_size = CHUNK_MAX  # noqa: SLF001
         hass = _hass(request)
-        base = _server_url(hass)
-        if not base:
-            return web.json_response(
-                {"error": "AlleycatTV URL not configured in Core Configurator"},
-                status=503,
-            )
         body = await request.read()
-        session = async_get_clientsession(hass)
-        url = f"{base}/api/content/uploads/{upload_id}/chunks/{index}"
-        timeout = aiohttp.ClientTimeout(total=120)
-        async with session.put(url, data=body, timeout=timeout) as resp:
-            return web.Response(
-                body=await resp.read(),
-                status=resp.status,
-                content_type=resp.content_type,
-            )
+        return await _proxy(
+            hass,
+            "PUT",
+            f"api/content/uploads/{upload_id}/chunks/{index}",
+            body=body,
+            timeout_total=120,
+        )
 
 
 class AlleycatTVUploadCompleteView(HomeAssistantView):
@@ -172,22 +266,12 @@ class AlleycatTVUploadCompleteView(HomeAssistantView):
 
     async def post(self, request: web.Request, upload_id: str) -> web.Response:
         hass = _hass(request)
-        base = _server_url(hass)
-        if not base:
-            return web.json_response(
-                {"error": "AlleycatTV URL not configured in Core Configurator"},
-                status=503,
-            )
-        session = async_get_clientsession(hass)
-        url = f"{base}/api/content/uploads/{upload_id}/complete"
-        async with session.post(
-            url, timeout=aiohttp.ClientTimeout(total=120)
-        ) as resp:
-            return web.Response(
-                body=await resp.read(),
-                status=resp.status,
-                content_type=resp.content_type,
-            )
+        return await _proxy(
+            hass,
+            "POST",
+            f"api/content/uploads/{upload_id}/complete",
+            timeout_total=120,
+        )
 
 
 class AlleycatTVUploadDeleteView(HomeAssistantView):
@@ -197,19 +281,9 @@ class AlleycatTVUploadDeleteView(HomeAssistantView):
 
     async def delete(self, request: web.Request, upload_id: str) -> web.Response:
         hass = _hass(request)
-        base = _server_url(hass)
-        if not base:
-            return web.json_response(
-                {"error": "AlleycatTV URL not configured in Core Configurator"},
-                status=503,
-            )
-        session = async_get_clientsession(hass)
-        url = f"{base}/api/content/uploads/{upload_id}"
-        async with session.delete(
-            url, timeout=aiohttp.ClientTimeout(total=30)
-        ) as resp:
-            return web.Response(
-                body=await resp.read(),
-                status=resp.status,
-                content_type=resp.content_type,
-            )
+        return await _proxy(
+            hass,
+            "DELETE",
+            f"api/content/uploads/{upload_id}",
+            timeout_total=30,
+        )

@@ -33,6 +33,7 @@ from custom_components.core_configurator.const import (
     KEY_ALLEYCATTV,
     KEY_GBN,
     KEY_PROXMOX,
+    KEY_RTSP,
     SERVICE_CATALOG,
 )
 from custom_components.core_configurator.urlutil import (
@@ -95,6 +96,14 @@ class TestNormalizeUrl:
         result = normalize_url("https://192.168.1.1", key=KEY_PROXMOX)
         assert result == "https://192.168.1.1:8006"
 
+    def test_rtsp_plain_host_gets_rtsp_scheme(self):
+        result = normalize_url("192.168.1.50:554/stream1", key=KEY_RTSP)
+        assert result == "rtsp://192.168.1.50:554/stream1"
+
+    def test_rtsp_preserves_rtsps_scheme(self):
+        result = normalize_url("rtsps://cam.local/stream", key=KEY_RTSP)
+        assert result == "rtsps://cam.local/stream"
+
 
 class TestEmptyServices:
     def test_returns_all_catalog_keys(self):
@@ -112,11 +121,17 @@ class TestEmptyServices:
         services = empty_services()
         assert services[KEY_PROXMOX]["extra"]["node"] == "pve"
 
-    def test_non_proxmox_extra_is_empty_dict(self):
+    def test_rtsp_extra_defaults(self):
+        services = empty_services()
+        assert services[KEY_RTSP]["extra"]["label"] == "Live RTSP"
+        assert services[KEY_RTSP]["extra"]["enabled"] == "false"
+
+    def test_other_extras_are_empty_dict(self):
         services = empty_services()
         for key, val in services.items():
-            if key != KEY_PROXMOX:
-                assert val["extra"] == {}, f"Key {key!r} should have empty extra"
+            if key in (KEY_PROXMOX, KEY_RTSP):
+                continue
+            assert val["extra"] == {}, f"Key {key!r} should have empty extra"
 
 
 class TestServicesFromMapping:
@@ -156,6 +171,7 @@ class TestServicesFromMapping:
             KEY_GBN: "http://192.168.1.206:8100",
             KEY_PROXMOX: "192.168.1.1",
             "proxmox_node": "pve",
+            KEY_RTSP: "rtsp://192.168.1.50:554/stream1",
         }
         services = services_from_mapping(data)
         assert services[KEY_MASTER_CONTROL_SERVER]["url"] == "http://192.168.1.10:8700"
@@ -165,6 +181,7 @@ class TestServicesFromMapping:
         assert services[KEY_GBN]["url"] == "http://192.168.1.206:8100"
         assert services[KEY_PROXMOX]["url"] == "https://192.168.1.1:8006"
         assert services[KEY_PROXMOX]["extra"]["node"] == "pve"
+        assert services[KEY_RTSP]["url"] == "rtsp://192.168.1.50:554/stream1"
 
     def test_mcs_token_from_yaml(self):
         from custom_components.core_configurator.const import YAML_MCS_TOKEN
@@ -182,6 +199,38 @@ class TestServicesFromMapping:
 
         services = services_from_mapping({YAML_MCS_TOKEN: "   "})
         assert services[KEY_MASTER_CONTROL_SERVER]["extra"]["token"] == ""
+
+    def test_proxmox_tokens_from_yaml(self):
+        from custom_components.core_configurator.const import (
+            YAML_PROXMOX_TOKEN_ID,
+            YAML_PROXMOX_TOKEN_SECRET,
+        )
+
+        services = services_from_mapping(
+            {
+                YAML_PROXMOX_TOKEN_ID: " hass@pve!mc ",
+                YAML_PROXMOX_TOKEN_SECRET: " uuid-secret ",
+            }
+        )
+        assert services[KEY_PROXMOX]["extra"]["token_id"] == "hass@pve!mc"
+        assert services[KEY_PROXMOX]["extra"]["token_secret"] == "uuid-secret"
+
+    def test_rtsp_extras_from_yaml(self):
+        from custom_components.core_configurator.const import (
+            YAML_RTSP_ENABLED,
+            YAML_RTSP_LABEL,
+        )
+
+        services = services_from_mapping(
+            {
+                KEY_RTSP: "192.168.1.50:554/live",
+                YAML_RTSP_LABEL: "  Stage Cam  ",
+                YAML_RTSP_ENABLED: True,
+            }
+        )
+        assert services[KEY_RTSP]["url"] == "rtsp://192.168.1.50:554/live"
+        assert services[KEY_RTSP]["extra"]["label"] == "Stage Cam"
+        assert services[KEY_RTSP]["extra"]["enabled"] == "true"
 
 
 # ---------------------------------------------------------------------------

@@ -58,15 +58,14 @@ class GbnPanel extends HTMLElement {
   }
 
   _resolveServerUrl() {
-    return String(this._serverUrl || "http://192.168.1.206:8100").replace(/\/$/, "");
+    return String(this._serverUrl || "").replace(/\/$/, "");
   }
 
   async _loadDirectoryUrl() {
-    const fallback = this._panel?.config?.server_url || this._serverUrl || "http://192.168.1.206:8100";
     if (window.CoreConfigurator && this._hass) {
-      this._serverUrl = await window.CoreConfigurator.getUrl(this._hass, "gbn", fallback);
+      this._serverUrl = await window.CoreConfigurator.getUrl(this._hass, "gbn");
     } else {
-      this._serverUrl = String(fallback).replace(/\/$/, "");
+      this._serverUrl = "";
     }
   }
 
