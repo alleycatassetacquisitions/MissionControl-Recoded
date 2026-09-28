@@ -1,8 +1,8 @@
 /**
  * Galactic Bounty Network — Mission Control capture + flavor editor.
  *
- * Roster: registration/list_players websocket
- * API: GBN HTTP (flavor, intake, posters)
+ * Roster: registration/get_roster websocket
+ * API: GBN HTTP (flavor, intake, posters) via /api/gbn/proxy
  * Camera: getUserMedia + MediaRecorder (USB UVC webcam — not WebUSB)
  *
  * Deploy: config/www/gbn/
@@ -137,10 +137,7 @@ class GbnPanel extends HTMLElement {
     if (!this._hass) return;
     try {
       const result = await this._hass.connection.sendMessagePromise({
-        type: "registration/list_players",
-        rows: 100,
-        page: 1,
-        refresh: true,
+        type: "registration/get_roster",
       });
       this._players = result.players || [];
       this._renderComboList("");

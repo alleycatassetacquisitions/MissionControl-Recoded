@@ -77,8 +77,11 @@ class GbnProxyView(HomeAssistantView):
             url = f"{url}?{qs}"
         body = await request.read() if method in ("POST", "PUT") else None
         headers = {}
-        if request.content_type:
-            headers["Content-Type"] = request.content_type
+        # Use the raw header so multipart boundary is preserved.
+        # request.content_type drops parameters → FastAPI: "Missing boundary".
+        ctype = request.headers.get(aiohttp.hdrs.CONTENT_TYPE)
+        if ctype:
+            headers["Content-Type"] = ctype
         session = async_get_clientsession(hass)
         timeout = aiohttp.ClientTimeout(total=120)
         try:
