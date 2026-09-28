@@ -30,6 +30,16 @@ except ImportError:  # pragma: no cover
     get_url = None  # type: ignore[assignment]
 
 
+def _server_url(hass: HomeAssistant) -> str | None:
+    """Return configured GBN base URL, or None when unset/unavailable."""
+    if get_url is None:
+        return None
+    url = get_url(hass, KEY_GBN)
+    if not url:
+        return None
+    return str(url).rstrip("/")
+
+
 def register_http_views(hass: HomeAssistant) -> None:
     hass.http.register_view(GbnProxyView())
 
@@ -61,7 +71,7 @@ class GbnProxyView(HomeAssistantView):
         hass = getattr(self, "hass", None) or request.app.get("hass")
         if hass is None:
             return web.Response(text="Home Assistant not ready", status=503)
-        if async_request is None or get_url is None or not get_url(hass, KEY_GBN):
+        if async_request is None or not _server_url(hass):
             return web.json_response(
                 {"error": "GBN URL not configured in Core Configurator"},
                 status=503,
