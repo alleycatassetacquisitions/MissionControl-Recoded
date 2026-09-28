@@ -1,4 +1,6 @@
-"""Disable pytest plugins that need Home Assistant (fcntl) on Windows."""
+"""GBN server tests are FastAPI-only — do not load HA pytest plugins.
 
-# Prevent pytest-homeassistant-custom-component from auto-loading.
-pytest_plugins: list[str] = []
+The HA plugin entry point is named ``homeassistant``; disable it via
+``pytest.ini`` (``-p no:homeassistant``). An empty ``pytest_plugins`` here
+does not unregister entry-point plugins.
+"""
