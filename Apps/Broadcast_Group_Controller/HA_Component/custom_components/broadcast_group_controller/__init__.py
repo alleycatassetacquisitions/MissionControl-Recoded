@@ -41,12 +41,25 @@ _LOGGER = logging.getLogger(__name__)
 CONFIG_SCHEMA = cv.empty_config_schema(DOMAIN)
 
 try:
-    from custom_components.shared_libraries.fabric import get_presence_tracker
-    from custom_components.shared_libraries.mqtt import async_ensure_mqtt, async_publish
+    from custom_components.shared_libraries.fabric import (
+        PRESENCE_ONLINE,
+        device_id_from_status_topic,
+        get_presence_tracker,
+        parse_presence_payload,
+    )
+    from custom_components.shared_libraries.mqtt import (
+        async_ensure_mqtt,
+        async_publish,
+        async_subscribe,
+    )
 except ImportError:  # pragma: no cover
+    PRESENCE_ONLINE = "online"  # type: ignore[assignment]
+    device_id_from_status_topic = None  # type: ignore[assignment]
     get_presence_tracker = None  # type: ignore[assignment]
+    parse_presence_payload = None  # type: ignore[assignment]
     async_ensure_mqtt = None  # type: ignore[assignment]
     async_publish = None  # type: ignore[assignment]
+    async_subscribe = None  # type: ignore[assignment]
 
 
 _KIND_DEVICE = {
@@ -119,6 +132,12 @@ async def _write_area(
 async def _publish_membership(
     hass: HomeAssistant, kind: str, device_id: str, broadcast_group_id: str
 ) -> None:
+    """Publish membership with retain so rebooting devices re-learn the group.
+
+    Clear (empty broadcast_group_id) still publishes a retained JSON payload
+    with ``broadcast_group_id: null`` so the broker topic is overwritten and
+    late subscribers do not keep a stale group.
+    """
     if async_publish is None:
         _LOGGER.error("BGC: shared_libraries.mqtt not available")
         return
@@ -134,8 +153,74 @@ async def _publish_membership(
         "membership",
         payload=payload,
         qos=1,
-        retain=False,
+        retain=True,
     )
+
+
+async def _republish_stored_membership(
+    hass: HomeAssistant, kind: str, device_id: str
+) -> None:
+    """Re-publish Store membership when a device comes online."""
+    mem = _get_entry(hass, kind, device_id)
+    bg = (mem.get("broadcast_group_id") or "").strip()
+    if not bg:
+        return
+    _LOGGER.info(
+        "BGC: device %s/%s online — republishing membership %s",
+        kind,
+        device_id,
+        bg,
+    )
+    await _publish_membership(hass, kind, device_id, bg)
+
+
+async def _start_presence_republish(hass: HomeAssistant) -> None:
+    """Watch fabric status topics and republish membership on online transitions."""
+    if async_subscribe is None or parse_presence_payload is None:
+        _LOGGER.warning("BGC: cannot start presence republish (shared_libraries missing)")
+        return
+
+    store = hass.data.setdefault(DOMAIN, {})
+    if store.get("presence_unsubs"):
+        return
+
+    last_presence: dict[tuple[str, str], str] = store.setdefault(
+        "last_presence", {}
+    )
+    unsubs: list = []
+
+    for kind in SUPPORTED_KINDS:
+
+        @callback
+        def _on_status(msg, *, _kind: str = kind) -> None:
+            if device_id_from_status_topic is None:
+                return
+            topic = getattr(msg, "topic", "") or ""
+            device_id = device_id_from_status_topic(_kind, topic)
+            if not device_id:
+                return
+            presence = parse_presence_payload(getattr(msg, "payload", None))
+            key = (_kind, device_id)
+            previous = last_presence.get(key)
+            last_presence[key] = presence
+            if presence != PRESENCE_ONLINE or previous == PRESENCE_ONLINE:
+                return
+            hass.async_create_task(
+                _republish_stored_membership(hass, _kind, device_id)
+            )
+
+        unsub = await async_subscribe(
+            hass,
+            kind,
+            "status",
+            "#",
+            callback=_on_status,
+            qos=1,
+        )
+        unsubs.append(unsub)
+
+    store["presence_unsubs"] = unsubs
+    _LOGGER.info("BGC: presence republish watchers started for %s", SUPPORTED_KINDS)
 
 
 async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
@@ -171,11 +256,19 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     except HomeAssistantError as err:
         raise ConfigEntryNotReady(str(err)) from err
 
+    await _start_presence_republish(hass)
     return True
 
 
 async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
-    hass.data.get(DOMAIN, {}).pop("entry_id", None)
+    data = hass.data.get(DOMAIN, {})
+    for unsub in data.pop("presence_unsubs", []) or []:
+        try:
+            unsub()
+        except Exception:  # noqa: BLE001
+            pass
+    data.pop("last_presence", None)
+    data.pop("entry_id", None)
     return True
 
 

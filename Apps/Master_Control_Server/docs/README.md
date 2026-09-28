@@ -29,7 +29,7 @@ Central Server (online or LAN)
 
 - **Home Assistant does not talk to the Central Server directly.** MCS is the gateway.
 - `Registration` is MCS's HA face: coordinator, sensor, services, panel.
-- `GBN` will call MCS for Player data in Phase 8.
+- `GBN` calls MCS for Player data (Phase 8 — live overlay on poster reads).
 
 ---
 

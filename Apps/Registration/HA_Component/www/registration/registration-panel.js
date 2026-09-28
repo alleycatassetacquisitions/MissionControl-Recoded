@@ -22,6 +22,7 @@ class RegistrationPanel extends window.McPanel.Base {
     this.attachShadow({ mode: "open" });
     this._roster = [];
     this._editingId = null;
+    this._postersByPlayer = {};
   }
 
   set hass(hass) {
@@ -64,6 +65,12 @@ class RegistrationPanel extends window.McPanel.Base {
         .btn-link { background: transparent; color: var(--primary-color, #3d85c8); padding: 4px 8px; }
         .count-badge { font-size: 0.85rem; color: var(--secondary-text-color); margin-left: 8px; }
         .actions-cell { white-space: nowrap; }
+        .poster-cell { min-width: 88px; }
+        .poster-thumb {
+          width: 64px; height: 36px; object-fit: cover; border-radius: 4px;
+          background: #111; vertical-align: middle;
+        }
+        .poster-missing { color: var(--secondary-text-color); font-size: 0.8rem; }
       </style>
 
       <div class="wrap">
@@ -140,11 +147,39 @@ class RegistrationPanel extends window.McPanel.Base {
       .addEventListener("click", () => this._clearForm());
 
     await this._loadRoster();
+    await this._loadPosters();
   }
 
   // -------------------------------------------------------------------------
   // Helpers
   // -------------------------------------------------------------------------
+
+  _token() {
+    return this._hass?.auth?.data?.access_token || "";
+  }
+
+  async _loadPosters() {
+    this._postersByPlayer = {};
+    try {
+      const headers = { "cache-control": "no-store" };
+      if (this._token()) headers.Authorization = `Bearer ${this._token()}`;
+      const resp = await fetch("/api/gbn/proxy/api/posters", {
+        headers,
+        credentials: "same-origin",
+        cache: "no-store",
+      });
+      if (!resp.ok) return;
+      const list = await resp.json();
+      if (!Array.isArray(list)) return;
+      for (const p of list) {
+        const id = String(p.player_id || "");
+        if (id) this._postersByPlayer[id] = p;
+      }
+      this._renderRoster();
+    } catch (_) {
+      // GBN may not be installed yet — roster still works without posters.
+    }
+  }
 
   _formatErr(err) {
     if (err == null) return "unknown error";
@@ -233,7 +268,7 @@ class RegistrationPanel extends window.McPanel.Base {
       <table class="roster-table">
         <thead>
           <tr>
-            <th>ID</th><th>Name</th><th>Role</th><th>NeoCorp</th><th>Faction</th><th>Neo ID</th><th></th>
+            <th>ID</th><th>Name</th><th>Role</th><th>NeoCorp</th><th>Faction</th><th>Neo ID</th><th>Poster</th><th></th>
           </tr>
         </thead>
         <tbody>
@@ -247,6 +282,7 @@ class RegistrationPanel extends window.McPanel.Base {
               <td>${this._esc(this._titleCaseNeo(p.neocorp))}</td>
               <td>${this._esc(p.faction ?? "")}</td>
               <td>${this._esc(p.neo_id ?? "")}</td>
+              <td class="poster-cell">${this._posterCell(p)}</td>
               <td class="actions-cell">
                 <button class="btn btn-link edit-btn" data-idx="${idx}">Edit</button>
                 <button class="btn btn-link delete-btn" data-idx="${idx}">Delete</button>
@@ -271,6 +307,21 @@ class RegistrationPanel extends window.McPanel.Base {
     });
   }
 
+  _posterCell(player) {
+    const poster = this._postersByPlayer[String(player.id)] || null;
+    if (!poster) {
+      return `<span class="poster-missing">—</span>`;
+    }
+    const href = this._esc(poster.poster_url || "");
+    const video = this._esc(poster.video_url || "");
+    if (video) {
+      return `<a href="${href}" target="_blank" rel="noopener" title="Open poster">
+        <video class="poster-thumb" src="${video}" muted playsinline></video>
+      </a>`;
+    }
+    return `<a class="btn-link" href="${href}" target="_blank" rel="noopener">open</a>`;
+  }
+
   // -------------------------------------------------------------------------
   // Actions
   // -------------------------------------------------------------------------
@@ -279,7 +330,10 @@ class RegistrationPanel extends window.McPanel.Base {
     try {
       await this._hass.callService("registration", "sync_now", {});
       this._feedback("Syncing…", "ok");
-      setTimeout(() => this._loadRoster(), 1500);
+      setTimeout(async () => {
+        await this._loadRoster();
+        await this._loadPosters();
+      }, 1500);
     } catch (err) {
       this._feedback("Sync failed: " + this._formatErr(err), "err");
     }

@@ -326,3 +326,24 @@ Merge from [`HomeAssist/configuration.yaml`](../HomeAssist/configuration.yaml): 
 
 App README: [`Apps/Broadcast_Group_Controller/README.md`](../Apps/Broadcast_Group_Controller/README.md)
 
+### Phase 8 — Galactic Bounty Network consumes identity
+
+Posters own media and flavor. `player_id` is a foreign key to MCS. HA proxies the poster API; panels do not fetch LAN URLs.
+
+**Proxmox:** [`GBN Config Steps.md`](GBN%20Config%20Steps.md) · [`install-gbn-proxmox.sh`](install-gbn-proxmox.sh)
+
+```powershell
+scp -r "z:\CodingProjects\Alleycat\MissionControl\Apps\Galactic_Bounty_Network\HA_Component\custom_components\gbn" root@<HA-IP>:/config/custom_components/
+scp -r "z:\CodingProjects\Alleycat\MissionControl\Apps\Galactic_Bounty_Network\HA_Component\www\gbn" root@<HA-IP>:/config/www/
+scp -r "z:\CodingProjects\Alleycat\MissionControl\Apps\Registration\HA_Component\www\registration" root@<HA-IP>:/config/www/
+```
+
+Merge from [`HomeAssist/configuration.yaml`](../HomeAssist/configuration.yaml): `gbn: {}` and the Galactic Bounty Network `panel_custom` entry. Ensure Core Configurator key `gbn` points at the poster server. Restart HA.
+
+1. Settings → Devices & services → Add **Galactic Bounty Network**.
+2. Sidebar **Galactic Bounty Network**: roster pick → Generate → record/upload → create poster.
+3. Poster HTML overlays live MCS name/role/neocorp/faction on every read.
+4. Registration **Poster** column shows thumb + open link via `/api/gbn/proxy`.
+
+App README: [`Apps/Galactic_Bounty_Network/README.md`](../Apps/Galactic_Bounty_Network/README.md)
+

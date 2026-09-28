@@ -68,3 +68,24 @@ jobs:
             --tb=short \
             --cov=custom_components/digital_node_nexus \
             --cov-report=term-missing
+
+      - name: Install GBN server test dependencies
+        run: pip install -r Apps/Galactic_Bounty_Network/Server_Component/requirements.txt
+
+      - name: Run Galactic Bounty Network server tests
+        working-directory: Apps/Galactic_Bounty_Network/Server_Component
+        run: |
+          pytest tests/ \
+            -v \
+            --tb=short \
+            --cov=app \
+            --cov-report=term-missing
+
+      - name: Run Galactic Bounty Network HA tests
+        working-directory: Apps/Galactic_Bounty_Network/HA_Component
+        run: |
+          pytest tests/ \
+            -v \
+            --tb=short \
+            --cov=custom_components/gbn \
+            --cov-report=term-missing

@@ -25,6 +25,11 @@ mc/{kind}/cmd/device/{device_id}/membership
 {"broadcast_group_id": "lobby"}   # or null / "" to clear
 ```
 
+Messages are published with **retain=True** so a rebooting device re-learns its
+group from the broker. BGC also watches `mc/{kind}/status/#` and **republishes**
+stored membership when a device transitions to online (covers clients that miss
+retain or still have a stale env bootstrap).
+
 - **tv:** Pi client updates `BROADCAST_GROUP_ID`, resubscribes `cmd/broadcast/{id}/#` + desired playback, reflects group in status JSON.
 - **dnn:** FDN firmware should honor the same topic when present; HA stores membership for operator UI regardless.
 

@@ -46,7 +46,12 @@ require_proxmox() {
 }
 
 ctid_in_use() {
-  pct status "$1" >/dev/null 2>&1
+  # Cluster IDs are shared by LXCs and QEMU VMs — check both.
+  pct status "$1" >/dev/null 2>&1 && return 0
+  if command -v qm >/dev/null 2>&1; then
+    qm status "$1" >/dev/null 2>&1 && return 0
+  fi
+  return 1
 }
 
 next_free_ctid() {

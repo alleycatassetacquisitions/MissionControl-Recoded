@@ -214,7 +214,10 @@ Manages communications with FDNs (Fixed Data Nodes). Mission Control talks to FD
 
 Manages bounty posters, bounty boards, and poster capture. In code this is `gbn` — not Photobooth or `bounty`.
 
-**Path:** `Apps\Galactic_Bounty_Network\`
+**Path:** `Apps\Galactic_Bounty_Network\`  
+**On HA:** `/config/custom_components/gbn/` + `/config/www/gbn/`  
+**App README:** [`Apps/Galactic_Bounty_Network/README.md`](../Apps/Galactic_Bounty_Network/README.md)  
+**Deploy:** [`Docs/GBN Config Steps.md`](GBN%20Config%20Steps.md) · [`Docs/install-gbn-proxmox.sh`](install-gbn-proxmox.sh)
 
 ### Registration
 

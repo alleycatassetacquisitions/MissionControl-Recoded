@@ -12,12 +12,14 @@
 #   custom_components/digital_node_nexus/ ← Apps/Digital_Node_Nexus/HA_Component/custom_components/digital_node_nexus/
 #   custom_components/alleycattv/         ← Apps/AlleycatTV/HA_Component/custom_components/alleycattv/
 #   custom_components/broadcast_group_controller/ ← Apps/Broadcast_Group_Controller/HA_Component/custom_components/broadcast_group_controller/
+#   custom_components/gbn/                ← Apps/Galactic_Bounty_Network/HA_Component/custom_components/gbn/
 #   www/core_configurator/               ← Apps/Core_Configurator/HA_Component/www/core_configurator/
 #   www/shared_libraries/                ← Libraries/Shared_HA_Helpers/HA_Component/www/shared_libraries/
 #   www/registration/                    ← Apps/Registration/HA_Component/www/registration/
 #   www/digital_node_nexus/              ← Apps/Digital_Node_Nexus/HA_Component/www/digital_node_nexus/
 #   www/alleycattv/                      ← Apps/AlleycatTV/HA_Component/www/alleycattv/
 #   www/broadcast_group_controller/      ← Apps/Broadcast_Group_Controller/HA_Component/www/broadcast_group_controller/
+#   www/gbn/                             ← Apps/Galactic_Bounty_Network/HA_Component/www/gbn/
 #
 # ─────────────────────────────────────────────────────────────────────────────
 # Core Configurator
@@ -49,6 +51,9 @@ alleycattv: {}
 
 # Loads Broadcast Group Controller (placement + membership).
 broadcast_group_controller: {}
+
+# Loads Galactic Bounty Network (poster proxy + panel).
+gbn: {}
 
 frontend:
   extra_module_url:
@@ -99,3 +104,10 @@ panel_custom:
     sidebar_icon: mdi:broadcast
     url_path: broadcast-groups
     module_url: /local/broadcast_group_controller/bgc-panel.js
+
+  # ─── Galactic Bounty Network ───────────────────────────────────────────────
+  - name: gbn-panel
+    sidebar_title: Galactic Bounty Network
+    sidebar_icon: mdi:skull-crossbones
+    url_path: gbn
+    module_url: /local/gbn/gbn-panel.js
