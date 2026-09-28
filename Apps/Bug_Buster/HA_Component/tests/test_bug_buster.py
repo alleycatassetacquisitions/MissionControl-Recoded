@@ -105,14 +105,15 @@ async def test_health_not_configured(hass: HomeAssistant):
 
 @pytest.mark.asyncio
 async def test_list_hosts_requires_admin(hass: HomeAssistant):
-    from custom_components.bug_buster import __init__ as bb
+    from custom_components import bug_buster as bb
 
     connection = MagicMock()
     connection.user = MagicMock(is_admin=False)
     connection.send_error = MagicMock()
     msg = {"id": 1, "type": f"{DOMAIN}/list_hosts"}
 
-    await bb.ws_list_hosts(hass, connection, msg)
+    # Unwrap @async_response so we await the handler instead of scheduling a task.
+    await bb.ws_list_hosts.__wrapped__(hass, connection, msg)
     connection.send_error.assert_called_once()
     assert connection.send_error.call_args[0][1] == "unauthorized"
 
