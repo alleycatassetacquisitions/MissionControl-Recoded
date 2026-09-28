@@ -59,16 +59,6 @@ class AlleycatTVContentPanel extends HTMLElement {
     }
   }
 
-  async _openServerUrlDialog() {
-    const dlg = this.shadowRoot.getElementById("server-url-dialog");
-    const inp = this.shadowRoot.getElementById("server-url-input");
-    if (!dlg || !inp) return;
-    inp.value = this._serverUrl() || "";
-    dlg.style.display = "flex";
-    inp.focus();
-    inp.select();
-  }
-
   _token() {
     return this._hass?.auth?.data?.access_token || "";
   }
@@ -630,40 +620,6 @@ class AlleycatTVContentPanel extends HTMLElement {
       await this._reloadBumpers();
     });
 
-    // Server URL settings dialog
-    root.getElementById("btn-server-settings")?.addEventListener("click", () => this._openServerUrlDialog());
-    root.getElementById("btn-url-cancel")?.addEventListener("click", () => {
-      root.getElementById("server-url-dialog").style.display = "none";
-    });
-    root.getElementById("btn-url-clear")?.addEventListener("click", async () => {
-      await this._loadDirectoryUrl();
-      root.getElementById("server-url-dialog").style.display = "none";
-      this._toast("Reloaded streaming URL from Core Configurator", "ok");
-    });
-    root.getElementById("btn-url-save")?.addEventListener("click", async () => {
-      const inp = root.getElementById("server-url-input");
-      const val = (inp?.value || "").trim().replace(/\/$/, "");
-      if (!val) return this._toast("Enter a server URL first", "err");
-      try {
-        if (window.CoreConfigurator?.setService) {
-          await window.CoreConfigurator.setService(this._hass, "alleycattv", { url: val });
-        } else {
-          throw new Error("Core Configurator client not loaded — set alleycattv URL in Core Configurator panel");
-        }
-        this._cachedServerUrl = val;
-      } catch (err) {
-        this._toast(`Directory save failed: ${err.message}`, "err");
-        return;
-      }
-
-      root.getElementById("server-url-dialog").style.display = "none";
-      this._toast("Settings saved — reloading…", "ok");
-      setTimeout(() => location.reload(), 1200);
-    });
-    root.getElementById("server-url-dialog")?.addEventListener("click", (e) => {
-      if (e.target === root.getElementById("server-url-dialog"))
-        root.getElementById("server-url-dialog").style.display = "none";
-    });
     root.getElementById("btn-ann-url").addEventListener("click", async () => {
       const data = await this._promptUrl("Add scoreboard to announcements");
       if (!data) return;
@@ -974,77 +930,11 @@ class AlleycatTVContentPanel extends HTMLElement {
         .dev-file { display:flex; gap:8px; align-items:center; padding:5px 0; font-size:13px; border-bottom:1px solid var(--divider-color,#1f3a44); }
         .dev-file:last-child { border-bottom:none; }
         .dev-actions { display:flex; gap:8px; }
-        .btn-settings {
-          background: none; border: 1px solid var(--divider-color,#1f3a44);
-          border-radius: 8px; padding: 6px 10px; cursor: pointer;
-          font-size: 16px; color: var(--secondary-text-color,#7aa8b8);
-          line-height: 1; transition: background 0.15s;
-        }
-        .btn-settings:hover { background: var(--secondary-background-color,#0d1418); }
-        .url-dialog-overlay {
-          display: none; position: fixed; inset: 0;
-          background: rgba(0,0,0,0.6); z-index: 9999;
-          align-items: center; justify-content: center;
-        }
-        .url-dialog {
-          background: var(--card-background-color,#10151c);
-          border: 1px solid var(--divider-color,#1f3a44);
-          border-radius: 14px; padding: 28px 32px; min-width: 360px; max-width: 90vw;
-          box-shadow: 0 8px 32px rgba(0,0,0,0.5);
-        }
-        .url-dialog h3 { margin: 0 0 6px; font-size: 16px; font-weight: 600; }
-        .url-dialog p  { margin: 0 0 16px; font-size: 13px; color: var(--secondary-text-color,#7aa8b8); }
-        .url-dialog input[type=url] {
-          width: 100%; padding: 10px 12px; border-radius: 8px;
-          border: 1px solid var(--divider-color,#1f3a44);
-          font-size: 14px; font-family: inherit;
-          background: var(--secondary-background-color,#0d1418);
-          color: var(--primary-text-color,#e8f6ff);
-          box-sizing: border-box; margin-bottom: 8px;
-        }
-        .url-dialog-hint {
-          font-size: 11px; color: var(--secondary-text-color,#7aa8b8);
-          margin: 0 0 14px; line-height: 1.4;
-        }
-        .url-dialog-sep {
-          border: none; border-top: 1px solid rgba(122,168,184,0.25);
-          margin: 16px 0;
-        }
-        .url-dialog-label {
-          display: block; font-size: 12px; color: var(--secondary-text-color,#7aa8b8);
-          margin: 0 0 10px;
-        }
-        .url-dialog-label input {
-          display: block; width: 100%; margin-top: 4px;
-          background: #0d1a22; border: 1px solid rgba(122,168,184,0.35);
-          color: var(--primary-text-color,#e8f4f8); border-radius: 6px;
-          padding: 8px 10px; font-size: 13px; box-sizing: border-box;
-        }
-        .url-dialog-check {
-          display: flex; align-items: center; gap: 8px;
-          font-size: 13px; margin: 4px 0 14px;
-          color: var(--primary-text-color,#e8f4f8);
-        }
-        .url-dialog-actions { display: flex; gap: 10px; justify-content: flex-end; }
       </style>
-      <div class="url-dialog-overlay" id="server-url-dialog">
-        <div class="url-dialog">
-          <h3>Content server URL</h3>
-          <p>Saved in Core Configurator — the only place for Alleycat LAN URLs and tokens.</p>
-          <input id="server-url-input" type="url" placeholder="http://alleycat-streaming-server.local" autocomplete="off" />
-          <p class="url-dialog-hint">Live RTSP interrupt URL/label/enabled also live in <strong>Core Configurator</strong> (Live RTSP card) — not here.</p>
-          <div class="url-dialog-actions">
-            <button class="btn ghost" id="btn-url-clear" type="button">Clear override</button>
-            <button class="btn ghost" id="btn-url-cancel" type="button">Cancel</button>
-            <button class="btn primary" id="btn-url-save" type="button">Save &amp; Reload</button>
-          </div>
-        </div>
-      </div>
       <header>
         <h1>Content Manager</h1>
         <span class="muted">AlleycatTV library — uploads go through Mission Control in chunks</span>
         <div id="toast" class="toast"></div>
-        <button class="btn-settings" id="btn-server-settings" title="Server connection settings">⚙</button>
       </header>
       <main>
         <p class="section">Announcements</p>

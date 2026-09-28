@@ -1,4 +1,4 @@
-/**
+﻿/**
  * AlleycatTV Player Panel — live playback via HA services + proxy reads.
  * Placement/membership: Broadcast Group Controller.
  *
@@ -65,16 +65,6 @@ class AlleycatTVPanel extends HTMLElement {
     } else if (!this._serverUrl) {
       this._serverUrl = "";
     }
-  }
-
-  _openServerUrlDialog() {
-    const dlg = this.shadowRoot.getElementById("server-url-dialog");
-    const inp = this.shadowRoot.getElementById("server-url-input");
-    if (!dlg || !inp) return;
-    inp.value = this._serverUrl || "";
-    dlg.style.display = "flex";
-    inp.focus();
-    inp.select();
   }
 
   async _initAsync() {
@@ -699,40 +689,6 @@ class AlleycatTVPanel extends HTMLElement {
           font-size: 13px; font-weight: 500;
           transition: opacity 0.5s; min-height: 20px; margin-left: auto;
         }
-        .btn-settings {
-          background: none; border: 1px solid var(--divider-color, #e0e0e0);
-          border-radius: 8px; padding: 6px 10px; cursor: pointer;
-          font-size: 16px; color: var(--secondary-text-color, #727272);
-          line-height: 1; transition: background 0.15s;
-        }
-        .btn-settings:hover { background: var(--secondary-background-color, #f0f0f0); }
-
-        /* ── Server URL dialog ── */
-        .url-dialog-overlay {
-          display: none; position: fixed; inset: 0;
-          background: rgba(0,0,0,0.5); z-index: 9999;
-          align-items: center; justify-content: center;
-        }
-        .url-dialog {
-          background: var(--card-background-color, #fff);
-          border-radius: 14px; padding: 28px 32px; min-width: 360px; max-width: 90vw;
-          box-shadow: 0 8px 32px rgba(0,0,0,0.25);
-        }
-        .url-dialog h3 { margin: 0 0 6px; font-size: 16px; font-weight: 600; }
-        .url-dialog p  { margin: 0 0 16px; font-size: 13px; color: var(--secondary-text-color, #727272); }
-        .url-dialog input {
-          width: 100%; padding: 10px 12px; border-radius: 8px;
-          border: 1px solid var(--divider-color, #e0e0e0);
-          font-size: 14px; font-family: inherit;
-          background: var(--primary-background-color, #fff);
-          color: var(--primary-text-color, #212121);
-          box-sizing: border-box; margin-bottom: 16px;
-        }
-        .url-dialog .url-dialog-hint {
-          font-size: 11px; color: var(--secondary-text-color, #9e9e9e);
-          margin: -10px 0 14px; line-height: 1.4;
-        }
-        .url-dialog-actions { display: flex; gap: 10px; justify-content: flex-end; }
 
         .layout {
           display: grid;
@@ -906,21 +862,6 @@ class AlleycatTVPanel extends HTMLElement {
         .broadcast-card p  { margin: 0 0 12px; font-size: 13px; opacity: 0.8; }
       </style>
 
-      <!-- Server URL settings dialog -->
-      <div class="url-dialog-overlay" id="server-url-dialog">
-        <div class="url-dialog">
-          <h3>Server Connection</h3>
-          <p>Set the AlleycatTV streaming server URL. This override is saved in your browser and persists across HA restarts.</p>
-          <input id="server-url-input" type="url" placeholder="http://alleycat-streaming-server.local" autocomplete="off" />
-          <p class="url-dialog-hint">Tip: use a hostname like <code>alleycat-streaming-server.local</code> so the URL never changes when the server gets a new IP.</p>
-          <div class="url-dialog-actions">
-            <button class="btn btn-secondary btn-sm" id="btn-url-clear">Clear override</button>
-            <button class="btn btn-secondary btn-sm" id="btn-url-cancel">Cancel</button>
-            <button class="btn btn-primary btn-sm" id="btn-url-save">Save &amp; Reload</button>
-          </div>
-        </div>
-      </div>
-
       <div class="page-header">
         <div class="brand-icon">
           <svg viewBox="0 0 24 24"><path d="M21 3H3c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h18c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zm0 16H3V5h18v14zM10 8l6 4-6 4V8z"/></svg>
@@ -930,7 +871,6 @@ class AlleycatTVPanel extends HTMLElement {
           <p class="subtitle">Zone video distribution</p>
         </div>
         <span id="feedback"></span>
-        <button class="btn-settings" id="btn-server-settings" title="Server connection settings">⚙</button>
       </div>
 
       <div class="layout">
@@ -1056,41 +996,6 @@ class AlleycatTVPanel extends HTMLElement {
 
   _attachEventListeners() {
     const root = this.shadowRoot;
-
-    // Server URL settings dialog
-    root.getElementById("btn-server-settings")?.addEventListener("click", () => {
-      this._openServerUrlDialog();
-    });
-    root.getElementById("btn-url-cancel")?.addEventListener("click", () => {
-      root.getElementById("server-url-dialog").style.display = "none";
-    });
-    root.getElementById("btn-url-clear")?.addEventListener("click", async () => {
-      await this._loadDirectoryUrl();
-      root.getElementById("server-url-dialog").style.display = "none";
-      this._showFeedback("Reloaded streaming URL from Core Configurator", "info");
-    });
-    root.getElementById("btn-url-save")?.addEventListener("click", async () => {
-      const inp = root.getElementById("server-url-input");
-      const val = (inp?.value || "").trim().replace(/\/$/, "");
-      if (!val) return this._showFeedback("Enter a server URL first", "warn");
-      try {
-        if (window.CoreConfigurator?.setService) {
-          await window.CoreConfigurator.setService(this._hass, "alleycattv", { url: val });
-        } else {
-          throw new Error("Set alleycattv URL in Core Configurator");
-        }
-        this._serverUrl = val;
-        root.getElementById("server-url-dialog").style.display = "none";
-        this._showFeedback(`Streaming server saved in Core Configurator`, "success");
-      } catch (err) {
-        this._showFeedback(`Save failed: ${err.message || err}`, "warn");
-      }
-    });
-    // Close dialog on overlay click
-    root.getElementById("server-url-dialog")?.addEventListener("click", (e) => {
-      if (e.target === root.getElementById("server-url-dialog"))
-        root.getElementById("server-url-dialog").style.display = "none";
-    });
 
     // Zone detail controls
     root.getElementById("btn-play")?.addEventListener("click", () => {

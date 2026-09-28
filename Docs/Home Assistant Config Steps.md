@@ -365,7 +365,7 @@ Merge from [`HomeAssist/configuration.yaml`](../HomeAssist/configuration.yaml): 
 1. Add **Proxmox VE** (Core) for sensors/buttons.
 2. Set Proxmox URL + token (+ Live RTSP) in **Core Configurator**.
 3. Add **Bug Buster** — confirm console, MQTT spy, and companion health.
-4. AlleycatTV Content Manager no longer edits RTSP URL — use Core Configurator.
+4. AlleycatTV / AlleycatTV Content do not edit server IP or RTSP — use Core Configurator only.
 
 App README: [`Apps/Bug_Buster/README.md`](../Apps/Bug_Buster/README.md)
 

@@ -96,6 +96,8 @@ curl http://<IP>/health
 
 Seed via [`HomeAssist/secrets.yaml.example`](../HomeAssist/secrets.yaml.example) on first boot, or edit the Core Configurator sidebar after the entry exists.
 
+AlleycatTV and AlleycatTV Content panels **read** this URL (and Live RTSP) from Core Configurator only — they have no server-IP / RTSP settings UI.
+
 ---
 
 ## C. Deploy AlleycatTV onto Home Assistant
