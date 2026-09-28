@@ -1,0 +1,11 @@
+[tool.pytest.ini_options]
+# Run pytest from Apps/Galactic_Bounty_Network/HA_Component/
+# custom_components/ is a direct child, so it is importable.
+#
+# These tests are sync unit tests (no hass). Disable the HA pytest plugin
+# entry point (`homeassistant`) so it cannot inject async autouse fixtures
+# under pytest 9 STRICT mode, and so Windows is not blocked by fcntl.
+testpaths = ["tests"]
+pythonpath = ["."]
+addopts = "-p no:homeassistant"
+asyncio_mode = "auto"
