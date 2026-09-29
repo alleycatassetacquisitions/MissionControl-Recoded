@@ -1,564 +1,481 @@
-﻿/**
- * AlleycatTV Player Panel — live playback via HA services + proxy reads.
- * Placement/membership: Broadcast Group Controller.
- *
- * Place this file at:
- *   config/www/alleycattv/alleycattv-panel.js
- *
- * Register in configuration.yaml — see docs/setup.md
- */
-
-class AlleycatTVPanel extends HTMLElement {
-  constructor() {
-    super();
-    this.attachShadow({ mode: "open" });
-    this._hass = null;
-    this._devices = {};       // pi_id → device object
-    this._zones = {};         // zone_id → { name, pis: [] }
-    this._selectedZone = null;
-    this._eventUnsubscribe = null;
-    this._serverUrl = null;
-    this._contentFiles = [];
-    this._initialized = false;
-    this._areas = [];
-  }
-
-  set hass(hass) {
-    this._hass = hass;
-    if (!this._initialized) {
-      this._initialized = true;
-      this._serverUrl = this._resolveServerUrl();
-      this._render();
-      this._initAsync();
-    }
-  }
-
-  set panel(p) {
-    this._panel = p;
-    this._serverUrl = this._resolveServerUrl();
-  }
-
-  connectedCallback() {
-    if (this._hass && !this._initialized) {
-      this._initialized = true;
-      this._serverUrl = this._resolveServerUrl();
-      this._render();
-      this._initAsync();
-    }
-  }
-
-  disconnectedCallback() {
-    if (this._eventUnsubscribe) {
-      this._eventUnsubscribe();
+"use strict";
+(() => {
+  // src/panels/alleycattv-panel.ts
+  var AlleycatTVPanel = class extends window.McPanel.Base {
+    constructor() {
+      super();
+      this.legacyPaint = true;
+      this._devices = {};
+      this._zones = {};
+      this._selectedZone = null;
       this._eventUnsubscribe = null;
+      this._serverUrl = null;
+      this._contentFiles = [];
+      this._areas = [];
     }
-    this._initialized = false;
-  }
-
-  _resolveServerUrl() {
-    return String(this._serverUrl || "").replace(/\/$/, "");
-  }
-
-  async _loadDirectoryUrl() {
-    if (window.CoreConfigurator && this._hass) {
-      this._serverUrl = await window.CoreConfigurator.getUrl(this._hass, "alleycattv");
-    } else if (!this._serverUrl) {
-      this._serverUrl = "";
+    set panel(p) {
+      this._panel = p;
+      this._serverUrl = this._resolveServerUrl();
     }
-  }
-
-  async _initAsync() {
-    await this._loadDirectoryUrl();
-    await this._fetchServerZones();
-    await this._loadDevices();
-    await this._loadAreas();
-    await this._subscribeToEvents();
-    await this._loadContent();
-    this._buildZones();
-    this._renderZoneList();
-  }
-
-  // ── Server API helpers ────────────────────────────────────────────────────
-
-  _token() {
-    return this._hass?.auth?.data?.access_token || "";
-  }
-
-  async _apiGet(path) {
-    const headers = { "cache-control": "no-store" };
-    if (this._token()) headers.Authorization = `Bearer ${this._token()}`;
-    const resp = await fetch(`/api/alleycattv/proxy${path}`, {
-      method: "GET", headers, cache: "no-store", credentials: "same-origin",
-    });
-    if (!resp.ok) throw new Error(`${resp.status} ${resp.statusText}`);
-    return resp.json();
-  }
-
-  async _apiPost(path, body) {
-    const headers = { "Content-Type": "application/json", "cache-control": "no-store" };
-    if (this._token()) headers.Authorization = `Bearer ${this._token()}`;
-    const resp = await fetch(`/api/alleycattv/proxy${path}`, {
-      method: "POST", headers, body: JSON.stringify(body),
-      cache: "no-store", credentials: "same-origin",
-    });
-    if (!resp.ok) throw new Error(`${resp.status} ${resp.statusText}`);
-    return resp.json();
-  }
-
-  async _apiDelete(path) {
-    const headers = { "cache-control": "no-store" };
-    if (this._token()) headers.Authorization = `Bearer ${this._token()}`;
-    const resp = await fetch(`/api/alleycattv/proxy${path}`, {
-      method: "DELETE", headers, cache: "no-store", credentials: "same-origin",
-    });
-    if (!resp.ok) throw new Error(`${resp.status} ${resp.statusText}`);
-    return resp.json();
-  }
-
-  // ── Data loading ──────────────────────────────────────────────────────────
-
-  async _loadDevices() {
-    if (!this._hass) return;
-    try {
-      const result = await this._hass.connection.sendMessagePromise({
-        type: "alleycattv/get_devices",
-      });
-      (result.devices || []).forEach(d => {
-        const pi = d.pi_id || d.device_id;
-        if (!pi) return;
-        this._devices[pi] = {
-          ...d,
-          pi_id: pi,
-          zone: d.broadcast_group_id || d.zone || "",
-          broadcast_zone: d.broadcast_group_id || d.broadcast_zone || d.zone || "",
-        };
-      });
-      this._mergeDevicesFromHassStates();
-      console.info("[AlleycatTV] Loaded", Object.keys(this._devices).length, "device(s)");
-    } catch (err) {
-      console.warn("[AlleycatTV] Could not load device list:", err);
-    }
-  }
-
-  async _loadAreas() {
-    if (!this._hass) return;
-    try {
-      const result = await this._hass.connection.sendMessagePromise({
-        type: "alleycattv/list_areas",
-      });
-      this._areas = result.areas || [];
-    } catch (err) {
-      console.warn("[AlleycatTV] Could not load HA Areas:", err);
-    }
-  }
-
-  async _setPiArea(piId, areaId) {
-    try {
-      await this._hass.callService("broadcast_group_controller", "set_area", {
-        kind: "tv",
-        device_id: piId,
-        area_id: areaId || "",
-      });
-      if (this._devices[piId]) this._devices[piId].area_id = areaId;
-      this._showFeedback("Location saved", "success");
-    } catch (err) {
-      this._showFeedback(`Location failed: ${err.message || err}`, "error");
-    }
-  }
-
-  async _subscribeToEvents() {
-    if (!this._hass || this._eventUnsubscribe) return;
-    try {
-      this._eventUnsubscribe = await this._hass.connection.subscribeEvents(
-        (event) => {
-          const d = event.data;
-          if (!d || !d.pi_id) return;
-          this._devices[d.pi_id] = { ...this._devices[d.pi_id], ...d };
-          this._buildZones();
-          this._renderZoneList();
-          if (this._selectedZone) this._renderZoneDetail(this._selectedZone);
-        },
-        "alleycattv_device_update"
-      );
-    } catch (err) {
-      console.warn("[AlleycatTV] Could not subscribe to events:", err);
-    }
-  }
-
-  _mergeDevicesFromHassStates() {
-    const states = this._hass?.states;
-    if (!states || typeof states !== "object") return;
-    Object.values(states).forEach((s) => {
-      if (!s?.entity_id || !String(s.entity_id).startsWith("media_player.")) return;
-      const pi = s.attributes?.pi_id;
-      if (!pi) return;
-      const zone = s.attributes?.broadcast_group_id || s.attributes?.broadcast_zone || s.attributes?.zone || "";
-      const existing = this._devices[pi] || {};
-      this._devices[pi] = {
-        ...existing,
-        pi_id: pi,
-        zone: existing.zone || zone,
-        broadcast_zone: existing.broadcast_zone || zone,
-        state: existing.state || s.state,
-        current_file: existing.current_file || s.attributes?.media_title || s.attributes?.current_file,
-        next_file: existing.next_file || s.attributes?.next_file,
-        online: existing.online !== undefined ? existing.online : s.state !== "unavailable",
-        area_id: existing.area_id || "",
-      };
-    });
-  }
-
-  _normZone(value) {
-    return String(value || "")
-      .trim()
-      .toLowerCase()
-      .replace(/[\s_]+/g, "-");
-  }
-
-  _resolveDeviceZoneId(device) {
-    const raw = String(device.zone || device.broadcast_zone || "").trim();
-    if (!raw) return "unassigned";
-    const server = this._serverZones || {};
-    if (server[raw]) return raw;
-    const needle = this._normZone(raw);
-    const match = Object.values(server).find(
-      (z) => this._normZone(z.zone_id) === needle || this._normZone(z.name) === needle
-    );
-    return match ? match.zone_id : raw;
-  }
-
-  async _fetchServerZones() {
-    try {
-      let raw;
-      try { raw = await this._apiGet("/api/broadcast_groups/"); }
-      catch (_) { raw = await this._apiGet("/api/zones"); }
-      const zones = Array.isArray(raw) ? raw : Array.isArray(raw?.zones) ? raw.zones : [];
-      this._serverZones = this._serverZones || {};
-      zones.forEach((z) => {
-        if (z?.zone_id) this._serverZones[z.zone_id] = z;
-      });
-      console.info("[AlleycatTV] Loaded", zones.length, "server zone(s)");
-    } catch (err) {
-      console.warn("[AlleycatTV] Could not fetch server zones:", err);
-    }
-  }
-
-  async _loadContent() {
-    try {
-      const resp = await fetch(`/api/alleycattv/proxy/api/content/?base_url=${encodeURIComponent(this._serverUrl || "")}`, { headers: this._token() ? { Authorization: `Bearer ${this._token()}` } : {}, credentials: "same-origin", cache: "no-store" });
-      if (resp.ok) {
-        this._contentFiles = await resp.json();
-        this._populateFilePicker();
-        console.info("[AlleycatTV] Loaded", this._contentFiles.length, "content files");
+    disconnectedCallback() {
+      super.disconnectedCallback();
+      if (this._eventUnsubscribe) {
+        this._eventUnsubscribe();
+        this._eventUnsubscribe = null;
       }
-    } catch (err) {
-      console.warn("[AlleycatTV] Could not load content from server:", err);
     }
-  }
-
-  _buildZones() {
-    const zones = {};
-    // Seed from server-defined zones first so they show even without Pis
-    Object.values(this._serverZones || {}).forEach(z => {
-      zones[z.zone_id] = { zone_id: z.zone_id, name: z.name, pis: [] };
-    });
-    // Overlay Pi device reports
-    Object.values(this._devices).forEach(d => {
-      if (!d?.pi_id) return;
-      const z = this._resolveDeviceZoneId(d);
-      if (!zones[z]) zones[z] = { zone_id: z, name: z, pis: [] };
-      const existing = zones[z].pis.findIndex(p => p.pi_id === d.pi_id);
-      if (existing >= 0) zones[z].pis[existing] = d;
-      else zones[z].pis.push(d);
-    });
-    this._zones = zones;
-  }
-
-  _missingPiHint(zoneId) {
-    const reports = Object.values(this._devices)
-      .filter((d) => d?.pi_id)
-      .map((d) => `${d.pi_id} (MQTT zone: ${d.zone || d.broadcast_zone || "none"})`);
-    if (!reports.length) {
-      return "No Pis have reported in via MQTT yet. Zone Play/Stop still goes out on the zone topic.";
+    _resolveServerUrl() {
+      return String(this._serverUrl || "").replace(/\/$/, "");
     }
-    return `No Pi matched zone id "${zoneId}". Reporting: ${reports.join("; ")}`;
-  }
-
-  async _createZone(zoneId, zoneName) {
-    try {
-      try {
-        await this._apiPost("/api/broadcast_groups/", { broadcast_group_id: zoneId, name: zoneName || zoneId });
-      } catch (_) {
-        await this._apiPost("/api/zones", { zone_id: zoneId, name: zoneName || zoneId });
+    async _loadDirectoryUrl() {
+      if (window.CoreConfigurator && this.hass) {
+        this._serverUrl = await window.CoreConfigurator.getUrl(this.hass, "alleycattv");
+      } else if (!this._serverUrl) {
+        this._serverUrl = "";
       }
-      if (!this._serverZones) this._serverZones = {};
-      this._serverZones[zoneId] = { zone_id: zoneId, name: zoneName || zoneId };
+    }
+    async _boot() {
+      await this._loadDirectoryUrl();
+      await this._fetchServerZones();
+      await this._loadDevices();
+      await this._loadAreas();
+      await this._subscribeToEvents();
+      await this._loadContent();
       this._buildZones();
       this._renderZoneList();
-      this._showFeedback(`Zone "${zoneId}" created`, "success");
-    } catch (err) {
-      this._showFeedback(`Failed to create zone: ${err.message}`, "error");
     }
-  }
-
-  async _deleteZone(zoneId) {
-    if (!confirm(`Delete zone "${zoneId}"? This cannot be undone.`)) return;
-    try {
+    // ── Server API helpers ────────────────────────────────────────────────────
+    _token() {
+      return this.hass?.auth?.data?.access_token || "";
+    }
+    async _apiGet(path) {
+      const headers = { "cache-control": "no-store" };
+      if (this._token()) headers.Authorization = `Bearer ${this._token()}`;
+      const resp = await fetch(`/api/alleycattv/proxy${path}`, {
+        method: "GET",
+        headers,
+        cache: "no-store",
+        credentials: "same-origin"
+      });
+      if (!resp.ok) throw new Error(`${resp.status} ${resp.statusText}`);
+      return resp.json();
+    }
+    async _apiPost(path, body) {
+      const headers = { "Content-Type": "application/json", "cache-control": "no-store" };
+      if (this._token()) headers.Authorization = `Bearer ${this._token()}`;
+      const resp = await fetch(`/api/alleycattv/proxy${path}`, {
+        method: "POST",
+        headers,
+        body: JSON.stringify(body),
+        cache: "no-store",
+        credentials: "same-origin"
+      });
+      if (!resp.ok) throw new Error(`${resp.status} ${resp.statusText}`);
+      return resp.json();
+    }
+    async _apiDelete(path) {
+      const headers = { "cache-control": "no-store" };
+      if (this._token()) headers.Authorization = `Bearer ${this._token()}`;
+      const resp = await fetch(`/api/alleycattv/proxy${path}`, {
+        method: "DELETE",
+        headers,
+        cache: "no-store",
+        credentials: "same-origin"
+      });
+      if (!resp.ok) throw new Error(`${resp.status} ${resp.statusText}`);
+      return resp.json();
+    }
+    // ── Data loading ──────────────────────────────────────────────────────────
+    async _loadDevices() {
+      if (!this.hass) return;
       try {
-        await this._apiDelete(`/api/broadcast_groups/${encodeURIComponent(zoneId)}`);
-      } catch (_) {
-        await this._apiDelete(`/api/zones/${encodeURIComponent(zoneId)}`);
+        const result = await this.hass.connection.sendMessagePromise({
+          type: "alleycattv/get_devices"
+        });
+        (result.devices || []).forEach((d) => {
+          const pi = d.pi_id || d.device_id;
+          if (!pi) return;
+          this._devices[pi] = {
+            ...d,
+            pi_id: pi,
+            zone: d.broadcast_group_id || d.zone || "",
+            broadcast_zone: d.broadcast_group_id || d.broadcast_zone || d.zone || ""
+          };
+        });
+        this._mergeDevicesFromHassStates();
+        console.info("[AlleycatTV] Loaded", Object.keys(this._devices).length, "device(s)");
+      } catch (err) {
+        console.warn("[AlleycatTV] Could not load device list:", err);
       }
-      delete this._serverZones?.[zoneId];
-      delete this._zones[zoneId];
-      if (this._selectedZone === zoneId) {
-        this._selectedZone = null;
-        this.shadowRoot.getElementById("zone-detail").style.display = "none";
-        this.shadowRoot.getElementById("main-placeholder").style.display = "block";
+    }
+    async _loadAreas() {
+      if (!this.hass) return;
+      try {
+        const result = await this.hass.connection.sendMessagePromise({
+          type: "alleycattv/list_areas"
+        });
+        this._areas = result.areas || [];
+      } catch (err) {
+        console.warn("[AlleycatTV] Could not load HA Areas:", err);
       }
-      this._renderZoneList();
-      this._showFeedback(`Zone "${zoneId}" deleted`, "success");
-    } catch (err) {
-      this._showFeedback(`Failed to delete zone: ${err.message}`, "error");
     }
-  }
-
-  // ── Service calls ─────────────────────────────────────────────────────────
-
-  async _callService(service, data) {
-    if (!this._hass) return;
-    try {
-      await this._hass.callService("alleycattv", service, data);
-      this._showFeedback(`✓ ${service.replace(/_/g, " ")}`, "success");
-    } catch (err) {
-      this._showFeedback(`✗ ${err.message}`, "error");
+    async _setPiArea(piId, areaId) {
+      try {
+        await this.hass.callService("broadcast_group_controller", "set_area", {
+          kind: "tv",
+          device_id: piId,
+          area_id: areaId || ""
+        });
+        if (this._devices[piId]) this._devices[piId].area_id = areaId;
+        this._showFeedback("Location saved", "success");
+      } catch (err) {
+        this._showFeedback(`Location failed: ${err.message || err}`, "error");
+      }
     }
-  }
-
-  _playZone(zone_id) {
-    this._callService("play_broadcast_group", { broadcast_group_id: zone_id });
-  }
-
-  _stopZone(zone_id) {
-    this._callService("stop_broadcast_group", { broadcast_group_id: zone_id });
-  }
-
-  _interruptZone(zone_id) {
-    const url = this._buildInterruptUrl(this._getSelectedFileUrl(), "file-picker");
-    if (!url) return this._showFeedback("Select an announcement file first", "warn");
-    this._callService("interrupt_broadcast_group", { broadcast_group_id: zone_id, file_url: url });
-  }
-
-  _startZoneBroadcast(zone_id) {
-    const base = this._getSelectedFileUrl();
-    if (!base) return this._showFeedback("Select an RTSP source first", "warn");
-    const url = `${base.split("#")[0]}#acv_hold=1`;
-    this._callService("interrupt_broadcast_group", { broadcast_group_id: zone_id, file_url: url });
-  }
-
-  _stopZoneBroadcast(zone_id) {
-    this._callService("play_broadcast_group", { broadcast_group_id: zone_id });
-  }
-
-  _interruptPi(pi_id) {
-    const url = this._buildInterruptUrl(this._getSelectedFileUrl(), "file-picker");
-    if (!url) return this._showFeedback("Select an announcement file first", "warn");
-    this._callService("interrupt_pi", { pi_id, file_url: url });
-  }
-
-  _reloadPlaylist(zone_id) {
-    this._callService("reload_playlist", { broadcast_group_id: zone_id });
-  }
-
-  _setVolume(zone_id, volume) {
-    this._callService("set_volume_broadcast_group", { broadcast_group_id: zone_id, volume: parseInt(volume) });
-  }
-
-  // ── Content picker helpers ────────────────────────────────────────────────
-
-  _getSelectedFileUrl() {
-    const sel = this.shadowRoot.getElementById("file-picker");
-    return sel ? sel.value : "";
-  }
-
-  _announcementItems() {
-    return this._contentFiles.filter(f =>
-      f.media_type === "announcement" ||
-      f.media_type === "rtsp" ||
-      (f.media_type === "webpage" && f.entry_id)
-    );
-  }
-
-  _getAnnouncementByUrl(url) {
-    const bare = (url || "").split("#")[0];
-    return this._announcementItems().find(f => this._announcementOptionValue(f) === bare);
-  }
-
-  _isRtspSelection(url) {
-    const f = this._getAnnouncementByUrl(url);
-    if (f?.media_type === "rtsp") return true;
-    return /^(rtsp|rtsps):\/\//i.test((url || "").split("#")[0]);
-  }
-
-  _isVideoAnnouncementUrl(url) {
-    const path = (url || "").split("?")[0].split("#")[0].toLowerCase();
-    return /\.(mp4|mkv|avi|mov|webm)$/.test(path);
-  }
-
-  _announcementOptionValue(f) {
-    return (f.url || "").split("#")[0];
-  }
-
-  _announcementOptionLabel(f) {
-    if (f.media_type === "rtsp") return `${f.filename || "Live RTSP"} (stream)`;
-    return f.filename || f.url || "announcement";
-  }
-
-  _getInterruptDurationPicker(pickerId) {
-    const sel = this.shadowRoot.getElementById(`${pickerId}-duration`);
-    return sel ? sel.value : "30";
-  }
-
-  _buildInterruptUrl(baseUrl, pickerId = "file-picker") {
-    if (!baseUrl) return "";
-    let url = baseUrl.split("#")[0];
-    if (this._isRtspSelection(url)) {
-      return `${url}#acv_hold=1`;
+    async _subscribeToEvents() {
+      if (!this.hass || this._eventUnsubscribe) return;
+      try {
+        this._eventUnsubscribe = await this.hass.connection.subscribeEvents(
+          (event) => {
+            const d = event.data;
+            if (!d || !d.pi_id) return;
+            this._devices[d.pi_id] = { ...this._devices[d.pi_id], ...d };
+            this._buildZones();
+            this._renderZoneList();
+            if (this._selectedZone) this._renderZoneDetail(this._selectedZone);
+          },
+          "alleycattv_device_update"
+        );
+      } catch (err) {
+        console.warn("[AlleycatTV] Could not subscribe to events:", err);
+      }
     }
-    const mode = this._getInterruptDurationPicker(pickerId);
-
-    if (this._isVideoAnnouncementUrl(url)) {
+    _mergeDevicesFromHassStates() {
+      const states = this.hass?.states;
+      if (!states || typeof states !== "object") return;
+      Object.values(states).forEach((s) => {
+        if (!s?.entity_id || !String(s.entity_id).startsWith("media_player.")) return;
+        const pi = s.attributes?.pi_id;
+        if (!pi) return;
+        const zone = s.attributes?.broadcast_group_id || s.attributes?.broadcast_zone || s.attributes?.zone || "";
+        const existing = this._devices[pi] || {};
+        this._devices[pi] = {
+          ...existing,
+          pi_id: pi,
+          zone: existing.zone || zone,
+          broadcast_zone: existing.broadcast_zone || zone,
+          state: existing.state || s.state,
+          current_file: existing.current_file || s.attributes?.media_title || s.attributes?.current_file,
+          next_file: existing.next_file || s.attributes?.next_file,
+          online: existing.online !== void 0 ? existing.online : s.state !== "unavailable",
+          area_id: existing.area_id || ""
+        };
+      });
+    }
+    _normZone(value) {
+      return String(value || "").trim().toLowerCase().replace(/[\s_]+/g, "-");
+    }
+    _resolveDeviceZoneId(device) {
+      const raw = String(device.zone || device.broadcast_zone || "").trim();
+      if (!raw) return "unassigned";
+      const server = this._serverZones || {};
+      if (server[raw]) return raw;
+      const needle = this._normZone(raw);
+      const match = Object.values(server).find(
+        (z) => this._normZone(z.zone_id) === needle || this._normZone(z.name) === needle
+      );
+      return match ? match.zone_id : raw;
+    }
+    async _fetchServerZones() {
+      try {
+        let raw;
+        try {
+          raw = await this._apiGet("/api/broadcast_groups/");
+        } catch (_) {
+          raw = await this._apiGet("/api/zones");
+        }
+        const zones = Array.isArray(raw) ? raw : Array.isArray(raw?.zones) ? raw.zones : [];
+        this._serverZones = this._serverZones || {};
+        zones.forEach((z) => {
+          if (z?.zone_id) this._serverZones[z.zone_id] = z;
+        });
+        console.info("[AlleycatTV] Loaded", zones.length, "server zone(s)");
+      } catch (err) {
+        console.warn("[AlleycatTV] Could not fetch server zones:", err);
+      }
+    }
+    async _loadContent() {
+      try {
+        const resp = await fetch(`/api/alleycattv/proxy/api/content/?base_url=${encodeURIComponent(this._serverUrl || "")}`, { headers: this._token() ? { Authorization: `Bearer ${this._token()}` } : {}, credentials: "same-origin", cache: "no-store" });
+        if (resp.ok) {
+          this._contentFiles = await resp.json();
+          this._populateFilePicker();
+          console.info("[AlleycatTV] Loaded", this._contentFiles.length, "content files");
+        }
+      } catch (err) {
+        console.warn("[AlleycatTV] Could not load content from server:", err);
+      }
+    }
+    _buildZones() {
+      const zones = {};
+      Object.values(this._serverZones || {}).forEach((z) => {
+        zones[z.zone_id] = { zone_id: z.zone_id, name: z.name, pis: [] };
+      });
+      Object.values(this._devices).forEach((d) => {
+        if (!d?.pi_id) return;
+        const z = this._resolveDeviceZoneId(d);
+        if (!zones[z]) zones[z] = { zone_id: z, name: z, pis: [] };
+        const existing = zones[z].pis.findIndex((p) => p.pi_id === d.pi_id);
+        if (existing >= 0) zones[z].pis[existing] = d;
+        else zones[z].pis.push(d);
+      });
+      this._zones = zones;
+    }
+    _missingPiHint(zoneId) {
+      const reports = Object.values(this._devices).filter((d) => d?.pi_id).map((d) => `${d.pi_id} (MQTT zone: ${d.zone || d.broadcast_zone || "none"})`);
+      if (!reports.length) {
+        return "No Pis have reported in via MQTT yet. Zone Play/Stop still goes out on the zone topic.";
+      }
+      return `No Pi matched zone id "${zoneId}". Reporting: ${reports.join("; ")}`;
+    }
+    async _createZone(zoneId, zoneName) {
+      try {
+        try {
+          await this._apiPost("/api/broadcast_groups/", { broadcast_group_id: zoneId, name: zoneName || zoneId });
+        } catch (_) {
+          await this._apiPost("/api/zones", { zone_id: zoneId, name: zoneName || zoneId });
+        }
+        if (!this._serverZones) this._serverZones = {};
+        this._serverZones[zoneId] = { zone_id: zoneId, name: zoneName || zoneId };
+        this._buildZones();
+        this._renderZoneList();
+        this._showFeedback(`Zone "${zoneId}" created`, "success");
+      } catch (err) {
+        this._showFeedback(`Failed to create zone: ${err.message}`, "error");
+      }
+    }
+    async _deleteZone(zoneId) {
+      if (!confirm(`Delete zone "${zoneId}"? This cannot be undone.`)) return;
+      try {
+        try {
+          await this._apiDelete(`/api/broadcast_groups/${encodeURIComponent(zoneId)}`);
+        } catch (_) {
+          await this._apiDelete(`/api/zones/${encodeURIComponent(zoneId)}`);
+        }
+        delete this._serverZones?.[zoneId];
+        delete this._zones[zoneId];
+        if (this._selectedZone === zoneId) {
+          this._selectedZone = null;
+          this.shadowRoot.getElementById("zone-detail").style.display = "none";
+          this.shadowRoot.getElementById("main-placeholder").style.display = "block";
+        }
+        this._renderZoneList();
+        this._showFeedback(`Zone "${zoneId}" deleted`, "success");
+      } catch (err) {
+        this._showFeedback(`Failed to delete zone: ${err.message}`, "error");
+      }
+    }
+    // ── Service calls ─────────────────────────────────────────────────────────
+    async _callService(service, data) {
+      if (!this.hass) return;
+      try {
+        await this.hass.callService("alleycattv", service, data);
+        this._showFeedback(`\u2713 ${service.replace(/_/g, " ")}`, "success");
+      } catch (err) {
+        this._showFeedback(`\u2717 ${err.message}`, "error");
+      }
+    }
+    _playZone(zone_id) {
+      this._callService("play_broadcast_group", { broadcast_group_id: zone_id });
+    }
+    _stopZone(zone_id) {
+      this._callService("stop_broadcast_group", { broadcast_group_id: zone_id });
+    }
+    _interruptZone(zone_id) {
+      const url = this._buildInterruptUrl(this._getSelectedFileUrl(), "file-picker");
+      if (!url) return this._showFeedback("Select an announcement file first", "warn");
+      this._callService("interrupt_broadcast_group", { broadcast_group_id: zone_id, file_url: url });
+    }
+    _startZoneBroadcast(zone_id) {
+      const base = this._getSelectedFileUrl();
+      if (!base) return this._showFeedback("Select an RTSP source first", "warn");
+      const url = `${base.split("#")[0]}#acv_hold=1`;
+      this._callService("interrupt_broadcast_group", { broadcast_group_id: zone_id, file_url: url });
+    }
+    _stopZoneBroadcast(zone_id) {
+      this._callService("play_broadcast_group", { broadcast_group_id: zone_id });
+    }
+    _interruptPi(pi_id) {
+      const url = this._buildInterruptUrl(this._getSelectedFileUrl(), "file-picker");
+      if (!url) return this._showFeedback("Select an announcement file first", "warn");
+      this._callService("interrupt_pi", { pi_id, file_url: url });
+    }
+    _reloadPlaylist(zone_id) {
+      this._callService("reload_playlist", { broadcast_group_id: zone_id });
+    }
+    _setVolume(zone_id, volume) {
+      this._callService("set_volume_broadcast_group", { broadcast_group_id: zone_id, volume: parseInt(volume) });
+    }
+    // ── Content picker helpers ────────────────────────────────────────────────
+    _getSelectedFileUrl() {
+      const sel = this.shadowRoot.getElementById("file-picker");
+      return sel ? sel.value : "";
+    }
+    _announcementItems() {
+      return this._contentFiles.filter(
+        (f) => f.media_type === "announcement" || f.media_type === "rtsp" || f.media_type === "webpage" && f.entry_id
+      );
+    }
+    _getAnnouncementByUrl(url) {
+      const bare = (url || "").split("#")[0];
+      return this._announcementItems().find((f) => this._announcementOptionValue(f) === bare);
+    }
+    _isRtspSelection(url) {
+      const f = this._getAnnouncementByUrl(url);
+      if (f?.media_type === "rtsp") return true;
+      return /^(rtsp|rtsps):\/\//i.test((url || "").split("#")[0]);
+    }
+    _isVideoAnnouncementUrl(url) {
+      const path = (url || "").split("?")[0].split("#")[0].toLowerCase();
+      return /\.(mp4|mkv|avi|mov|webm)$/.test(path);
+    }
+    _announcementOptionValue(f) {
+      return (f.url || "").split("#")[0];
+    }
+    _announcementOptionLabel(f) {
+      if (f.media_type === "rtsp") return `${f.filename || "Live RTSP"} (stream)`;
+      return f.filename || f.url || "announcement";
+    }
+    _getInterruptDurationPicker(pickerId) {
+      const sel = this.shadowRoot.getElementById(`${pickerId}-duration`);
+      return sel ? sel.value : "30";
+    }
+    _buildInterruptUrl(baseUrl, pickerId = "file-picker") {
+      if (!baseUrl) return "";
+      let url = baseUrl.split("#")[0];
+      if (this._isRtspSelection(url)) {
+        return `${url}#acv_hold=1`;
+      }
+      const mode = this._getInterruptDurationPicker(pickerId);
+      if (this._isVideoAnnouncementUrl(url)) {
+        if (mode === "hold") return `${url}#acv_hold=1`;
+        return url;
+      }
       if (mode === "hold") return `${url}#acv_hold=1`;
-      return url;
+      if (mode === "custom") {
+        const sec = parseInt(prompt("Display duration (seconds):", "30") || "30", 10);
+        return `${url}#acv_duration=${sec > 0 ? sec : 30}`;
+      }
+      return `${url}#acv_duration=${mode}`;
     }
-    if (mode === "hold") return `${url}#acv_hold=1`;
-    if (mode === "custom") {
-      const sec = parseInt(prompt("Display duration (seconds):", "30") || "30", 10);
-      return `${url}#acv_duration=${sec > 0 ? sec : 30}`;
-    }
-    return `${url}#acv_duration=${mode}`;
-  }
-
-  _interruptDurationOptions() {
-    return `
+    _interruptDurationOptions() {
+      return `
       <option value="30">30 seconds (default)</option>
       <option value="15">15 seconds</option>
       <option value="60">60 seconds</option>
       <option value="90">90 seconds</option>
-      <option value="custom">Custom…</option>
+      <option value="custom">Custom\u2026</option>
       <option value="hold">Until stopped (Play/Stop)</option>`;
-  }
-
-  _populateFilePicker() {
-    const announcements = this._announcementItems();
-    const options = `<option value="">-- select announcement --</option>` +
-      announcements.map(f =>
-        `<option value="${this._announcementOptionValue(f)}" data-media-type="${f.media_type || ""}">${this._escHtml(this._announcementOptionLabel(f))}</option>`
+    }
+    _populateFilePicker() {
+      const announcements = this._announcementItems();
+      const options = `<option value="">-- select announcement --</option>` + announcements.map(
+        (f) => `<option value="${this._announcementOptionValue(f)}" data-media-type="${f.media_type || ""}">${this._escHtml(this._announcementOptionLabel(f))}</option>`
       ).join("");
-    ["file-picker", "file-picker-global"].forEach(id => {
-      const sel = this.shadowRoot.getElementById(id);
-      if (sel) sel.innerHTML = options;
-    });
-    this._syncInterruptUi("file-picker");
-    this._syncInterruptUi("file-picker-global");
-  }
-
-  _escHtml(v) {
-    return String(v ?? "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/"/g, "&quot;");
-  }
-
-  _syncInterruptUi(pickerId) {
-    const root = this.shadowRoot;
-    const sel = root.getElementById(pickerId);
-    if (!sel) return;
-    const isRtsp = this._isRtspSelection(sel.value);
-    const isGlobal = pickerId === "file-picker-global";
-
-    const durationEl = root.getElementById(`${pickerId}-duration`);
-    const durationWrap = root.getElementById(`${pickerId}-duration-wrap`);
-    if (durationEl) durationEl.style.display = isRtsp ? "none" : "";
-    if (durationWrap) durationWrap.style.display = isRtsp ? "none" : "";
-
-    if (isGlobal) {
-      const volWrap = root.getElementById("bcast-rtsp-volume-wrap");
-      const startBtn = root.getElementById("bcast-start");
-      const stopBtn = root.getElementById("bcast-stop");
-      const interruptBtn = root.getElementById("bcast-interrupt");
-      if (volWrap) volWrap.style.display = isRtsp ? "flex" : "none";
-      if (startBtn) startBtn.style.display = isRtsp ? "" : "none";
-      if (stopBtn) stopBtn.style.display = isRtsp ? "" : "none";
-      if (interruptBtn) interruptBtn.style.display = isRtsp ? "none" : "";
-    } else {
-      const startBtn = root.getElementById("btn-rtsp-start");
-      const stopBtn = root.getElementById("btn-rtsp-stop");
-      const interruptBtn = root.getElementById("btn-interrupt");
-      const hint = root.getElementById("interrupt-hint");
-      if (startBtn) startBtn.style.display = isRtsp ? "" : "none";
-      if (stopBtn) stopBtn.style.display = isRtsp ? "" : "none";
-      if (interruptBtn) interruptBtn.style.display = isRtsp ? "none" : "";
-      if (hint) {
-        hint.textContent = isRtsp
-          ? "Live RTSP plays until you press Stop broadcasting (resumes the playlist)."
-          : "Photos and scoreboards use the duration above (default 30s). Videos play in full. \"Until stopped\" stays on screen until you press Play or Stop.";
+      ["file-picker", "file-picker-global"].forEach((id) => {
+        const sel = this.shadowRoot.getElementById(id);
+        if (sel) sel.innerHTML = options;
+      });
+      this._syncInterruptUi("file-picker");
+      this._syncInterruptUi("file-picker-global");
+    }
+    _escHtml(v) {
+      return String(v ?? "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/"/g, "&quot;");
+    }
+    _syncInterruptUi(pickerId) {
+      const root = this.shadowRoot;
+      const sel = root.getElementById(pickerId);
+      if (!sel) return;
+      const isRtsp = this._isRtspSelection(sel.value);
+      const isGlobal = pickerId === "file-picker-global";
+      const durationEl = root.getElementById(`${pickerId}-duration`);
+      const durationWrap = root.getElementById(`${pickerId}-duration-wrap`);
+      if (durationEl) durationEl.style.display = isRtsp ? "none" : "";
+      if (durationWrap) durationWrap.style.display = isRtsp ? "none" : "";
+      if (isGlobal) {
+        const volWrap = root.getElementById("bcast-rtsp-volume-wrap");
+        const startBtn = root.getElementById("bcast-start");
+        const stopBtn = root.getElementById("bcast-stop");
+        const interruptBtn = root.getElementById("bcast-interrupt");
+        if (volWrap) volWrap.style.display = isRtsp ? "flex" : "none";
+        if (startBtn) startBtn.style.display = isRtsp ? "" : "none";
+        if (stopBtn) stopBtn.style.display = isRtsp ? "" : "none";
+        if (interruptBtn) interruptBtn.style.display = isRtsp ? "none" : "";
+      } else {
+        const startBtn = root.getElementById("btn-rtsp-start");
+        const stopBtn = root.getElementById("btn-rtsp-stop");
+        const interruptBtn = root.getElementById("btn-interrupt");
+        const hint = root.getElementById("interrupt-hint");
+        if (startBtn) startBtn.style.display = isRtsp ? "" : "none";
+        if (stopBtn) stopBtn.style.display = isRtsp ? "" : "none";
+        if (interruptBtn) interruptBtn.style.display = isRtsp ? "none" : "";
+        if (hint) {
+          hint.textContent = isRtsp ? "Live RTSP plays until you press Stop broadcasting (resumes the playlist)." : 'Photos and scoreboards use the duration above (default 30s). Videos play in full. "Until stopped" stays on screen until you press Play or Stop.';
+        }
       }
     }
-  }
-
-  async _broadcastStartRtsp() {
-    const sel = this.shadowRoot.getElementById("file-picker-global");
-    const base = sel ? sel.value : "";
-    if (!base) return this._showFeedback("Select an RTSP source", "warn");
-    const url = `${base.split("#")[0]}#acv_hold=1`;
-    const vol = parseInt(this.shadowRoot.getElementById("bcast-rtsp-volume")?.value || "80", 10);
-    const zones = Object.keys(this._zones);
-    if (!zones.length) return this._showFeedback("No zones available", "warn");
-    for (const zid of zones) {
-      await this._hass?.callService("alleycattv", "set_volume_broadcast_group", { broadcast_group_id: zid, volume: vol });
-      await this._hass?.callService("alleycattv", "interrupt_broadcast_group", { broadcast_group_id: zid, file_url: url });
+    async _broadcastStartRtsp() {
+      const sel = this.shadowRoot.getElementById("file-picker-global");
+      const base = sel ? sel.value : "";
+      if (!base) return this._showFeedback("Select an RTSP source", "warn");
+      const url = `${base.split("#")[0]}#acv_hold=1`;
+      const vol = parseInt(this.shadowRoot.getElementById("bcast-rtsp-volume")?.value || "80", 10);
+      const zones = Object.keys(this._zones);
+      if (!zones.length) return this._showFeedback("No zones available", "warn");
+      for (const zid of zones) {
+        await this.hass?.callService("alleycattv", "set_volume_broadcast_group", { broadcast_group_id: zid, volume: vol });
+        await this.hass?.callService("alleycattv", "interrupt_broadcast_group", { broadcast_group_id: zid, file_url: url });
+      }
+      this._showFeedback(`Live RTSP started on ${zones.length} zone(s)`, "success");
     }
-    this._showFeedback(`Live RTSP started on ${zones.length} zone(s)`, "success");
-  }
-
-  async _broadcastStopRtsp() {
-    const zones = Object.keys(this._zones);
-    for (const zid of zones) {
-      await this._hass?.callService("alleycattv", "play_broadcast_group", { broadcast_group_id: zid });
+    async _broadcastStopRtsp() {
+      const zones = Object.keys(this._zones);
+      for (const zid of zones) {
+        await this.hass?.callService("alleycattv", "play_broadcast_group", { broadcast_group_id: zid });
+      }
+      this._showFeedback("Broadcasting stopped \u2014 playlists resumed", "success");
     }
-    this._showFeedback("Broadcasting stopped — playlists resumed", "success");
-  }
-
-  // ── Feedback ──────────────────────────────────────────────────────────────
-
-  _showFeedback(msg, type = "info") {
-    const el = this.shadowRoot.getElementById("feedback");
-    if (!el) return;
-    const colors = { success: "#1d9e75", error: "#e24b4a", warn: "#ef9f27", info: "#378add" };
-    el.textContent = msg;
-    el.style.color = colors[type] || colors.info;
-    el.style.opacity = "1";
-    clearTimeout(this._feedbackTimer);
-    this._feedbackTimer = setTimeout(() => { el.style.opacity = "0"; }, 3500);
-  }
-
-  // ── Render ────────────────────────────────────────────────────────────────
-
-  _renderZoneList() {
-    const container = this.shadowRoot.getElementById("zone-list");
-    if (!container) return;
-    const zoneIds = Object.keys(this._zones);
-    if (zoneIds.length === 0) {
-      container.innerHTML = `<p class="empty-hint">Waiting for devices…<br><span>Pis publish to <code>alleycattv/pi/{id}/status</code></span></p>`;
-      return;
+    // ── Feedback ──────────────────────────────────────────────────────────────
+    _showFeedback(msg, type = "info") {
+      const el = this.shadowRoot.getElementById("feedback");
+      if (!el) return;
+      const colors = { success: "#1d9e75", error: "#e24b4a", warn: "#ef9f27", info: "#378add" };
+      el.textContent = msg;
+      el.style.color = colors[type] || colors.info;
+      el.style.opacity = "1";
+      clearTimeout(this._feedbackTimer);
+      this._feedbackTimer = setTimeout(() => {
+        el.style.opacity = "0";
+      }, 3500);
     }
-    container.innerHTML = zoneIds.map(zid => {
-      const z = this._zones[zid];
-      const total = z.pis.length;
-      const onlineCount = z.pis.filter(p => p.online !== false).length;
-      const allPlaying = total > 0 && z.pis.every(p => p.state === "playing");
-      const isEmpty = total === 0;
-      const dotClass = allPlaying ? "playing" : onlineCount > 0 ? "online" : "offline";
-      const subLabel = isEmpty ? "no devices" : `${onlineCount}/${total} online`;
-      return `
+    // ── Render ────────────────────────────────────────────────────────────────
+    _renderZoneList() {
+      const container = this.shadowRoot.getElementById("zone-list");
+      if (!container) return;
+      const zoneIds = Object.keys(this._zones);
+      if (zoneIds.length === 0) {
+        container.innerHTML = `<p class="empty-hint">Waiting for devices\u2026<br><span>Pis publish to <code>alleycattv/pi/{id}/status</code></span></p>`;
+        return;
+      }
+      container.innerHTML = zoneIds.map((zid) => {
+        const z = this._zones[zid];
+        const total = z.pis.length;
+        const onlineCount = z.pis.filter((p) => p.online !== false).length;
+        const allPlaying = total > 0 && z.pis.every((p) => p.state === "playing");
+        const isEmpty = total === 0;
+        const dotClass = allPlaying ? "playing" : onlineCount > 0 ? "online" : "offline";
+        const subLabel = isEmpty ? "no devices" : `${onlineCount}/${total} online`;
+        return `
         <div class="zone-chip ${this._selectedZone === zid ? "active" : ""} ${isEmpty ? "zone-empty" : ""}" data-zone="${zid}">
           <span class="zone-dot ${isEmpty ? "empty" : dotClass}"></span>
           <div class="zone-info">
@@ -566,59 +483,53 @@ class AlleycatTVPanel extends HTMLElement {
             <span class="zone-sub">${subLabel}</span>
           </div>
         </div>`;
-    }).join("");
-    container.querySelectorAll(".zone-chip").forEach(chip => {
-      chip.addEventListener("click", () => {
-        this._selectedZone = chip.dataset.zone;
-        this._renderZoneList();
-        this._renderZoneDetail(chip.dataset.zone);
-        this.shadowRoot.getElementById("main-placeholder").style.display = "none";
-        this.shadowRoot.getElementById("zone-detail").style.display = "block";
+      }).join("");
+      container.querySelectorAll(".zone-chip").forEach((chip) => {
+        chip.addEventListener("click", () => {
+          this._selectedZone = chip.dataset.zone;
+          this._renderZoneList();
+          this._renderZoneDetail(chip.dataset.zone);
+          this.shadowRoot.getElementById("main-placeholder").style.display = "none";
+          this.shadowRoot.getElementById("zone-detail").style.display = "block";
+        });
       });
-    });
-  }
-
-  _renderZoneDetail(zone_id) {
-    const detail = this.shadowRoot.getElementById("zone-detail");
-    if (!detail) return;
-    const zone = this._zones[zone_id];
-    if (!zone) return;
-
-    const serverZone = (this._serverZones || {})[zone_id];
-    detail.querySelector("#zone-title").textContent = serverZone?.name || zone_id;
-
-    const playingPis = (zone.pis || []).filter(p => p.online !== false && p.state === "playing");
-    const summaryPi = playingPis[0] || (zone.pis || []).find(p => p.online !== false);
-    const nowEl = detail.querySelector("#now-playing-summary");
-    const noPis = !(zone.pis || []).length;
-    const hint = noPis ? this._missingPiHint(zone_id) : "";
-    if (nowEl) {
-      if (noPis) {
-        nowEl.innerHTML = `<p class="playback-idle">${hint}</p>`;
-      } else if (summaryPi && summaryPi.current_file) {
-        nowEl.innerHTML = `
+    }
+    _renderZoneDetail(zone_id) {
+      const detail = this.shadowRoot.getElementById("zone-detail");
+      if (!detail) return;
+      const zone = this._zones[zone_id];
+      if (!zone) return;
+      const serverZone = (this._serverZones || {})[zone_id];
+      detail.querySelector("#zone-title").textContent = serverZone?.name || zone_id;
+      const playingPis = (zone.pis || []).filter((p) => p.online !== false && p.state === "playing");
+      const summaryPi = playingPis[0] || (zone.pis || []).find((p) => p.online !== false);
+      const nowEl = detail.querySelector("#now-playing-summary");
+      const noPis = !(zone.pis || []).length;
+      const hint = noPis ? this._missingPiHint(zone_id) : "";
+      if (nowEl) {
+        if (noPis) {
+          nowEl.innerHTML = `<p class="playback-idle">${hint}</p>`;
+        } else if (summaryPi && summaryPi.current_file) {
+          nowEl.innerHTML = `
           <div class="playback-row"><span class="playback-label">Now Playing</span><span class="playback-value">${summaryPi.current_file}</span></div>
-          <div class="playback-row"><span class="playback-label">Up Next</span><span class="playback-value">${summaryPi.next_file || "—"}</span></div>`;
-      } else {
-        nowEl.innerHTML = `<p class="playback-idle">${summaryPi ? "Nothing playing" : "No devices online in this zone"}</p>`;
+          <div class="playback-row"><span class="playback-label">Up Next</span><span class="playback-value">${summaryPi.next_file || "\u2014"}</span></div>`;
+        } else {
+          nowEl.innerHTML = `<p class="playback-idle">${summaryPi ? "Nothing playing" : "No devices online in this zone"}</p>`;
+        }
       }
-    }
-
-    const pis = this.shadowRoot.getElementById("pi-cards");
-    if (!pis) return;
-    if (noPis) {
-      pis.classList.add("is-empty");
-      pis.innerHTML = `<div class="empty-hint">${hint}</div>`;
-      return;
-    }
-    pis.classList.remove("is-empty");
-    pis.innerHTML = (zone.pis || []).map(d => {
-      const online  = d.online !== false;
-      const stateLabel = d.state || "unknown";
-      const stateClass = stateLabel === "playing" ? "state-playing"
-                       : stateLabel === "interrupted" ? "state-interrupted"
-                       : "state-stopped";
-      return `
+      const pis = this.shadowRoot.getElementById("pi-cards");
+      if (!pis) return;
+      if (noPis) {
+        pis.classList.add("is-empty");
+        pis.innerHTML = `<div class="empty-hint">${hint}</div>`;
+        return;
+      }
+      pis.classList.remove("is-empty");
+      pis.innerHTML = (zone.pis || []).map((d) => {
+        const online = d.online !== false;
+        const stateLabel = d.state || "unknown";
+        const stateClass = stateLabel === "playing" ? "state-playing" : stateLabel === "interrupted" ? "state-interrupted" : "state-stopped";
+        return `
         <div class="pi-card ${online ? "" : "pi-offline"}">
           <div class="pi-header">
             <span class="status-dot ${online ? "online" : "offline"}"></span>
@@ -631,10 +542,10 @@ class AlleycatTVPanel extends HTMLElement {
             ${d.next_file ? `<span><strong>Next:</strong> ${d.next_file}</span>` : ""}
             <label class="pi-area">Location
               <select class="pi-area-select" data-pi="${d.pi_id}">
-                <option value="">— none —</option>
-                ${(this._areas || []).map((a) =>
-                  `<option value="${a.area_id}" ${d.area_id === a.area_id ? "selected" : ""}>${a.name}</option>`
-                ).join("")}
+                <option value="">\u2014 none \u2014</option>
+                ${(this._areas || []).map(
+          (a) => `<option value="${a.area_id}" ${d.area_id === a.area_id ? "selected" : ""}>${a.name}</option>`
+        ).join("")}
               </select>
             </label>
           </div>
@@ -642,23 +553,20 @@ class AlleycatTVPanel extends HTMLElement {
             <button class="btn btn-sm btn-warning pi-interrupt" data-pi="${d.pi_id}" title="Play an announcement on this display">Interrupt</button>
           </div>
         </div>`;
-    }).join("");
-
-    pis.querySelectorAll(".pi-interrupt").forEach(btn => {
-      btn.addEventListener("click", () => this._interruptPi(btn.dataset.pi));
-    });
-    pis.querySelectorAll(".pi-area-select").forEach(sel => {
-      sel.addEventListener("change", () => this._setPiArea(sel.dataset.pi, sel.value));
-    });
-
-    const volInput = this.shadowRoot.getElementById("vol-slider");
-    if (volInput) {
-      volInput.dataset.zone = zone_id;
+      }).join("");
+      pis.querySelectorAll(".pi-interrupt").forEach((btn) => {
+        btn.addEventListener("click", () => this._interruptPi(btn.dataset.pi));
+      });
+      pis.querySelectorAll(".pi-area-select").forEach((sel) => {
+        sel.addEventListener("change", () => this._setPiArea(sel.dataset.pi, sel.value));
+      });
+      const volInput = this.shadowRoot.getElementById("vol-slider");
+      if (volInput) {
+        volInput.dataset.zone = zone_id;
+      }
     }
-  }
-
-  _render() {
-    this.shadowRoot.innerHTML = `
+    _render() {
+      this.shadowRoot.innerHTML = `
       <link rel="stylesheet" href="/local/alleycattv/alleycat-panel.css">
       <style>
         :host {
@@ -696,7 +604,7 @@ class AlleycatTVPanel extends HTMLElement {
           height: calc(100vh - 70px);
         }
 
-        /* ── Sidebar ── */
+        /* \u2500\u2500 Sidebar \u2500\u2500 */
         .sidebar {
           background: var(--card-background-color, #fff);
           border-right: 1px solid var(--divider-color, #e0e0e0);
@@ -767,14 +675,14 @@ class AlleycatTVPanel extends HTMLElement {
         #pi-cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 12px; }
         #pi-cards.is-empty { display: block; }
 
-        /* ── Main area ── */
+        /* \u2500\u2500 Main area \u2500\u2500 */
         .main { padding: 24px; overflow-y: auto; }
 
-        /* ── Placeholder ── */
+        /* \u2500\u2500 Placeholder \u2500\u2500 */
         #main-placeholder { text-align: center; padding: 80px 32px; color: var(--secondary-text-color, #727272); }
         #main-placeholder svg { opacity: 0.2; margin-bottom: 16px; }
 
-        /* ── Zone detail ── */
+        /* \u2500\u2500 Zone detail \u2500\u2500 */
         #zone-detail { display: none; }
         .zone-detail-header {
           display: flex; align-items: center; gap: 16px; margin-bottom: 20px; flex-wrap: wrap;
@@ -791,7 +699,7 @@ class AlleycatTVPanel extends HTMLElement {
         .playback-value { flex: 1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
         .playback-idle { margin: 0; color: var(--secondary-text-color, #727272); font-size: 13px; }
 
-        /* ── Cards ── */
+        /* \u2500\u2500 Cards \u2500\u2500 */
         .card {
           background: var(--card-background-color, #fff);
           border: 1px solid var(--divider-color, #e0e0e0);
@@ -803,7 +711,7 @@ class AlleycatTVPanel extends HTMLElement {
           margin: 0 0 16px;
         }
 
-        /* ── Zone controls ── */
+        /* \u2500\u2500 Zone controls \u2500\u2500 */
         .zone-controls { display: flex; gap: 10px; flex-wrap: wrap; margin-bottom: 16px; }
         label { display: block; font-size: 13px; margin-bottom: 4px; color: var(--secondary-text-color, #727272); }
         select, input[type="range"] {
@@ -818,7 +726,7 @@ class AlleycatTVPanel extends HTMLElement {
         .slider-row input { flex: 1; }
         .slider-val { min-width: 36px; text-align: right; font-size: 13px; font-weight: 500; }
 
-        /* ── Pi cards ── */
+        /* \u2500\u2500 Pi cards \u2500\u2500 */
         .pi-card {
           background: var(--card-background-color, #fff);
           border: 1px solid var(--divider-color, #e0e0e0); border-radius: 10px; padding: 14px;
@@ -838,7 +746,7 @@ class AlleycatTVPanel extends HTMLElement {
         .pi-area select { margin-left: 6px; max-width: 100%; }
         .pi-actions { display: flex; gap: 6px; }
 
-        /* ── Buttons ── */
+        /* \u2500\u2500 Buttons \u2500\u2500 */
         .btn {
           padding: 9px 18px; border-radius: 8px; border: none; cursor: pointer;
           font-size: 14px; font-weight: 500; font-family: inherit;
@@ -853,7 +761,7 @@ class AlleycatTVPanel extends HTMLElement {
         .btn-secondary { background: var(--secondary-background-color, #f0f0f0); color: var(--primary-text-color, #212121); }
         .btn-sm { padding: 6px 12px; font-size: 12px; }
 
-        /* ── Broadcast banner ── */
+        /* \u2500\u2500 Broadcast banner \u2500\u2500 */
         .broadcast-card {
           background: linear-gradient(135deg, #0d3a6e, #1d5fa8);
           border-radius: 12px; padding: 20px; color: #fff; margin-bottom: 20px;
@@ -887,7 +795,7 @@ class AlleycatTVPanel extends HTMLElement {
               <button class="btn btn-secondary btn-sm" id="btn-zone-cancel">Cancel</button>
             </div>
           </div>
-          <div id="zone-list"><p class="empty-hint">Waiting for devices…</p></div>
+          <div id="zone-list"><p class="empty-hint">Waiting for devices\u2026</p></div>
         </aside>
 
         <main class="main">
@@ -931,12 +839,12 @@ class AlleycatTVPanel extends HTMLElement {
           <!-- Per-zone detail panel -->
           <div id="zone-detail">
             <div class="zone-detail-header">
-              <h2 id="zone-title">—</h2>
+              <h2 id="zone-title">\u2014</h2>
               <div class="zone-controls">
-                <button class="btn btn-success" id="btn-play" title="Resume playlist playback">▶ Play</button>
-                <button class="btn btn-danger"  id="btn-stop" title="Stop playback on all displays in this zone">■ Stop</button>
-                <button class="btn btn-warning" id="btn-reload" title="Reload playlist from server">↺ Reload</button>
-                <button class="btn btn-secondary" id="btn-delete-zone" style="margin-left:8px;color:#e24b4a;">🗑 Delete group</button>
+                <button class="btn btn-success" id="btn-play" title="Resume playlist playback">\u25B6 Play</button>
+                <button class="btn btn-danger"  id="btn-stop" title="Stop playback on all displays in this zone">\u25A0 Stop</button>
+                <button class="btn btn-warning" id="btn-reload" title="Reload playlist from server">\u21BA Reload</button>
+                <button class="btn btn-secondary" id="btn-delete-zone" style="margin-left:8px;color:#e24b4a;">\u{1F5D1} Delete group</button>
               </div>
             </div>
 
@@ -949,7 +857,7 @@ class AlleycatTVPanel extends HTMLElement {
               <p class="card-title">Interrupt Announcement</p>
               <label>Announcement</label>
               <select id="file-picker">
-                <option value="">-- loading… --</option>
+                <option value="">-- loading\u2026 --</option>
               </select>
               <div id="file-picker-duration-wrap">
                 <label style="margin-top:10px;display:block">Display duration</label>
@@ -962,7 +870,7 @@ class AlleycatTVPanel extends HTMLElement {
                 "Until stopped" stays on screen until you press Play or Stop.
               </p>
               <div style="margin-top:12px;display:flex;gap:8px;flex-wrap:wrap;">
-                <button class="btn btn-warning" id="btn-interrupt">⚡ Interrupt Zone</button>
+                <button class="btn btn-warning" id="btn-interrupt">\u26A1 Interrupt Zone</button>
                 <button class="btn btn-success" id="btn-rtsp-start" style="display:none">Start broadcasting</button>
                 <button class="btn btn-danger" id="btn-rtsp-stop" style="display:none">Stop broadcasting</button>
               </div>
@@ -990,82 +898,73 @@ class AlleycatTVPanel extends HTMLElement {
         </main>
       </div>
     `;
-
-    this._attachEventListeners();
-  }
-
-  _attachEventListeners() {
-    const root = this.shadowRoot;
-
-    // Zone detail controls
-    root.getElementById("btn-play")?.addEventListener("click", () => {
-      if (this._selectedZone) this._playZone(this._selectedZone);
-    });
-    root.getElementById("btn-stop")?.addEventListener("click", () => {
-      if (this._selectedZone) this._stopZone(this._selectedZone);
-    });
-    root.getElementById("btn-reload")?.addEventListener("click", () => {
-      if (this._selectedZone) this._reloadPlaylist(this._selectedZone);
-    });
-    root.getElementById("btn-interrupt")?.addEventListener("click", () => {
-      if (this._selectedZone) this._interruptZone(this._selectedZone);
-    });
-    root.getElementById("btn-rtsp-start")?.addEventListener("click", () => {
-      if (this._selectedZone) this._startZoneBroadcast(this._selectedZone);
-    });
-    root.getElementById("btn-rtsp-stop")?.addEventListener("click", () => {
-      if (this._selectedZone) this._stopZoneBroadcast(this._selectedZone);
-    });
-    root.getElementById("file-picker")?.addEventListener("change", () => {
-      this._syncInterruptUi("file-picker");
-    });
-    root.getElementById("file-picker-global")?.addEventListener("change", () => {
-      this._syncInterruptUi("file-picker-global");
-    });
-    root.getElementById("btn-vol")?.addEventListener("click", () => {
-      const slider = root.getElementById("vol-slider");
-      if (this._selectedZone && slider) this._setVolume(this._selectedZone, slider.value);
-    });
-
-    // New zone form
-    root.getElementById("btn-new-zone")?.addEventListener("click", () => {
-      const form = root.getElementById("new-zone-form");
-      form.style.display = form.style.display === "none" ? "block" : "none";
-      if (form.style.display === "block") root.getElementById("new-zone-id")?.focus();
-    });
-    root.getElementById("btn-zone-cancel")?.addEventListener("click", () => {
-      root.getElementById("new-zone-form").style.display = "none";
-      root.getElementById("new-zone-id").value = "";
-      root.getElementById("new-zone-name").value = "";
-    });
-    root.getElementById("btn-zone-save")?.addEventListener("click", () => {
-      const id = root.getElementById("new-zone-id").value.trim();
-      const name = root.getElementById("new-zone-name").value.trim();
-      if (!id) return this._showFeedback("Zone ID is required", "warn");
-      root.getElementById("new-zone-form").style.display = "none";
-      root.getElementById("new-zone-id").value = "";
-      root.getElementById("new-zone-name").value = "";
-      this._createZone(id, name);
-    });
-
-    // Delete zone
-    root.getElementById("btn-delete-zone")?.addEventListener("click", () => {
-      if (this._selectedZone) this._deleteZone(this._selectedZone);
-    });
-
-    // Broadcast interrupt (file / webpage announcements)
-    root.getElementById("bcast-interrupt")?.addEventListener("click", () => {
-      const sel = root.getElementById("file-picker-global");
-      const url = this._buildInterruptUrl(sel ? sel.value : "", "file-picker-global");
-      if (!url) return this._showFeedback("Select an announcement file", "warn");
-      Object.keys(this._zones).forEach(zid => {
-        this._hass?.callService("alleycattv", "interrupt_broadcast_group", { broadcast_group_id: zid, file_url: url });
+      this._attachEventListeners();
+    }
+    _attachEventListeners() {
+      const root = this.shadowRoot;
+      root.getElementById("btn-play")?.addEventListener("click", () => {
+        if (this._selectedZone) this._playZone(this._selectedZone);
       });
-      this._showFeedback("Broadcast interrupt sent to all zones", "success");
-    });
-    root.getElementById("bcast-start")?.addEventListener("click", () => this._broadcastStartRtsp());
-    root.getElementById("bcast-stop")?.addEventListener("click", () => this._broadcastStopRtsp());
-  }
-}
-
-customElements.define("alleycattv-panel", AlleycatTVPanel);
+      root.getElementById("btn-stop")?.addEventListener("click", () => {
+        if (this._selectedZone) this._stopZone(this._selectedZone);
+      });
+      root.getElementById("btn-reload")?.addEventListener("click", () => {
+        if (this._selectedZone) this._reloadPlaylist(this._selectedZone);
+      });
+      root.getElementById("btn-interrupt")?.addEventListener("click", () => {
+        if (this._selectedZone) this._interruptZone(this._selectedZone);
+      });
+      root.getElementById("btn-rtsp-start")?.addEventListener("click", () => {
+        if (this._selectedZone) this._startZoneBroadcast(this._selectedZone);
+      });
+      root.getElementById("btn-rtsp-stop")?.addEventListener("click", () => {
+        if (this._selectedZone) this._stopZoneBroadcast(this._selectedZone);
+      });
+      root.getElementById("file-picker")?.addEventListener("change", () => {
+        this._syncInterruptUi("file-picker");
+      });
+      root.getElementById("file-picker-global")?.addEventListener("change", () => {
+        this._syncInterruptUi("file-picker-global");
+      });
+      root.getElementById("btn-vol")?.addEventListener("click", () => {
+        const slider = root.getElementById("vol-slider");
+        if (this._selectedZone && slider) this._setVolume(this._selectedZone, slider.value);
+      });
+      root.getElementById("btn-new-zone")?.addEventListener("click", () => {
+        const form = root.getElementById("new-zone-form");
+        form.style.display = form.style.display === "none" ? "block" : "none";
+        if (form.style.display === "block") root.getElementById("new-zone-id")?.focus();
+      });
+      root.getElementById("btn-zone-cancel")?.addEventListener("click", () => {
+        root.getElementById("new-zone-form").style.display = "none";
+        root.getElementById("new-zone-id").value = "";
+        root.getElementById("new-zone-name").value = "";
+      });
+      root.getElementById("btn-zone-save")?.addEventListener("click", () => {
+        const id = root.getElementById("new-zone-id").value.trim();
+        const name = root.getElementById("new-zone-name").value.trim();
+        if (!id) return this._showFeedback("Zone ID is required", "warn");
+        root.getElementById("new-zone-form").style.display = "none";
+        root.getElementById("new-zone-id").value = "";
+        root.getElementById("new-zone-name").value = "";
+        this._createZone(id, name);
+      });
+      root.getElementById("btn-delete-zone")?.addEventListener("click", () => {
+        if (this._selectedZone) this._deleteZone(this._selectedZone);
+      });
+      root.getElementById("bcast-interrupt")?.addEventListener("click", () => {
+        const sel = root.getElementById("file-picker-global");
+        const url = this._buildInterruptUrl(sel ? sel.value : "", "file-picker-global");
+        if (!url) return this._showFeedback("Select an announcement file", "warn");
+        Object.keys(this._zones).forEach((zid) => {
+          this.hass?.callService("alleycattv", "interrupt_broadcast_group", { broadcast_group_id: zid, file_url: url });
+        });
+        this._showFeedback("Broadcast interrupt sent to all zones", "success");
+      });
+      root.getElementById("bcast-start")?.addEventListener("click", () => this._broadcastStartRtsp());
+      root.getElementById("bcast-stop")?.addEventListener("click", () => this._broadcastStopRtsp());
+    }
+  };
+  customElements.define("alleycattv-panel", AlleycatTVPanel);
+})();
+//# sourceMappingURL=alleycattv-panel.js.map
