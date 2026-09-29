@@ -369,3 +369,73 @@ Merge from [`HomeAssist/configuration.yaml`](../HomeAssist/configuration.yaml): 
 
 App README: [`Apps/Bug_Buster/README.md`](../Apps/Bug_Buster/README.md)
 
+### Phase 10 — Lit+TS panel kit, then Alleycat shell
+
+Two ordered slices. **10a** upgrades every sidebar panel onto the Lit + TypeScript McPanel kit. **10b** ports the Alleycat theme, re-adds HACS shell tools, and renames the sidebar to **Mission Control**.
+
+Look-at decisions: [`Phase 10 Look At Decisions.md`](Phase%2010%20Look%20At%20Decisions.md)
+
+#### 10a — Build and deploy Lit panels
+
+On a workstation (Node 20+), build static `www/` bundles (HAOS does not run Node):
+
+```powershell
+cd z:\CodingProjects\Alleycat\MissionControl\Libraries\Shared_HA_Helpers\panel_kit
+npm install
+npm run build
+```
+
+Deploy rebuilt panel assets (and Shared Helpers www):
+
+```powershell
+scp -r "z:\CodingProjects\Alleycat\MissionControl\Libraries\Shared_HA_Helpers\HA_Component\www\shared_libraries" root@<HA-IP>:/config/www/
+scp -r "z:\CodingProjects\Alleycat\MissionControl\Apps\Core_Configurator\HA_Component\www\core_configurator" root@<HA-IP>:/config/www/
+scp -r "z:\CodingProjects\Alleycat\MissionControl\Apps\Registration\HA_Component\www\registration" root@<HA-IP>:/config/www/
+scp -r "z:\CodingProjects\Alleycat\MissionControl\Apps\Digital_Node_Nexus\HA_Component\www\digital_node_nexus" root@<HA-IP>:/config/www/
+scp -r "z:\CodingProjects\Alleycat\MissionControl\Apps\Broadcast_Group_Controller\HA_Component\www\broadcast_group_controller" root@<HA-IP>:/config/www/
+scp -r "z:\CodingProjects\Alleycat\MissionControl\Apps\AlleycatTV\HA_Component\www\alleycattv" root@<HA-IP>:/config/www/
+scp -r "z:\CodingProjects\Alleycat\MissionControl\Apps\Galactic_Bounty_Network\HA_Component\www\gbn" root@<HA-IP>:/config/www/
+scp -r "z:\CodingProjects\Alleycat\MissionControl\Apps\Bug_Buster\HA_Component\www\bug_buster" root@<HA-IP>:/config/www/
+```
+
+Hard-refresh the browser. Smoke every sidebar panel (Core Configurator through Bug Buster). Panel kit source: [`Libraries/Shared_HA_Helpers/panel_kit/README.md`](../Libraries/Shared_HA_Helpers/panel_kit/README.md).
+
+#### 10b — HACS shell + Alleycat theme + Mission Control title
+
+Mission Control runs **Home Assistant OS**, so install HACS via the official add-on path ([HACS download docs](https://www.hacs.xyz/docs/use/download/download/)). Skip this subsection if HACS is already installed and authorized.
+
+##### Install HACS (HAOS)
+
+1. **Settings → Add-ons → Add-on store** (⋮) → **Repositories**.
+2. Add `https://github.com/hacs/addons` → Close.
+3. Install **Get HACS** → **Start**.
+4. Open the add-on **Log** and follow the instructions printed there (it downloads HACS into `/config/custom_components/hacs`).
+5. **Restart Home Assistant**.
+6. **Settings → Devices & services → Add integration** → **HACS**.
+7. Accept the terms → authorize with GitHub when prompted (device-code flow).
+8. Confirm **HACS** appears in the sidebar.
+
+##### Install Phase 10 frontend plugins
+
+1. **HACS → Frontend** → search **custom-sidebar** → Download.
+2. **HACS → Frontend** → search **card-mod** (Thomas Lovén) → Download.
+3. Restart Home Assistant (or at least hard-refresh after the config merge below).
+
+##### Deploy Alleycat theme + Mission Control title
+
+1. Deploy theme + www chrome:
+
+```powershell
+scp -r "z:\CodingProjects\Alleycat\MissionControl\HomeAssist\themes" root@<HA-IP>:/config/
+scp "z:\CodingProjects\Alleycat\MissionControl\HomeAssist\www\alleycat-scanlines.js" root@<HA-IP>:/config/www/
+scp "z:\CodingProjects\Alleycat\MissionControl\HomeAssist\www\custom-sidebar-config.yaml" root@<HA-IP>:/config/www/
+```
+
+2. Merge [`HomeAssist/configuration.yaml`](../HomeAssist/configuration.yaml) `frontend:` block into `/config/configuration.yaml`:
+   - `themes: !include_dir_merge_named themes`
+   - `extra_module_url` order: custom-sidebar → card-mod → alleycat-scanlines → mc-panel → core-configurator-client
+3. Restart Home Assistant. Hard-refresh the browser (Ctrl+Shift+R).
+4. Profile → Themes → **Alleycat**.
+5. Confirm the sidebar header reads **Mission Control** (from `custom-sidebar-config.yaml`).
+6. Confirm Lovelace Overview shows CRT scanlines and dark form fields (not white inputs).
+

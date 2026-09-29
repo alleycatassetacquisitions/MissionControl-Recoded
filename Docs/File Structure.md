@@ -109,6 +109,10 @@ MissionControl\
 ├── Libraries\
 │   └── Shared_HA_Helpers\
 │       ├── README.md
+│       ├── panel_kit\               ← Lit + TypeScript sources; npm run build → www/
+│       │   ├── package.json
+│       │   ├── src\mc-panel\
+│       │   └── src\panels\
 │       └── HA_Component\
 │           ├── custom_components\
 │           │   └── shared_libraries\
@@ -118,7 +122,11 @@ MissionControl\
 ├── HomeAssist\                        ← merge fragments for /config (not a full HA install)
 │   ├── configuration.yaml
 │   ├── secrets.yaml.example
-│   └── themes\
+│   ├── themes\
+│   │   └── alleycat.yaml
+│   └── www\
+│       ├── alleycat-scanlines.js
+│       └── custom-sidebar-config.yaml
 ├── ProxmoxInstallFiles\               ← one-shot host scripts (copy to Proxmox /root/)
 │   ├── install-haos-proxmox.sh
 │   ├── install-mcs-proxmox.sh
@@ -144,38 +152,50 @@ After deploy, Mission Control lives under HAOS **`/config/`** (SSH as `root` to 
 | `HomeAssist\configuration.yaml` (merge sections) | `/config/configuration.yaml` |
 | `HomeAssist\secrets.yaml.example` → real secrets | `/config/secrets.yaml` |
 | `HomeAssist\themes\` | `/config/themes/` |
+| `HomeAssist\www\alleycat-scanlines.js` | `/config/www/alleycat-scanlines.js` |
+| `HomeAssist\www\custom-sidebar-config.yaml` | `/config/www/custom-sidebar-config.yaml` |
 
-Runtime tree (Phase 5 Mission Control slice):
+Runtime tree (Phase 10 Mission Control shell):
 
 ```text
 /config/
-├── configuration.yaml          ← default_config + frontend.extra_module_url + panel_custom + core_configurator seed
+├── configuration.yaml          ← default_config + frontend.themes + extra_module_url + panel_custom + seeds
 ├── secrets.yaml                ← cc_master_control_server, token, central_*, etc.
 ├── automations.yaml            ← HA defaults (keep)
 ├── scripts.yaml
 ├── scenes.yaml
 ├── themes/
+│   └── alleycat.yaml
 ├── custom_components/
 │   ├── core_configurator/
 │   ├── shared_libraries/
 │   ├── registration/
-│   └── digital_node_nexus/
+│   ├── digital_node_nexus/
+│   ├── alleycattv/
+│   ├── broadcast_group_controller/
+│   ├── gbn/
+│   └── bug_buster/
 └── www/                        ← served as /local/...
+    ├── alleycat-scanlines.js
+    ├── custom-sidebar-config.yaml
     ├── core_configurator/
-    │   ├── core-configurator-client.js
-    │   └── core-configurator-panel.js
     ├── shared_libraries/
-    │   └── mc-panel.js
+    │   └── mc-panel.js         ← Lit kit (built from panel_kit/)
     ├── registration/
-    │   └── registration-panel.js
-    └── digital_node_nexus/
-        └── dnn-panel.js
+    ├── digital_node_nexus/
+    ├── broadcast_group_controller/
+    ├── alleycattv/
+    ├── gbn/
+    └── bug_buster/
 ```
 
 `frontend.extra_module_url` load order (required):
 
-1. `/local/shared_libraries/mc-panel.js`
-2. `/local/core_configurator/core-configurator-client.js`
+1. `/hacsfiles/custom-sidebar/custom-sidebar-plugin.js` (HACS)
+2. `/hacsfiles/lovelace-card-mod/card-mod.js` (HACS)
+3. `/local/alleycat-scanlines.js`
+4. `/local/shared_libraries/mc-panel.js`
+5. `/local/core_configurator/core-configurator-client.js`
 
 Master Control Server is **not** under `/config/`. It runs on Proxmox LXC as `/opt/mcs/` (see [`Master Control Server Config Steps.md`](Master%20Control%20Server%20Config%20Steps.md)). HA talks to it over HTTP using the URL + token from Core Configurator.
 
@@ -299,6 +319,7 @@ Standing law:
 - `AlleycatTV Config Steps.md` — Proxmox content server + HA integration + Pi SD flash (Phase 6)
 - `GBN Config Steps.md` — Proxmox poster server + HA integration
 - `Bug Buster Config Steps.md` — Proxmox monitoring companion on HA
+- `Phase 10 Look At Decisions.md` — community/tools used vs rejected for Lit kit + Alleycat shell
 
 **Path:** `Docs\`
 

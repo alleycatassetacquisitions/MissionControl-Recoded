@@ -17,7 +17,7 @@ Three modules other integrations import directly:
 | `http.py` | `async_request` — bearer-auth HTTP via HA's managed session + Core Configurator URL |
 | `mqtt.py` | `mc_topic` topic builder, `async_subscribe` / `async_publish` / `async_subscribe_presence` wrappers |
 | `fabric.py` | Presence tracking: `mc/{kind}/status/#` → device_registry + `online`/`offline`/`unknown` sensor |
-| `www/shared_libraries/mc-panel.js` | CSS design tokens + `McPanelBase` class for `extra_module_url` panels |
+| `www/shared_libraries/mc-panel.js` | Lit + TypeScript McPanel kit (`window.McPanel`) — build from `panel_kit/` |
 
 ---
 
@@ -204,7 +204,8 @@ Libraries/Shared_HA_Helpers/HA_Component/
 │   ├── mqtt.py            mc_topic, async_subscribe, async_publish, async_subscribe_presence
 │   └── fabric.py          status/# → device_registry + presence sensors
 ├── www/shared_libraries/
-│   └── mc-panel.js        McPanelBase + CSS tokens
+│   └── mc-panel.js        Lit McPanelBase + CSS tokens (built from panel_kit/)
+├── panel_kit/             TypeScript sources — `npm run build` writes www/ outputs
 └── tests/
     ├── conftest.py
     ├── test_http.py        fail-closed, URL assembly, bearer auth, errors
@@ -212,6 +213,15 @@ Libraries/Shared_HA_Helpers/HA_Component/
     └── test_fabric.py      presence parse + device/entity creation
 ```
 
+Panel kit build:
+
+```powershell
+cd Libraries/Shared_HA_Helpers/panel_kit
+npm install
+npm run build
+```
+
+See `panel_kit/README.md`.
 ---
 
 ## Running tests
