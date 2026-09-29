@@ -9,7 +9,7 @@
 #   GBN_SRC=/path/to/Server_Component
 #   GBN_PUBLIC_BASE=http://<ip>:8100
 #   GBN_MCS_BASE=http://<mcs-ip>:8700  GBN_MCS_TOKEN=...
-#   REPO_URL=https://github.com/alleycatassetacquisitions/MissionContorl-Recoded.git
+#   REPO_URL=https://github.com/alleycatassetacquisitions/MissionControl-Recoded.git
 #   ROOT_PASSWORD=alleycat  TEMPLATE=ubuntu-24.04-standard  SKIP_CONFIRM=0
 
 set -euo pipefail
@@ -30,7 +30,7 @@ GBN_SRC="${GBN_SRC:-}"
 GBN_PUBLIC_BASE="${GBN_PUBLIC_BASE:-}"
 GBN_MCS_BASE="${GBN_MCS_BASE:-}"
 GBN_MCS_TOKEN="${GBN_MCS_TOKEN:-}"
-REPO_URL="${REPO_URL:-https://github.com/alleycatassetacquisitions/MissionContorl-Recoded.git}"
+REPO_URL="${REPO_URL:-https://github.com/alleycatassetacquisitions/MissionControl-Recoded.git}"
 ROOT_PASSWORD="${ROOT_PASSWORD:-alleycat}"
 SKIP_CONFIRM="${SKIP_CONFIRM:-0}"
 

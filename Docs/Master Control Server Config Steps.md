@@ -52,7 +52,7 @@ The script defaults to **Ubuntu 24.04** standard, 1 core, 1 GB RAM, 8 GB disk on
 | `BRIDGE` | `vmbr0` | Network bridge |
 | `MCS_API_TOKEN` | random | Skip generation; use a known token |
 | `MCS_SRC` | _(empty)_ | Host path to `Server_Component` to copy instead of git clone |
-| `REPO_URL` | `https://github.com/alleycatassetacquisitions/MissionContorl-Recoded.git` | Clone source when `MCS_SRC` is unset (needs network; private repos need a token or use `MCS_SRC` instead) |
+| `REPO_URL` | `https://github.com/alleycatassetacquisitions/MissionControl-Recoded.git` | Clone source when `MCS_SRC` is unset (needs network; private repos need a token or use `MCS_SRC` instead) |
 | `ROOT_PASSWORD` | `alleycat` | LXC console / SSH root password (Mission Control default for all companion LXCs) |
 | `SKIP_CONFIRM` | `0` | Set `1` to skip the 5-second cancel window |
 

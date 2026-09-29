@@ -11,7 +11,7 @@
 #   CTID=130 STORAGE=local-lvm TEMPLATE_STORAGE=local BRIDGE=vmbr0
 #   CORES=2 MEMORY_MB=2048 DISK_SIZE=60 START_CT=1
 #   ATV_SRC=/path/to/Server_Component
-#   REPO_URL=https://github.com/alleycatassetacquisitions/MissionContorl-Recoded.git
+#   REPO_URL=https://github.com/alleycatassetacquisitions/MissionControl-Recoded.git
 #   ROOT_PASSWORD=alleycat
 #   TEMPLATE=ubuntu-24.04-standard  SKIP_CONFIRM=0
 # CTID is optional. If omitted (or already in use), the next free ID is used.
@@ -32,7 +32,7 @@ DISK_SIZE="${DISK_SIZE:-60}"
 START_CT="${START_CT:-1}"
 TEMPLATE_PREFIX="${TEMPLATE:-ubuntu-24.04-standard}"
 ATV_SRC="${ATV_SRC:-}"
-REPO_URL="${REPO_URL:-https://github.com/alleycatassetacquisitions/MissionContorl-Recoded.git}"
+REPO_URL="${REPO_URL:-https://github.com/alleycatassetacquisitions/MissionControl-Recoded.git}"
 ROOT_PASSWORD="${ROOT_PASSWORD:-alleycat}"
 SKIP_CONFIRM="${SKIP_CONFIRM:-0}"
 MAX_UPLOAD_MB="${MAX_UPLOAD_MB:-500}"

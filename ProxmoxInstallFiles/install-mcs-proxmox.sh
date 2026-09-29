@@ -11,7 +11,7 @@
 #   CTID=120 STORAGE=local-lvm TEMPLATE_STORAGE=local BRIDGE=vmbr0
 #   CORES=1 MEMORY_MB=1024 DISK_SIZE=8 START_CT=1
 #   MCS_API_TOKEN=...  MCS_SRC=/path/to/Server_Component
-#   REPO_URL=https://github.com/alleycatassetacquisitions/MissionContorl-Recoded.git
+#   REPO_URL=https://github.com/alleycatassetacquisitions/MissionControl-Recoded.git
 #   ROOT_PASSWORD=alleycat  (console / SSH root password for all Mission Control LXCs)
 #   TEMPLATE=ubuntu-24.04-standard  SKIP_CONFIRM=0
 # CTID is optional. If omitted (or already in use), the next free ID is used.
@@ -32,7 +32,7 @@ MCS_PORT="${MCS_PORT:-8700}"
 TEMPLATE_PREFIX="${TEMPLATE:-ubuntu-24.04-standard}"
 MCS_API_TOKEN="${MCS_API_TOKEN:-}"
 MCS_SRC="${MCS_SRC:-}"
-REPO_URL="${REPO_URL:-https://github.com/alleycatassetacquisitions/MissionContorl-Recoded.git}"
+REPO_URL="${REPO_URL:-https://github.com/alleycatassetacquisitions/MissionControl-Recoded.git}"
 ROOT_PASSWORD="${ROOT_PASSWORD:-alleycat}"
 SKIP_CONFIRM="${SKIP_CONFIRM:-0}"
 
