@@ -43,7 +43,7 @@ Sidebar panel (`www/registration/registration-panel.js`):
 - Reads via websocket `registration/get_roster` (coordinator cache)
 - Writes via HA services only — no direct LAN `fetch`
 
-Load order in `configuration.yaml` `frontend.extra_module_url`:
+Load order in `configuration.yaml` `frontend.extra_module_url` (panel kit only — full shell order including custom-sidebar is in [`HomeAssist/configuration.yaml`](../../HomeAssist/configuration.yaml)):
 
 1. `/local/shared_libraries/mc-panel.js`
 2. `/local/core_configurator/core-configurator-client.js`

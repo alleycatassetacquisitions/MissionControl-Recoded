@@ -9,7 +9,7 @@ What Mission Control used, skipped, and deferred for Phase 10 (Lit + TypeScript 
 | ------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | **Lit + TypeScript**                              | HA’s own frontend stack. One typed `McPanelBase` (`Libraries/Shared_HA_Helpers/panel_kit`) with a Vite/esbuild build to static `www/`. Same design tokens and feedback helpers as the pre-Lit kit.   |
 | **Vite + esbuild**                                | Workstation build only; HAOS never runs Node. `mc-panel.js` embeds Lit once; feature panels are IIFE bundles that extend `window.McPanel.Base`.                                                      |
-| **HACS custom-sidebar**                           | Proven in ProjectMissionControl for renaming the sidebar/header. Config: `HomeAssist/www/custom-sidebar-config.yaml` with `title: "Mission Control"`.                                                |
+| **HACS custom-sidebar**                           | Proven in ProjectMissionControl for renaming the sidebar/header. Needs both `HomeAssist/www/custom-sidebar-config.yaml` (`title: "Mission Control"`) **and** `/hacsfiles/custom-sidebar/custom-sidebar-plugin.js` on `frontend.extra_module_url` (YAML alone does nothing). |
 | **HACS card-mod**                                 | Required for Alleycat theme `card-mod-theme` / `card-mod-root` / `card-mod-card` / `card-mod-view` scanline and card chrome on Lovelace.                                                             |
 | **Alleycat HA theme**                             | Port of `ProjectMissionControl/.../themes/alleycat.yaml` → `HomeAssist/themes/alleycat.yaml`. Cyan `#00e5ff`, magenta `#ff2bd6`, dark surfaces, Share Tech Mono, HA 2026 form tokens + `modes.dark`. |
 | **alleycat-scanlines.js**                         | Extra CRT overlay + dark native `<input>` fills (not expressible in theme YAML alone). Loaded via `frontend.extra_module_url`.                                                                       |
@@ -85,7 +85,7 @@ Topic ownership and command shapes: [`MQTT Communication Principles.md`](MQTT%20
 
 ## Load order (shell)
 
-Required `frontend.extra_module_url` order after Phase 10:
+Required `frontend.extra_module_url` order after Phase 10. Keep a **single** `frontend:` block in `/config/configuration.yaml`; prepend shell URLs into the existing list (do not duplicate `frontend:` / `themes:` / `extra_module_url:`):
 
 1. `/hacsfiles/custom-sidebar/custom-sidebar-plugin.js`
 2. `/hacsfiles/lovelace-card-mod/card-mod.js`

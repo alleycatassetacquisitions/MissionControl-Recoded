@@ -1,3 +1,6 @@
 # custom-sidebar (HACS). Lives in /config/www/ — HA serves this as /local/.
+# Renames the upper-left sidebar title. Requires the plugin on
+# frontend.extra_module_url: /hacsfiles/custom-sidebar/custom-sidebar-plugin.js
+# (one frontend: block only — see HomeAssist/configuration.yaml).
 # Item order can be added later under `order:`.
 title: "Mission Control"

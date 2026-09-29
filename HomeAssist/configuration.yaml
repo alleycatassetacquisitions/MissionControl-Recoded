@@ -67,11 +67,16 @@ gbn: {}
 # Proxmox URL/tokens come from Core Configurator — not from this block.
 bug_buster: {}
 
+# Merge into the live /config/configuration.yaml as ONE frontend: block.
+# If frontend / extra_module_url already exists, prepend the shell URLs into that
+# list — do not paste a second frontend:/themes:/extra_module_url: underneath
+# (duplicate keys break YAML and block HA restart).
 frontend:
   themes: !include_dir_merge_named themes
   extra_module_url:
     # HACS shell — custom-sidebar (title: Mission Control) + card-mod (Alleycat theme extras).
-    # Install both via HACS → Frontend before first boot with these paths.
+    # Install both via HACS → Frontend. Title text is www/custom-sidebar-config.yaml;
+    # that file does nothing until this plugin URL is loaded.
     - /hacsfiles/custom-sidebar/custom-sidebar-plugin.js
     - /hacsfiles/lovelace-card-mod/card-mod.js
     # Alleycat CRT overlay + dark form fills (Lovelace + shadow inputs).

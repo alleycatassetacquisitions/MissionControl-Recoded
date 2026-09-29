@@ -189,13 +189,20 @@ Runtime tree (Phase 10 Mission Control shell):
     └── bug_buster/
 ```
 
-`frontend.extra_module_url` load order (required):
+`frontend.extra_module_url` load order (required). One `frontend:` block only — merge into the existing list; never paste a second `frontend:` / `themes:` / `extra_module_url:` underneath:
 
-1. `/hacsfiles/custom-sidebar/custom-sidebar-plugin.js` (HACS)
-2. `/hacsfiles/lovelace-card-mod/card-mod.js` (HACS)
-3. `/local/alleycat-scanlines.js`
-4. `/local/shared_libraries/mc-panel.js`
-5. `/local/core_configurator/core-configurator-client.js`
+```yaml
+frontend:
+  themes: !include_dir_merge_named themes
+  extra_module_url:
+    - /hacsfiles/custom-sidebar/custom-sidebar-plugin.js   # HACS — renames upper-left title
+    - /hacsfiles/lovelace-card-mod/card-mod.js             # HACS — Alleycat theme extras
+    - /local/alleycat-scanlines.js
+    - /local/shared_libraries/mc-panel.js
+    - /local/core_configurator/core-configurator-client.js
+```
+
+Sidebar title text lives in `/config/www/custom-sidebar-config.yaml` (`title: "Mission Control"`). That file is ignored until custom-sidebar is on `extra_module_url` (not Lovelace resources alone).
 
 Master Control Server is **not** under `/config/`. It runs on Proxmox LXC as `/opt/mcs/` (see [`Master Control Server Config Steps.md`](Master%20Control%20Server%20Config%20Steps.md)). HA talks to it over HTTP using the URL + token from Core Configurator.
 

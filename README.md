@@ -139,8 +139,8 @@ Full VM sizing, options, and later HA deploy phases: [`Docs/Home Assistant Confi
 On the HA host (SSH as `root`), merge Mission Control fragments into `/config/`:
 
 1. Copy secrets from [`HomeAssist/secrets.yaml.example`](HomeAssist/secrets.yaml.example) → `/config/secrets.yaml` and fill real values.
-2. Merge the blocks from [`HomeAssist/configuration.yaml`](HomeAssist/configuration.yaml) into `/config/configuration.yaml`.
-3. Copy theme and www shell assets (`themes/alleycat.yaml`, `www/alleycat-scanlines.js`, `www/custom-sidebar-config.yaml`).
+2. Merge the blocks from [`HomeAssist/configuration.yaml`](HomeAssist/configuration.yaml) into `/config/configuration.yaml`. One `frontend:` block only — extend `extra_module_url` (custom-sidebar → card-mod → scanlines → mc-panel → core-configurator-client); do not paste a duplicate `frontend:` section.
+3. Copy theme and www shell assets (`themes/alleycat.yaml`, `www/alleycat-scanlines.js`, `www/custom-sidebar-config.yaml`). Title rename also needs HACS custom-sidebar on `extra_module_url` (see Config Steps Phase 10b).
 4. Deploy Shared HA Helpers and Core Configurator (and continue per Config Steps):
 
 ```powershell
