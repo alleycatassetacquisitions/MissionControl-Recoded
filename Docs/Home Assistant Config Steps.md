@@ -371,7 +371,10 @@ App README: [`Apps/Bug_Buster/README.md`](../Apps/Bug_Buster/README.md)
 
 ### Phase 10 — Lit+TS panel kit, then Alleycat shell
 
-Two ordered slices. **10a** upgrades every sidebar panel onto the Lit + TypeScript McPanel kit. **10b** ports the Alleycat theme, re-adds HACS shell tools, and renames the sidebar to **Mission Control**.
+Two ordered slices:
+
+- **10a** — Lit + TypeScript McPanel kit (build + scp `www/`)
+- **10b** — **HACS** install → **custom-sidebar** + **card-mod** → Alleycat theme → sidebar title **Mission Control**
 
 Look-at decisions: [`Phase 10 Look At Decisions.md`](Phase%2010%20Look%20At%20Decisions.md)
 
@@ -400,11 +403,9 @@ scp -r "z:\CodingProjects\Alleycat\MissionControl\Apps\Bug_Buster\HA_Component\w
 
 Hard-refresh the browser. Smoke every sidebar panel (Core Configurator through Bug Buster). Panel kit source: [`Libraries/Shared_HA_Helpers/panel_kit/README.md`](../Libraries/Shared_HA_Helpers/panel_kit/README.md).
 
-#### 10b — HACS shell + Alleycat theme + Mission Control title
+#### 10b — Install HACS (HAOS)
 
-Mission Control runs **Home Assistant OS**, so install HACS via the official add-on path ([HACS download docs](https://www.hacs.xyz/docs/use/download/download/)). Skip this subsection if HACS is already installed and authorized.
-
-##### Install HACS (HAOS)
+Mission Control runs **Home Assistant OS**. Install HACS via the official add-on path ([HACS download docs](https://www.hacs.xyz/docs/use/download/download/)). Skip if HACS is already installed and authorized.
 
 1. **Settings → Add-ons → Add-on store** (⋮) → **Repositories**.
 2. Add `https://github.com/hacs/addons` → Close.
@@ -415,13 +416,14 @@ Mission Control runs **Home Assistant OS**, so install HACS via the official add
 7. Accept the terms → authorize with GitHub when prompted (device-code flow).
 8. Confirm **HACS** appears in the sidebar.
 
-##### Install Phase 10 frontend plugins
+#### 10b — Install custom-sidebar and card-mod
 
-1. **HACS → Frontend** → search **custom-sidebar** → Download.
-2. **HACS → Frontend** → search **card-mod** (Thomas Lovén) → Download.
-3. Restart Home Assistant (or at least hard-refresh after the config merge below).
+1. Open **HACS** in the sidebar → **Frontend**.
+2. Search **custom-sidebar** → **Download** (needed to rename the sidebar to Mission Control).
+3. Search **card-mod** (Thomas Lovén) → **Download** (needed for Alleycat theme scanline / card extras).
+4. Restart Home Assistant after both downloads (or at least hard-refresh after the config merge below).
 
-##### Deploy Alleycat theme + Mission Control title
+#### 10b — Deploy Alleycat theme + Mission Control title
 
 1. Deploy theme + www chrome:
 
