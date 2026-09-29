@@ -1,6 +1,7 @@
 # Alleycat — in-universe operator theme for Mission Control on Home Assistant.
 # Ported from ProjectMissionControl. Requires HACS card-mod for card-mod-* extras.
-# Profile → Themes → Alleycat. Pair with HACS custom-sidebar (title: Mission Control).
+# Profile → Themes → Alleycat. Pair with HACS custom-sidebar (title: Mission Control)
+# loaded via frontend.extra_module_url — see HomeAssist/configuration.yaml.
 #
 # Form fields: HA 2026 ha-input uses --ha-color-form-* (not input-fill-color).
 # modes.dark lets HA apply its dark semantic tokens instead of light-mode

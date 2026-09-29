@@ -178,7 +178,7 @@ scp -r "z:\CodingProjects\Alleycat\MissionControl\Apps\Registration\HA_Component
 scp -r "z:\CodingProjects\Alleycat\MissionControl\Apps\Registration\HA_Component\www\registration" root@<HA-IP>:/config/www/
 ```
 
-Then merge [`HomeAssist/configuration.yaml`](../HomeAssist/configuration.yaml) into `/config/configuration.yaml` (keep `default_config`, themes, automations includes; add `frontend.extra_module_url`, `core_configurator` seed, both `panel_custom` entries). Fill `/config/secrets.yaml` from [`secrets.yaml.example`](../HomeAssist/secrets.yaml.example) with MCS URL/token and Central URLs.
+Then merge [`HomeAssist/configuration.yaml`](../HomeAssist/configuration.yaml) into `/config/configuration.yaml` (keep `default_config`, themes, automations includes; add `frontend.extra_module_url`, `core_configurator` seed, both `panel_custom` entries). **One** `frontend:` block only — extend an existing `extra_module_url` list; do not paste a second `frontend:` / `themes:` / `extra_module_url:` underneath. Fill `/config/secrets.yaml` from [`secrets.yaml.example`](../HomeAssist/secrets.yaml.example) with MCS URL/token and Central URLs.
 
 Restart and hard-refresh the browser:
 
@@ -376,7 +376,7 @@ Two ordered slices:
 - **10a** — Lit + TypeScript McPanel kit (build + scp `www/`)
 - **10b** — **HACS** install → **custom-sidebar** + **card-mod** → Alleycat theme → sidebar title **Mission Control**
 
-Look-at decisions: [`Phase 10 Look At Decisions.md`](Phase%2010%20Look%20At%20Decisions.md)
+Look-at decisions: [`Look At Decisions.md`](Look%20At%20Decisions.md)
 
 #### 10a — Build and deploy Lit panels
 
@@ -425,7 +425,17 @@ Mission Control runs **Home Assistant OS**. Install HACS via the official add-on
 
 #### 10b — Deploy Alleycat theme + Mission Control title
 
-1. Deploy theme + www chrome:
+The upper-left sidebar name (default **Home Assistant**) is set by custom-sidebar. Two pieces are required:
+
+1. Config file `/config/www/custom-sidebar-config.yaml` (repo: [`HomeAssist/www/custom-sidebar-config.yaml`](../HomeAssist/www/custom-sidebar-config.yaml)):
+
+```yaml
+title: "Mission Control"
+```
+
+2. Plugin loaded in `/config/configuration.yaml` via `frontend.extra_module_url` (YAML alone does nothing).
+
+Deploy theme + www chrome:
 
 ```powershell
 scp -r "z:\CodingProjects\Alleycat\MissionControl\HomeAssist\themes" root@<HA-IP>:/config/
@@ -433,11 +443,23 @@ scp "z:\CodingProjects\Alleycat\MissionControl\HomeAssist\www\alleycat-scanlines
 scp "z:\CodingProjects\Alleycat\MissionControl\HomeAssist\www\custom-sidebar-config.yaml" root@<HA-IP>:/config/www/
 ```
 
-2. Merge [`HomeAssist/configuration.yaml`](../HomeAssist/configuration.yaml) `frontend:` block into `/config/configuration.yaml`:
-   - `themes: !include_dir_merge_named themes`
-   - `extra_module_url` order: custom-sidebar → card-mod → alleycat-scanlines → mc-panel → core-configurator-client
-3. Restart Home Assistant. Hard-refresh the browser (Ctrl+Shift+R).
-4. Profile → Themes → **Alleycat**.
-5. Confirm the sidebar header reads **Mission Control** (from `custom-sidebar-config.yaml`).
-6. Confirm Lovelace Overview shows CRT scanlines and dark form fields (not white inputs).
+Then edit `/config/configuration.yaml`. Keep a **single** `frontend:` block. If Phase 4 already added `mc-panel` / `core-configurator-client`, **prepend** the three shell URLs — do not duplicate `frontend:`, `themes:`, or a second `extra_module_url:` list (that breaks YAML and blocks restart):
+
+```yaml
+frontend:
+  themes: !include_dir_merge_named themes
+  extra_module_url:
+    - /hacsfiles/custom-sidebar/custom-sidebar-plugin.js
+    - /hacsfiles/lovelace-card-mod/card-mod.js
+    - /local/alleycat-scanlines.js
+    - /local/shared_libraries/mc-panel.js
+    - /local/core_configurator/core-configurator-client.js
+```
+
+Order matters: custom-sidebar → card-mod → alleycat-scanlines → mc-panel → core-configurator-client. Use `custom-sidebar-plugin.js` (not `custom-sidebar.js`). Do not add these only as Lovelace dashboard resources.
+
+1. Restart Home Assistant. Hard-refresh the browser (Ctrl+Shift+R).
+2. Profile → Themes → **Alleycat**.
+3. Confirm the upper-left sidebar header reads **Mission Control** (`title` in `custom-sidebar-config.yaml` + plugin in `extra_module_url`).
+4. Confirm Lovelace Overview shows CRT scanlines and dark form fields (not white inputs).
 
