@@ -6,6 +6,7 @@ Topics are **not** hardcoded per device at flash time. Each device builds its ow
 
 ## Ownership
 
+- **Broker:** official Mosquitto broker add-on on Home Assistant OS. HA’s `mqtt` integration is the only Mission Control MQTT client path.
 - Home Assistant is the **only** MQTT command publisher. The AlleycatTV server must not publish the same commands.
 - Apps use Home Assistant’s `mqtt` integration (`async_subscribe` / `async_publish`). Do not open a second broker client inside Digital Node Nexus, AlleycatTV, or Bug Buster.
 - Status and LWT create a Home Assistant device and a presence entity (`online` / `offline` / `unknown`).
@@ -31,6 +32,16 @@ FDN hardware uses the Digital Node Nexus (`dnn`) topic namespace.
 
 When a node is moved to a new Broadcast Group, firmware subscribes to the new `cmd/broadcast/{id}/#` topic and unsubscribes from the old one.
 
+Command action segments under those wildcards (Phase 5 DNN):
+
+| Action | Topic suffix | Payload |
+| --- | --- | --- |
+| Page | `…/page` | JSON `PageCmd` (`text`, `duration`, `scroll`, optional `player_id` / `role` / `neocorp`) |
+| LED | `…/led` | JSON `LedCmd` |
+| Haptic | `…/haptic` | JSON `HapticCmd` |
+
+Schema: [`Apps/Digital_Node_Nexus/docs/dnn_commands.proto`](../Apps/Digital_Node_Nexus/docs/dnn_commands.proto). HA publishes UTF-8 JSON with those field names; firmware may later switch to binary protobuf using the same field numbers.
+
 ## AlleycatTV devices
 
 AlleycatTV Pis use the `tv` topic namespace.
@@ -45,3 +56,16 @@ AlleycatTV Pis use the `tv` topic namespace.
 
 
 The playback topic exists so a Pi that was powered off can still start in the right state. When it comes online, it should already be playing or stopped at the Broadcast Group's current volume.
+
+Command action segments under those wildcards (Phase 6 AlleycatTV):
+
+| Action | Topic suffix | Payload |
+| --- | --- | --- |
+| Play | `…/play` | JSON `{}` |
+| Stop | `…/stop` | JSON `{}` |
+| Interrupt | `…/interrupt` | JSON `{"file_url": "…"}` |
+| Reload | `…/reload` | JSON `{}` |
+| Volume | `…/volume` | JSON `{"volume": 0-100}` |
+| Cache | `…/cache_delete` etc. | JSON |
+
+Presence: plain `online` / `offline` (or empty LWT) on `mc/tv/status/{PI_ID}`. Optional playback telemetry on `mc/tv/status/{PI_ID}/json`.

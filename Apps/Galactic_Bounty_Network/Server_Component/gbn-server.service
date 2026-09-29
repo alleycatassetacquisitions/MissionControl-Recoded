@@ -1,0 +1,16 @@
+[Unit]
+Description=Galactic Bounty Network poster server
+After=network.target
+
+[Service]
+Type=simple
+User=gbn
+Group=gbn
+WorkingDirectory=/opt/gbn
+EnvironmentFile=-/etc/gbn.env
+ExecStart=/opt/gbn/.venv/bin/uvicorn app.main:app --host ${GBN_HOST:-0.0.0.0} --port ${GBN_PORT:-8100}
+Restart=on-failure
+RestartSec=3
+
+[Install]
+WantedBy=multi-user.target

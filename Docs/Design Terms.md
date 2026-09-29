@@ -20,10 +20,11 @@ Write the product name in prose. In code, use the snake_case form in the table. 
 | Broadcast Group | `broadcast_group` | Zone |
 | Broadcast Group Controller | `broadcast_group_controller` | Zone Controller, `zone_controller`, `alleycat_zone` |
 | Meru | `meru` | — |
+| Shared HA Helpers | `shared_libraries` | — |
 
 Poster capture is part of **Galactic Bounty Network**. It is not a separate Mission Control app named Photobooth. Third-party tools (for example photobooth-app) may be researched for cameras; our product is still GBN.
 
-The endpoint catalog is **Core Configurator**. Say “Core Configurator URL” or `core_configurator` helpers, not “Directory.”
+The endpoint catalog is **Core Configurator**. Say “Core Configurator URL” or `core_configurator` helpers, not “Directory.” Shared API tokens also live in Core Configurator.
 
 Physical place is a Home Assistant **Area**. A content and command membership set is a **Broadcast Group**. Do not call that set a Zone — people will mix it up with Area.
 
@@ -45,16 +46,16 @@ FDNs talk to PDNs, the Central Server, and Home Assistant.
 
 ### Core Configurator
 
-The Mission Control app that stores service URLs (and related endpoint fields) in one place. Other integrations read it instead of keeping their own IPs.
+The Mission Control app that stores service URLs **and** shared API tokens/auth in one place. Other integrations read `get_url` / `get_extra` instead of keeping their own IPs or credentials.
 
 - **Communication:** Home Assistant config entry + helpers
 - **Code:** `core_configurator`
 
 ### DNN — Digital Node Nexus
 
-The Mission Control dashboard for sending messages to FDNs and gathering information from them.
+The Mission Control dashboard for sending messages to FDNs and gathering information from them. Phase 5 focuses on **paging** (MQTT page starts an FDN state machine). LED and haptic remain secondary tools. Roster targeting (player / role / NeoCorp) is read from Master Control Server.
 
-- **Communication:** MQTT, Protobuf
+- **Communication:** MQTT (JSON payload contract; protobuf schema documented for firmware)
 - **Used for:** paging, mini-bosses, quests, and virus
 - **Code:** `digital_node_nexus`
 
@@ -62,13 +63,14 @@ The Mission Control dashboard for sending messages to FDNs and gathering informa
 
 ### AlleycatTV (ATV)
 
-The media player app used to play content across the event.
+The media player app used to play content across the event. Phase 6: HA integration on the `mc/tv` fabric; content files on Proxmox; Pis subscribe to HA-published commands only.
 
-- **Communication:** MQTT, Protobuf, HTTP
+- **Communication:** MQTT (HA ↔ Pi), HTTP (HA ↔ content server)
 - **Language:** Python
 - **Key tools and formats:** MPV, JSON, IPC
 - **Used for:** premade content, scoreboards, and RTSP streams to displays around the event
 - **Code:** `alleycattv`
+- **Deploy:** `Docs/AlleycatTV Config Steps.md`
 
 ### GBN — Galactic Bounty Network
 
@@ -79,7 +81,7 @@ The Mission Control app for creating and updating posters that players see on Al
 
 ### MCS — Master Control Server
 
-The Proxmox companion that is the only Central HTTP adapter. It owns Player, Role, NeoCorp, and Faction JSON.
+The Proxmox companion that is the only Central HTTP adapter. It owns Player, Role, NeoCorp, and Faction JSON on the Mission Control side of the wire, and maps Central legacy field names on read/write.
 
 Registration is its Home Assistant face. GBN overlays Player data from MCS. Home Assistant does not talk to the Central Server itself.
 
@@ -88,13 +90,13 @@ Registration is its Home Assistant face. GBN overlays Player data from MCS. Home
 
 ### Registration
 
-The Mission Control dashboard for adding, editing, and deleting player registration information. It talks to MCS, not to the Central Server on its own.
+The Mission Control dashboard for adding, editing, and deleting player registration information. It talks to MCS (services + panel), not to the Central Server on its own.
 
 - **Code:** `registration`
 
 ### Bug Buster
 
-The Mission Control ops tools for Proxmox guests and MQTT debug. It does not own players, Broadcast Groups, or posters.
+The Mission Control ops tools for Proxmox console (termproxy), health checks, and MQTT debug. It reads Proxmox URL/credentials from Core Configurator. Monitoring sensors and power controls are HA Core Proxmox VE. It does not own players, Broadcast Groups, posters, or API tokens.
 
 - **Code:** `bug_buster`
 
@@ -122,7 +124,7 @@ Do not call this a Zone. Do not store membership as a Home Assistant Area.
 
 ### MQTT fabric
 
-Shared presence and command routing for FDNs and AlleycatTV endpoints, using Home Assistant’s `mqtt` integration. Status and LWT become presence entities. Commands target this device, `all`, or a Broadcast Group.
+Shared presence and command routing for FDNs and AlleycatTV endpoints, using Home Assistant’s `mqtt` integration against the official **Mosquitto** broker add-on. Status and LWT become presence entities. Commands target this device, `all`, or a Broadcast Group.
 
 Digital Node Nexus and AlleycatTV own payloads (LED, haptic, playback). They do not each open a private MQTT client.
 
@@ -134,17 +136,19 @@ A person playing the game. A Player is a Central Server record, served locally b
 
 Players are **not** Home Assistant devices. Registration exposes connectivity and a roster summary as entities, plus services for operator workflows. Do not create one `device_tracker` (or similar) per Player.
 
-### Role
-
-A field on a Player, owned by Master Control Server / Central Server. GBN must not define or impersonate Role. GBN stores `player_id` as a foreign key and overlays live Player data from Master Control Server.
-
 ### NeoCorp
 
-A group a player can belong to. Possible NeoCorp factions are **Freelancer**, **Helix**, **Endline**, and **Reboot**.
+A group a player can belong to. Possible NeoCorp values are **Freelancer**, **Helix**, **Endline**, and **Reboot**.
+
+Canonical JSON field: `neocorp` (lowercase on the wire). Central Server historically used `allegiance`; Master Control Server maps between them so Home Assistant never sees `allegiance`.
 
 ### Faction
 
 A named group a player can belong to. There is no limit on faction names.
+
+### Role
+
+A field on a Player, owned by Master Control Server / Central Server. Values: **hunter** or **bounty**. Central may send `mode`, `role`, or numeric `hunter` (`1`/`2`); MCS normalizes to `role`. GBN must not define or impersonate Role. GBN stores `player_id` as a foreign key and overlays live Player data from Master Control Server.
 
 ### ID
 

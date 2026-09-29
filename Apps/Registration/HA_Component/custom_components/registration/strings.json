@@ -1,0 +1,13 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "Registration",
+        "description": "Adds the Registration panel and roster sensor. Set the Master Control Server URL and API token in Core Configurator first."
+      }
+    },
+    "abort": {
+      "single_instance_allowed": "Only one Registration integration is allowed."
+    }
+  }
+}

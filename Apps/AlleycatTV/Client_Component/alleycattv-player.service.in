@@ -1,0 +1,21 @@
+[Unit]
+Description=AlleycatTV Pi Player
+After=network-online.target alleycattv-kiosk.service
+Wants=network-online.target
+Requires=alleycattv-kiosk.service
+
+[Service]
+Type=simple
+User=__USER__
+Environment=HOME=__HOME__
+Environment=XDG_RUNTIME_DIR=/run/user/__UID__
+Environment=WAYLAND_DISPLAY=wayland-0
+Environment=XDG_SESSION_TYPE=wayland
+WorkingDirectory=/opt/alleycattv
+ExecStartPre=/opt/alleycattv/kiosk/wait-wayland.sh __UID__
+ExecStart=/opt/alleycattv/venv/bin/python alleycattv_player/player.py
+Restart=always
+RestartSec=10
+
+[Install]
+WantedBy=multi-user.target

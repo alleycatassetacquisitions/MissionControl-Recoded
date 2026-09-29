@@ -1,0 +1,24 @@
+# OS / firmware images (exceed GitHub 100MB limit)
+*.img
+*.img.xz
+*.iso
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+*.egg-info/
+.venv/
+venv/
+
+# Local env / secrets
+.env
+.env.*
+!.env.example
+
+# Panel kit (Lit + TypeScript) — commit built www/ outputs; keep deps local
+Libraries/Shared_HA_Helpers/panel_kit/node_modules/
+Libraries/Shared_HA_Helpers/panel_kit/dist/

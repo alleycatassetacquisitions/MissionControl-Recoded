@@ -7,35 +7,133 @@
 # Deploy custom components and www files before restarting HA:
 #
 #   custom_components/core_configurator/  ← Apps/Core_Configurator/HA_Component/custom_components/core_configurator/
+#   custom_components/shared_libraries/   ← Libraries/Shared_HA_Helpers/HA_Component/custom_components/shared_libraries/
+#   custom_components/registration/       ← Apps/Registration/HA_Component/custom_components/registration/
+#   custom_components/digital_node_nexus/ ← Apps/Digital_Node_Nexus/HA_Component/custom_components/digital_node_nexus/
+#   custom_components/alleycattv/         ← Apps/AlleycatTV/HA_Component/custom_components/alleycattv/
+#   custom_components/broadcast_group_controller/ ← Apps/Broadcast_Group_Controller/HA_Component/custom_components/broadcast_group_controller/
+#   custom_components/gbn/                ← Apps/Galactic_Bounty_Network/HA_Component/custom_components/gbn/
+#   custom_components/bug_buster/         ← Apps/Bug_Buster/HA_Component/custom_components/bug_buster/
 #   www/core_configurator/               ← Apps/Core_Configurator/HA_Component/www/core_configurator/
+#   www/shared_libraries/                ← Libraries/Shared_HA_Helpers/HA_Component/www/shared_libraries/
+#   www/registration/                    ← Apps/Registration/HA_Component/www/registration/
+#   www/digital_node_nexus/              ← Apps/Digital_Node_Nexus/HA_Component/www/digital_node_nexus/
+#   www/alleycattv/                      ← Apps/AlleycatTV/HA_Component/www/alleycattv/
+#   www/broadcast_group_controller/      ← Apps/Broadcast_Group_Controller/HA_Component/www/broadcast_group_controller/
+#   www/gbn/                             ← Apps/Galactic_Bounty_Network/HA_Component/www/gbn/
+#   www/bug_buster/                      ← Apps/Bug_Buster/HA_Component/www/bug_buster/
 #
 # ─────────────────────────────────────────────────────────────────────────────
-# Phase 1 — Core Configurator
+# Core Configurator
 # ─────────────────────────────────────────────────────────────────────────────
 #
 # YAML seed: runs once on first boot to populate the config entry.
-# After the entry exists this block is ignored — edit URLs from the sidebar.
-# Tokens stay out of here; Proxmox credentials belong to Bug Buster.
+# After the entry exists this block is ignored — edit URLs and tokens from the
+# Core Configurator sidebar. URLs and API tokens both belong here (not in
+# per-app config entries).
 #
-# Copy secrets into config/secrets.yaml (see secrets.yaml.example below).
+# Copy secrets into config/secrets.yaml (see secrets.yaml.example).
 
 core_configurator:
-  registration_primary: !secret cc_registration_primary
-  registration_secondary: !secret cc_registration_secondary
+  # Master Control Server (Proxmox companion — sole Central HTTP adapter)
+  master_control_server: !secret cc_master_control_server
+  master_control_server_token: !secret cc_master_control_server_token
+  # Central Server URLs — pushed to MCS by Registration on every HA start.
+  # Change them here and save; Registration propagates the change to MCS automatically.
+  central_primary: !secret cc_central_primary
+  central_secondary: !secret cc_central_secondary
+  # Other services
   alleycattv: !secret cc_alleycattv
   gbn: !secret cc_gbn
   proxmox: !secret cc_proxmox
   proxmox_node: !secret cc_proxmox_node
+  proxmox_token_id: !secret cc_proxmox_token_id
+  proxmox_token_secret: !secret cc_proxmox_token_secret
+  # Live RTSP for AlleycatTV interrupt — set URL here, not in Content Manager.
+  rtsp: !secret cc_rtsp
+  rtsp_label: !secret cc_rtsp_label
+  rtsp_enabled: !secret cc_rtsp_enabled
+
+# Loads AlleycatTV (proxy + WS). Must be `{}` — bare `alleycattv:` is YAML null.
+alleycattv: {}
+
+# Loads Broadcast Group Controller (placement + membership).
+broadcast_group_controller: {}
+
+# Loads Galactic Bounty Network (poster proxy + panel).
+gbn: {}
+
+# Loads Bug Buster (Proxmox console + MQTT spy + companion health).
+# Proxmox URL/tokens come from Core Configurator — not from this block.
+bug_buster: {}
 
 frontend:
+  themes: !include_dir_merge_named themes
   extra_module_url:
+    # HACS shell — custom-sidebar (title: Mission Control) + card-mod (Alleycat theme extras).
+    # Install both via HACS → Frontend before first boot with these paths.
+    - /hacsfiles/custom-sidebar/custom-sidebar-plugin.js
+    - /hacsfiles/lovelace-card-mod/card-mod.js
+    # Alleycat CRT overlay + dark form fills (Lovelace + shadow inputs).
+    - /local/alleycat-scanlines.js
+    # Shared Lit panel kit — must load before any Mission Control panel.
+    - /local/shared_libraries/mc-panel.js
     # Core Configurator shared client — must load before any panel that calls
-    # window.CoreConfigurator.getUrl. Add other panels' module_urls below this.
+    # window.CoreConfigurator.getUrl.
     - /local/core_configurator/core-configurator-client.js
 
 panel_custom:
+  # ─── Core Configurator ────────────────────────────────────────────────────
   - name: core-configurator-panel
     sidebar_title: Core Configurator
     sidebar_icon: mdi:lan
     url_path: core-configurator
     module_url: /local/core_configurator/core-configurator-panel.js
+
+  # ─── Registration ─────────────────────────────────────────────────────────
+  - name: registration-panel
+    sidebar_title: Registration
+    sidebar_icon: mdi:account-group
+    url_path: registration
+    module_url: /local/registration/registration-panel.js
+
+  # ─── Digital Node Nexus ───────────────────────────────────────────────────
+  - name: dnn-panel
+    sidebar_title: Digital Node Nexus
+    sidebar_icon: mdi:access-point
+    url_path: digital-node-nexus
+    module_url: /local/digital_node_nexus/dnn-panel.js
+
+  # ─── AlleycatTV ───────────────────────────────────────────────────────────
+  - name: alleycattv-panel
+    sidebar_title: AlleycatTV
+    sidebar_icon: mdi:television-play
+    url_path: alleycattv
+    module_url: /local/alleycattv/alleycattv-panel.js
+
+  - name: alleycattv-content-panel
+    sidebar_title: AlleycatTV Content
+    sidebar_icon: mdi:folder-play
+    url_path: alleycattv-content
+    module_url: /local/alleycattv/alleycattv-content-panel.js
+
+  # ─── Broadcast Group Controller ───────────────────────────────────────────
+  - name: broadcast-group-controller-panel
+    sidebar_title: Broadcast Groups
+    sidebar_icon: mdi:broadcast
+    url_path: broadcast-groups
+    module_url: /local/broadcast_group_controller/bgc-panel.js
+
+  # ─── Galactic Bounty Network ───────────────────────────────────────────────
+  - name: gbn-panel
+    sidebar_title: Galactic Bounty Network
+    sidebar_icon: mdi:skull-crossbones
+    url_path: gbn
+    module_url: /local/gbn/gbn-panel.js
+
+  # ─── Bug Buster ────────────────────────────────────────────────────────────
+  - name: bug-buster-panel
+    sidebar_title: Bug Buster
+    sidebar_icon: mdi:ladybug
+    url_path: bug-buster
+    module_url: /local/bug_buster/bug-buster-panel.js

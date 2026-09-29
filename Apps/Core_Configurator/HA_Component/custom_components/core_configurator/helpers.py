@@ -1,7 +1,7 @@
 """Lookup helpers for Core Configurator.
 
-Other integrations use this as the authority for service URLs.
-get_url is fail-closed: returns empty string when no URL is stored.
+Other integrations use this as the authority for service URLs and auth extras.
+get_url / get_extra are fail-closed: return empty string when nothing is stored.
 Do not call DEFAULTS or fall back to a hardcoded IP.
 """
 from __future__ import annotations
@@ -24,7 +24,7 @@ def get_url(hass, key: str, default: str = "") -> str:
 
 
 def get_extra(hass, key: str, field: str, default: str = "") -> str:
-    """Return one extra field for key (e.g. Proxmox node name)."""
+    """Return one extra field for key (e.g. Proxmox node, MCS API token)."""
     services = get_services(hass)
     extra = (services.get(key) or {}).get("extra") or {}
     value = extra.get(field)

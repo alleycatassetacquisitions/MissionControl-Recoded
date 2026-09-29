@@ -1,0 +1,100 @@
+name: Tests
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  pytest:
+    name: pytest (Python 3.14 / HA 2026.7.2)
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.14"
+          cache: pip
+          cache-dependency-path: requirements_test.txt
+
+      - name: Install test dependencies
+        run: pip install -r requirements_test.txt
+
+      - name: Install MCS server test dependencies
+        run: pip install "Apps/Master_Control_Server/Server_Component[test]"
+
+      - name: Run Core Configurator tests
+        working-directory: Apps/Core_Configurator/HA_Component
+        run: |
+          pytest tests/ \
+            -v \
+            --tb=short \
+            --cov=custom_components/core_configurator \
+            --cov-report=term-missing
+
+      - name: Run Shared HA Helpers tests
+        working-directory: Libraries/Shared_HA_Helpers/HA_Component
+        run: |
+          pytest tests/ \
+            -v \
+            --tb=short \
+            --cov=custom_components/shared_libraries \
+            --cov-report=term-missing
+
+      - name: Run Master Control Server tests
+        working-directory: Apps/Master_Control_Server/Server_Component
+        run: |
+          pytest tests/ \
+            -v \
+            --tb=short \
+            --cov=. \
+            --cov-report=term-missing
+
+      - name: Run Registration tests
+        working-directory: Apps/Registration/HA_Component
+        run: |
+          pytest tests/ \
+            -v \
+            --tb=short \
+            --cov=custom_components/registration \
+            --cov-report=term-missing
+
+      - name: Run Digital Node Nexus tests
+        working-directory: Apps/Digital_Node_Nexus/HA_Component
+        run: |
+          pytest tests/ \
+            -v \
+            --tb=short \
+            --cov=custom_components/digital_node_nexus \
+            --cov-report=term-missing
+
+      - name: Install GBN server test dependencies
+        run: pip install -r Apps/Galactic_Bounty_Network/Server_Component/requirements.txt
+
+      - name: Run Galactic Bounty Network server tests
+        working-directory: Apps/Galactic_Bounty_Network/Server_Component
+        run: |
+          pytest tests/ \
+            -v \
+            --tb=short \
+            --cov=app \
+            --cov-report=term-missing
+
+      - name: Run Galactic Bounty Network HA tests
+        working-directory: Apps/Galactic_Bounty_Network/HA_Component
+        run: |
+          pytest tests/ \
+            -v \
+            --tb=short \
+            --cov=custom_components/gbn \
+            --cov-report=term-missing
+
+      - name: Run Bug Buster HA tests
+        working-directory: Apps/Bug_Buster/HA_Component
+        run: |
+          pytest tests/ \
+            -v \
+            --tb=short \
+            --cov=custom_components/bug_buster \
+            --cov-report=term-missing

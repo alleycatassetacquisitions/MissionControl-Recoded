@@ -1,0 +1,14 @@
+<?xml version="1.0"?>
+<labwc_config>
+  <core>
+    <gap>0</gap>
+    <reuseOutputMode>yes</reuseOutputMode>
+  </core>
+  <focus>
+    <followMouse>no</followMouse>
+    <raiseOnFocus>yes</raiseOnFocus>
+  </focus>
+  <windowSwitcher>
+    <show>no</show>
+  </windowSwitcher>
+</labwc_config>

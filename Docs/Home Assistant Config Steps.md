@@ -10,7 +10,7 @@ The installer script does the work shown in [Installing Home Assistant on Proxmo
 
 Run this on the **Proxmox node shell** (Datacenter → the host → **Shell**). Do not open a guest console.
 
-1. Copy `Docs/install-haos-proxmox.sh` onto the Proxmox host as `/root/install-haos-proxmox.sh` (USB, SCP, or paste into `nano`).
+1. Copy `ProxmoxInstallFiles/install-haos-proxmox.sh` onto the Proxmox host as `/root/install-haos-proxmox.sh` (USB, SCP, or paste into `nano`).
 2. In the node Shell:
 
 ```bash
@@ -147,4 +147,297 @@ ssh root@<HA-IP>
 Accept the host fingerprint on first connect. You should land at a shell prompt inside the HA container.
 
 ---
+
+## Deploy Mission Control files onto HA
+
+SSH must already work (section above). Copy **into** `/config/` — never overwrite the whole `/config` tree with the repo `HomeAssist\` folder.
+
+### What lands where
+
+See [`File Structure.md` — On Home Assistant](File%20Structure.md#on-home-assistant) for the full map. Short version:
+
+| From repo | To HA |
+| --- | --- |
+| `…\custom_components\<domain>\` | `/config/custom_components/<domain>/` |
+| `…\www\<name>\` | `/config/www/<name>/` |
+| Merge `HomeAssist/configuration.yaml` sections | `/config/configuration.yaml` |
+| Secrets from `secrets.yaml.example` | `/config/secrets.yaml` |
+
+### Phase 4 — Core Configurator + Shared Helpers + Registration
+
+From PowerShell on your PC (`<HA-IP>` = LAN address of the HA VM):
+
+```powershell
+scp -r "z:\CodingProjects\Alleycat\MissionControl\Libraries\Shared_HA_Helpers\HA_Component\custom_components\shared_libraries" root@<HA-IP>:/config/custom_components/
+scp -r "z:\CodingProjects\Alleycat\MissionControl\Libraries\Shared_HA_Helpers\HA_Component\www\shared_libraries" root@<HA-IP>:/config/www/
+
+scp -r "z:\CodingProjects\Alleycat\MissionControl\Apps\Core_Configurator\HA_Component\custom_components\core_configurator" root@<HA-IP>:/config/custom_components/
+scp -r "z:\CodingProjects\Alleycat\MissionControl\Apps\Core_Configurator\HA_Component\www\core_configurator" root@<HA-IP>:/config/www/
+
+scp -r "z:\CodingProjects\Alleycat\MissionControl\Apps\Registration\HA_Component\custom_components\registration" root@<HA-IP>:/config/custom_components/
+scp -r "z:\CodingProjects\Alleycat\MissionControl\Apps\Registration\HA_Component\www\registration" root@<HA-IP>:/config/www/
+```
+
+Then merge [`HomeAssist/configuration.yaml`](../HomeAssist/configuration.yaml) into `/config/configuration.yaml` (keep `default_config`, themes, automations includes; add `frontend.extra_module_url`, `core_configurator` seed, both `panel_custom` entries). Fill `/config/secrets.yaml` from [`secrets.yaml.example`](../HomeAssist/secrets.yaml.example) with MCS URL/token and Central URLs.
+
+Restart and hard-refresh the browser:
+
+```bash
+ha core restart
+```
+
+### After restart
+
+1. Core Configurator entry: delete + re-add (or first import) so YAML/secrets re-seed MCS URL + token.
+2. Settings → Devices & Services → Add **Registration** (install-only — no token field).
+3. Confirm sidebar panels: Core Configurator, Registration.
+4. Registration **Sync Now** should load the roster (Role / NeoCorp / Faction via MCS field mapping).
+
+MCS itself is deployed on Proxmox, not HA — see [`Master Control Server Config Steps.md`](Master%20Control%20Server%20Config%20Steps.md).
+
+### Phase 5 — Mosquitto + Shared Helpers (fabric) + Digital Node Nexus
+
+MQTT for Mission Control uses the **official Mosquitto broker add-on** on Home Assistant OS (not a custom broker, not a Proxmox Mosquitto LXC). DNN and the fabric talk only through HA’s `mqtt` integration.
+
+#### 5a. Install Mosquitto and connect the MQTT integration
+
+1. **Settings → Add-ons → Add-on store** → search **Mosquitto broker** → **Install**.
+2. Open the add-on → **Configuration**:
+   - Under `logins`, add a local user (username + password), then **Save**.  
+     Venue default used by AlleycatTV Pi flashes:
+
+     ```yaml
+     logins:
+       - username: alleycatTV
+         password: alleycat
+     ```
+
+     If you skip Save, Pis connect with blank/wrong creds and fail with MQTT **`rc=5` (Not authorized)** — they will not appear in AlleycatTV.
+3. **Start** the add-on. Confirm it is running (Log tab shows Mosquitto started).
+4. Enable **Start on boot** (and **Watchdog** if you want auto-restart).
+5. **Settings → Devices & services → Add integration → MQTT**.
+6. When asked how to connect, choose **Use the official Mosquitto Mqtt Broker app.**  
+   HA should discover the add-on and finish the MQTT integration setup.  
+   (If discovery fails: choose manual entry and use host `core-mosquitto`, port `1883`, and the user/password from step 2.)
+7. Confirm **MQTT** appears under Devices & services and is not in an error state.
+
+Official docs: [Mosquitto broker add-on](https://github.com/home-assistant/addons/tree/master/mosquitto) · [MQTT integration](https://www.home-assistant.io/integrations/mqtt/)
+
+#### 5b. Deploy Shared Helpers + Digital Node Nexus
+
+Redeploy Shared HA Helpers (includes `fabric.py`), then DNN:
+
+```powershell
+scp -r "z:\CodingProjects\Alleycat\MissionControl\Libraries\Shared_HA_Helpers\HA_Component\custom_components\shared_libraries" root@<HA-IP>:/config/custom_components/
+scp -r "z:\CodingProjects\Alleycat\MissionControl\Libraries\Shared_HA_Helpers\HA_Component\www\shared_libraries" root@<HA-IP>:/config/www/
+
+scp -r "z:\CodingProjects\Alleycat\MissionControl\Apps\Digital_Node_Nexus\HA_Component\custom_components\digital_node_nexus" root@<HA-IP>:/config/custom_components/
+scp -r "z:\CodingProjects\Alleycat\MissionControl\Apps\Digital_Node_Nexus\HA_Component\www\digital_node_nexus" root@<HA-IP>:/config/www/
+```
+
+Merge the Digital Node Nexus `panel_custom` block from [`HomeAssist/configuration.yaml`](../HomeAssist/configuration.yaml). Restart:
+
+```bash
+ha core restart
+```
+
+1. Settings → Devices & services → Add **Digital Node Nexus** (install-only). If setup says MQTT is not ready, finish **5a** first; DNN will retry.
+2. Confirm sidebar: Digital Node Nexus.
+3. Hard-refresh the browser. **Refresh** on the DNN panel should load the MCS roster (no “Unknown command”).
+4. FDNs that publish `mc/dnn/status/{id}` (to the Mosquitto broker) appear as devices with presence sensors.
+5. Page composer can target FDN / all / broadcast id / MCS player / role|NeoCorp filter.
+
+FDN / Pi firmware must use the **HA host LAN IP** (or a DNS name that resolves to it) and Mosquitto’s listener port (**1883** by default), with the same credentials as the add-on `logins` entry.
+
+### Phase 6 — AlleycatTV on the fabric
+
+TV Pis join the same MQTT fabric as FDNs. Home Assistant is the **only** command publisher. The content server stays on Proxmox and does **not** open an MQTT client.
+
+**Full deployment walkthrough (Proxmox LXC → HA → Pi SD flash):**  
+[`AlleycatTV Config Steps.md`](AlleycatTV%20Config%20Steps.md)
+
+#### 6a. Content server (Proxmox)
+
+On the Proxmox **node** shell:
+
+```bash
+ATV_SRC=/root/MissionControl/Apps/AlleycatTV/Server_Component \
+  bash /root/install-alleycattv-proxmox.sh
+```
+
+(Copy `ProxmoxInstallFiles/install-alleycattv-proxmox.sh` to `/root/` first.) Confirm `curl http://<IP>/health` returns `"mqtt": false`, then set Core Configurator **alleycattv** to `http://<IP>`.
+
+#### 6b. Deploy AlleycatTV HA integration
+
+```powershell
+scp -r "z:\CodingProjects\Alleycat\MissionControl\Apps\AlleycatTV\HA_Component\custom_components\alleycattv" root@<HA-IP>:/config/custom_components/
+scp -r "z:\CodingProjects\Alleycat\MissionControl\Apps\AlleycatTV\HA_Component\www\alleycattv" root@<HA-IP>:/config/www/
+```
+
+Merge from [`HomeAssist/configuration.yaml`](../HomeAssist/configuration.yaml): the `alleycattv: {}` block **and** the AlleycatTV `panel_custom` entries. Restart:
+
+```bash
+ha core restart
+```
+
+1. Settings → Devices & services → Add **AlleycatTV** (install-only). MQTT must already be ready (Phase 5a). Sidebar panels without this entry → “Unknown command” / “Proxy not registered”.
+2. Sidebar: **AlleycatTV** and **AlleycatTV Content**.
+3. Pis that publish `mc/tv/status/{pi_id}` appear as devices; playback commands use `alleycattv.play_broadcast_group` / `stop_broadcast_group`.
+
+#### 6c. Flash TV Pi SD cards (prep PC)
+
+Plug-and-play flash (Trixie Lite `.img.xz`, cloud-init, player bundle, MQTT presence):
+
+```powershell
+cd z:\CodingProjects\Alleycat\MissionControl\Apps\AlleycatTV\Client_Component\distro
+py -3 flash.py --image .\2026-09-15-raspios-trixie-arm64-lite.img.xz
+```
+
+Venue flash prompts (must match Phase 5a Mosquitto `logins`):
+
+| Field | Venue example |
+| --- | --- |
+| Content server | `http://<content-LXC-IP>` |
+| MQTT broker | HA LAN IP (e.g. `192.168.1.11`) — no `http://` |
+| MQTT user / pass | `alleycatTV` / `alleycat` |
+| Pi OS user / pass | `alleycat` / `alleycat` |
+
+Confirm inject lands on `bootfs` (e.g. `D:\`), not a Temp folder. First boot installs the player; AlleycatTV panel chips appear when `mc/tv/status/{pi_id}` is published (MQTT `rc=5` means bad/missing Mosquitto login).
+
+Do **not** flash Broadcast Group membership — assign it in the **Broadcast Groups** panel after the Pi appears.
+
+Full procedure + troubleshooting: [`AlleycatTV Config Steps.md` § D](AlleycatTV%20Config%20Steps.md#d-flash-tv-pi-sd-cards-prep-pc) · App README: [`Apps/AlleycatTV/README.md`](../Apps/AlleycatTV/README.md)
+
+### Phase 7 — Broadcast Group Controller
+
+One placement service for the venue. Physical = HA Area. Membership = Broadcast Group (not Labels — see app README).
+
+```powershell
+scp -r "z:\CodingProjects\Alleycat\MissionControl\Apps\Broadcast_Group_Controller\HA_Component\custom_components\broadcast_group_controller" root@<HA-IP>:/config/custom_components/
+scp -r "z:\CodingProjects\Alleycat\MissionControl\Apps\Broadcast_Group_Controller\HA_Component\www\broadcast_group_controller" root@<HA-IP>:/config/www/
+```
+
+Merge from [`HomeAssist/configuration.yaml`](../HomeAssist/configuration.yaml): `broadcast_group_controller: {}` and the Broadcast Groups `panel_custom` entry. Redeploy AlleycatTV panels/www if you have not already (full Content + Player panels). Restart HA.
+
+1. Settings → Devices & services → Add **Broadcast Group Controller**.
+2. Sidebar **Broadcast Groups**: select a TV Pi or FDN → Set area → Set broadcast group (e.g. `lobby`).
+3. Pi receives `mc/tv/cmd/device/{id}/membership` and resubscribes to `cmd/broadcast/lobby/#`.
+4. AlleycatTV Content owns playlist buckets for that id; Player panel owns play/stop/interrupt.
+
+App README: [`Apps/Broadcast_Group_Controller/README.md`](../Apps/Broadcast_Group_Controller/README.md)
+
+### Phase 8 — Galactic Bounty Network consumes identity
+
+Posters own media and flavor. `player_id` is a foreign key to MCS. HA proxies the poster API; panels do not fetch LAN URLs.
+
+**Proxmox:** [`GBN Config Steps.md`](GBN%20Config%20Steps.md) · [`install-gbn-proxmox.sh`](../ProxmoxInstallFiles/install-gbn-proxmox.sh)
+
+```powershell
+scp -r "z:\CodingProjects\Alleycat\MissionControl\Apps\Galactic_Bounty_Network\HA_Component\custom_components\gbn" root@<HA-IP>:/config/custom_components/
+scp -r "z:\CodingProjects\Alleycat\MissionControl\Apps\Galactic_Bounty_Network\HA_Component\www\gbn" root@<HA-IP>:/config/www/
+scp -r "z:\CodingProjects\Alleycat\MissionControl\Apps\Registration\HA_Component\www\registration" root@<HA-IP>:/config/www/
+```
+
+Merge from [`HomeAssist/configuration.yaml`](../HomeAssist/configuration.yaml): `gbn: {}` and the Galactic Bounty Network `panel_custom` entry. Ensure Core Configurator key `gbn` points at the poster server. Restart HA.
+
+1. Settings → Devices & services → Add **Galactic Bounty Network**.
+2. Sidebar **Galactic Bounty Network**: roster pick → Generate → record/upload → create poster.
+3. Poster HTML overlays live MCS name/role/neocorp/faction on every read.
+4. Registration **Poster** column shows thumb + open link via `/api/gbn/proxy`.
+
+App README: [`Apps/Galactic_Bounty_Network/README.md`](../Apps/Galactic_Bounty_Network/README.md)
+
+### Phase 9 — Bug Buster + Core Proxmox VE
+
+Monitoring = HA Core **Proxmox VE**. Bug Buster = console + MQTT spy + companion health. Proxmox tokens and Live RTSP live in Core Configurator.
+
+**Walkthrough:** [`Bug Buster Config Steps.md`](Bug%20Buster%20Config%20Steps.md)
+
+```powershell
+scp -r "z:\CodingProjects\Alleycat\MissionControl\Apps\Bug_Buster\HA_Component\custom_components\bug_buster" root@<HA-IP>:/config/custom_components/
+scp -r "z:\CodingProjects\Alleycat\MissionControl\Apps\Bug_Buster\HA_Component\www\bug_buster" root@<HA-IP>:/config/www/
+scp -r "z:\CodingProjects\Alleycat\MissionControl\Apps\Core_Configurator\HA_Component\custom_components\core_configurator" root@<HA-IP>:/config/custom_components/
+scp -r "z:\CodingProjects\Alleycat\MissionControl\Apps\Core_Configurator\HA_Component\www\core_configurator" root@<HA-IP>:/config/www/
+```
+
+Merge from [`HomeAssist/configuration.yaml`](../HomeAssist/configuration.yaml): `bug_buster: {}`, Bug Buster `panel_custom`, and Core Configurator Proxmox token / RTSP secrets. Restart HA.
+
+1. Add **Proxmox VE** (Core) for sensors/buttons.
+2. Set Proxmox URL + token (+ Live RTSP) in **Core Configurator**.
+3. Add **Bug Buster** — confirm console, MQTT spy, and companion health.
+4. AlleycatTV / AlleycatTV Content do not edit server IP or RTSP — use Core Configurator only.
+
+App README: [`Apps/Bug_Buster/README.md`](../Apps/Bug_Buster/README.md)
+
+### Phase 10 — Lit+TS panel kit, then Alleycat shell
+
+Two ordered slices:
+
+- **10a** — Lit + TypeScript McPanel kit (build + scp `www/`)
+- **10b** — **HACS** install → **custom-sidebar** + **card-mod** → Alleycat theme → sidebar title **Mission Control**
+
+Look-at decisions: [`Phase 10 Look At Decisions.md`](Phase%2010%20Look%20At%20Decisions.md)
+
+#### 10a — Build and deploy Lit panels
+
+On a workstation (Node 20+), build static `www/` bundles (HAOS does not run Node):
+
+```powershell
+cd z:\CodingProjects\Alleycat\MissionControl\Libraries\Shared_HA_Helpers\panel_kit
+npm install
+npm run build
+```
+
+Deploy rebuilt panel assets (and Shared Helpers www):
+
+```powershell
+scp -r "z:\CodingProjects\Alleycat\MissionControl\Libraries\Shared_HA_Helpers\HA_Component\www\shared_libraries" root@<HA-IP>:/config/www/
+scp -r "z:\CodingProjects\Alleycat\MissionControl\Apps\Core_Configurator\HA_Component\www\core_configurator" root@<HA-IP>:/config/www/
+scp -r "z:\CodingProjects\Alleycat\MissionControl\Apps\Registration\HA_Component\www\registration" root@<HA-IP>:/config/www/
+scp -r "z:\CodingProjects\Alleycat\MissionControl\Apps\Digital_Node_Nexus\HA_Component\www\digital_node_nexus" root@<HA-IP>:/config/www/
+scp -r "z:\CodingProjects\Alleycat\MissionControl\Apps\Broadcast_Group_Controller\HA_Component\www\broadcast_group_controller" root@<HA-IP>:/config/www/
+scp -r "z:\CodingProjects\Alleycat\MissionControl\Apps\AlleycatTV\HA_Component\www\alleycattv" root@<HA-IP>:/config/www/
+scp -r "z:\CodingProjects\Alleycat\MissionControl\Apps\Galactic_Bounty_Network\HA_Component\www\gbn" root@<HA-IP>:/config/www/
+scp -r "z:\CodingProjects\Alleycat\MissionControl\Apps\Bug_Buster\HA_Component\www\bug_buster" root@<HA-IP>:/config/www/
+```
+
+Hard-refresh the browser. Smoke every sidebar panel (Core Configurator through Bug Buster). Panel kit source: [`Libraries/Shared_HA_Helpers/panel_kit/README.md`](../Libraries/Shared_HA_Helpers/panel_kit/README.md).
+
+#### 10b — Install HACS (HAOS)
+
+Mission Control runs **Home Assistant OS**. Install HACS via the official add-on path ([HACS download docs](https://www.hacs.xyz/docs/use/download/download/)). Skip if HACS is already installed and authorized.
+
+1. **Settings → Add-ons → Add-on store** (⋮) → **Repositories**.
+2. Add `https://github.com/hacs/addons` → Close.
+3. Install **Get HACS** → **Start**.
+4. Open the add-on **Log** and follow the instructions printed there (it downloads HACS into `/config/custom_components/hacs`).
+5. **Restart Home Assistant**.
+6. **Settings → Devices & services → Add integration** → **HACS**.
+7. Accept the terms → authorize with GitHub when prompted (device-code flow).
+8. Confirm **HACS** appears in the sidebar.
+
+#### 10b — Install custom-sidebar and card-mod
+
+1. Open **HACS** in the sidebar → **Frontend**.
+2. Search **custom-sidebar** → **Download** (needed to rename the sidebar to Mission Control).
+3. Search **card-mod** (Thomas Lovén) → **Download** (needed for Alleycat theme scanline / card extras).
+4. Restart Home Assistant after both downloads (or at least hard-refresh after the config merge below).
+
+#### 10b — Deploy Alleycat theme + Mission Control title
+
+1. Deploy theme + www chrome:
+
+```powershell
+scp -r "z:\CodingProjects\Alleycat\MissionControl\HomeAssist\themes" root@<HA-IP>:/config/
+scp "z:\CodingProjects\Alleycat\MissionControl\HomeAssist\www\alleycat-scanlines.js" root@<HA-IP>:/config/www/
+scp "z:\CodingProjects\Alleycat\MissionControl\HomeAssist\www\custom-sidebar-config.yaml" root@<HA-IP>:/config/www/
+```
+
+2. Merge [`HomeAssist/configuration.yaml`](../HomeAssist/configuration.yaml) `frontend:` block into `/config/configuration.yaml`:
+   - `themes: !include_dir_merge_named themes`
+   - `extra_module_url` order: custom-sidebar → card-mod → alleycat-scanlines → mc-panel → core-configurator-client
+3. Restart Home Assistant. Hard-refresh the browser (Ctrl+Shift+R).
+4. Profile → Themes → **Alleycat**.
+5. Confirm the sidebar header reads **Mission Control** (from `custom-sidebar-config.yaml`).
+6. Confirm Lovelace Overview shows CRT scanlines and dark form fields (not white inputs).
 

@@ -1,0 +1,35 @@
+﻿syntax = "proto3";
+
+// AlleycatTV Protocol — field-name reference for JSON MQTT payloads (Phase 6).
+// Home Assistant publishes UTF-8 JSON with these field names on mc/tv/… topics.
+// Binary protobuf is optional for future firmware; do not require it for HA.
+
+// Published by each Raspberry Pi (JSON on mc/tv/status/{pi_id}/json).
+// Fabric presence uses plain online/offline (or empty LWT) on mc/tv/status/{pi_id}.
+message PiStatusMsg {
+  string pi_id = 1;
+  string broadcast_group_id = 2;  // was zone
+  string state = 3;  // "playing" | "paused" | "stopped" | "interrupted" | "idle"
+  string current_file = 4;
+  int32 playlist_index = 5;
+  string ip = 6;
+  int64 uptime = 7;
+  bool online = 8;
+  string next_file = 9;
+}
+
+// Commands (HA → Pi) on:
+//   mc/tv/cmd/device/{PI_ID}/{action}
+//   mc/tv/cmd/all/{action}
+//   mc/tv/cmd/broadcast/{id}/{action}
+// action: play | stop | interrupt | reload | volume | cache_*
+
+message PlayCmd {}
+message StopCmd {}
+message InterruptCmd {
+  string file_url = 1;
+}
+message ReloadPlaylistCmd {}
+message SetVolumeCmd {
+  int32 volume = 1;
+}

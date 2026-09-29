@@ -3,14 +3,21 @@
     "step": {
       "user": {
         "title": "Core Configurator",
-        "description": "Source of truth for Alleycat app endpoints. You can edit these later from the Core Configurator sidebar tab.",
+        "description": "Source of truth for Alleycat app URLs and API tokens. Edit later from the Core Configurator sidebar.",
         "data": {
-          "registration_primary": "Registration online URL",
-          "registration_secondary": "Registration local (LAN) URL",
+          "master_control_server": "Master Control Server URL",
+          "master_control_server_token": "Master Control Server API token",
+          "central_primary": "Central Server · online URL",
+          "central_secondary": "Central Server · local URL",
           "alleycattv": "AlleycatTV streaming server",
           "gbn": "Galactic Bounty Network server",
           "proxmox": "Proxmox URL",
-          "proxmox_node": "Proxmox node name"
+          "proxmox_node": "Proxmox node name",
+          "proxmox_token_id": "Proxmox API token ID",
+          "proxmox_token_secret": "Proxmox API token secret",
+          "rtsp": "Live RTSP URL",
+          "rtsp_label": "Live RTSP display label",
+          "rtsp_enabled": "Enable Live RTSP"
         }
       }
     },

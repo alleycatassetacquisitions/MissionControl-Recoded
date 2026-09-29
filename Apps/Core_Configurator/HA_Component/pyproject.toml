@@ -1,0 +1,6 @@
+[tool.pytest.ini_options]
+# Run pytest from this directory (Apps/Core_Configurator/HA_Component/).
+# custom_components/ is a direct child of this directory, so it is importable.
+testpaths = ["tests"]
+pythonpath = ["."]
+asyncio_mode = "auto"

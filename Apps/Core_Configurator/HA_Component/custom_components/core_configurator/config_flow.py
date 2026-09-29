@@ -9,11 +9,18 @@ from homeassistant.data_entry_flow import FlowResult
 from .const import (
     DOMAIN,
     KEY_ALLEYCATTV,
+    KEY_CENTRAL_PRIMARY,
+    KEY_CENTRAL_SECONDARY,
     KEY_GBN,
+    KEY_MASTER_CONTROL_SERVER,
     KEY_PROXMOX,
-    KEY_REGISTRATION_PRIMARY,
-    KEY_REGISTRATION_SECONDARY,
+    KEY_RTSP,
     SERVICE_CATALOG,
+    YAML_MCS_TOKEN,
+    YAML_PROXMOX_TOKEN_ID,
+    YAML_PROXMOX_TOKEN_SECRET,
+    YAML_RTSP_ENABLED,
+    YAML_RTSP_LABEL,
 )
 from .urlutil import services_from_mapping
 
@@ -26,7 +33,7 @@ def _placeholder(key: str) -> str:
 
 
 class CoreConfiguratorConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
-    """Config flow — runs once on first setup. Edit URLs from the sidebar later."""
+    """Config flow — runs once on first setup. Edit URLs and tokens from the sidebar later."""
 
     VERSION = 1
 
@@ -46,12 +53,17 @@ class CoreConfiguratorConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             data_schema=vol.Schema(
                 {
                     vol.Optional(
-                        KEY_REGISTRATION_PRIMARY,
-                        description={"suggested_value": _placeholder(KEY_REGISTRATION_PRIMARY)},
+                        KEY_MASTER_CONTROL_SERVER,
+                        description={"suggested_value": _placeholder(KEY_MASTER_CONTROL_SERVER)},
+                    ): str,
+                    vol.Optional(YAML_MCS_TOKEN): str,
+                    vol.Optional(
+                        KEY_CENTRAL_PRIMARY,
+                        description={"suggested_value": _placeholder(KEY_CENTRAL_PRIMARY)},
                     ): str,
                     vol.Optional(
-                        KEY_REGISTRATION_SECONDARY,
-                        description={"suggested_value": _placeholder(KEY_REGISTRATION_SECONDARY)},
+                        KEY_CENTRAL_SECONDARY,
+                        description={"suggested_value": _placeholder(KEY_CENTRAL_SECONDARY)},
                     ): str,
                     vol.Optional(
                         KEY_ALLEYCATTV,
@@ -69,6 +81,17 @@ class CoreConfiguratorConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                         "proxmox_node",
                         description={"suggested_value": "pve"},
                     ): str,
+                    vol.Optional(YAML_PROXMOX_TOKEN_ID): str,
+                    vol.Optional(YAML_PROXMOX_TOKEN_SECRET): str,
+                    vol.Optional(
+                        KEY_RTSP,
+                        description={"suggested_value": _placeholder(KEY_RTSP)},
+                    ): str,
+                    vol.Optional(
+                        YAML_RTSP_LABEL,
+                        description={"suggested_value": "Live RTSP"},
+                    ): str,
+                    vol.Optional(YAML_RTSP_ENABLED, default=False): bool,
                 }
             ),
         )

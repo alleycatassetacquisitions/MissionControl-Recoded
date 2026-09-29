@@ -1,0 +1,19 @@
+﻿[Unit]
+Description=AlleycatTV FastAPI Server
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+EnvironmentFile=-/opt/alleycattv/alleycattv.env
+User=alleycattv
+WorkingDirectory=/opt/alleycattv/server
+ExecStart=/opt/alleycattv/venv/bin/uvicorn app.main:app --host 0.0.0.0 --port 8000 --access-log
+Restart=on-failure
+RestartSec=5
+
+# Allow the service to read/write media and config files
+ReadWritePaths=/opt/alleycattv
+
+[Install]
+WantedBy=multi-user.target
