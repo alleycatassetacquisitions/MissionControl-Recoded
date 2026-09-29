@@ -7,8 +7,12 @@
  *  - ALL data reads and writes go through hass.callWS / hass.callService.
  *    Zero direct fetch() calls to MCS or any LAN IP.
  *
+ * Layout: two-column form + roster (matches legacy ProjectMissionControl).
+ *
  * Websocket:
  *  - registration/get_roster → coordinator-cached roster
+ *
+ * Name availability is checked against the loaded roster (debounced on input).
  *
  * HA services:
  *  - registration.sync_now
@@ -39,6 +43,8 @@ class RegistrationPanel extends window.McPanel.Base {
       _roster: { state: true },
       _editingId: { state: true },
       _postersByPlayer: { state: true },
+      _search: { state: true },
+      _nameStatus: { state: true },
       _fName: { state: true },
       _fRole: { state: true },
       _fNeocorp: { state: true },
@@ -50,17 +56,23 @@ class RegistrationPanel extends window.McPanel.Base {
   declare _roster: RegPlayer[];
   declare _editingId: string | number | null;
   declare _postersByPlayer: Record<string, RegPoster>;
+  declare _search: string;
+  declare _nameStatus: "" | "available" | "taken";
   declare _fName: string;
   declare _fRole: string;
   declare _fNeocorp: string;
   declare _fFaction: string;
   declare _fNeoId: string;
 
+  private _checkTimer: ReturnType<typeof setTimeout> | null = null;
+
   constructor() {
     super();
     this._roster = [];
     this._editingId = null;
     this._postersByPlayer = {};
+    this._search = "";
+    this._nameStatus = "";
     this._fName = "";
     this._fRole = "hunter";
     this._fNeocorp = "freelancer";
@@ -74,71 +86,231 @@ class RegistrationPanel extends window.McPanel.Base {
     return [
       ...baseArr,
       window.McPanel.css`
+        :host {
+          min-height: 100vh;
+        }
+        .wrap {
+          max-width: none;
+          margin: 0;
+          padding: 0;
+        }
+        .page-header {
+          display: block;
+          align-items: unset;
+          gap: 0;
+          padding: 18px 24px;
+          margin-bottom: 0;
+          border-bottom: 1px solid var(--divider-color, #1f3a44);
+          background: var(--card-background-color, #10151c);
+        }
+        .header-row {
+          display: flex;
+          align-items: center;
+          justify-content: space-between;
+          gap: 16px;
+        }
+        .page-header h1 {
+          margin: 0;
+          font-size: 20px;
+        }
+        .sub {
+          color: var(--secondary-text-color, #7aa8b8);
+          font-size: 13px;
+          margin-top: 4px;
+        }
+        .layout {
+          display: grid;
+          grid-template-columns: 340px 1fr;
+          min-height: calc(100vh - 72px);
+        }
+        .form-col,
+        .table-col {
+          padding: 20px 24px;
+        }
+        .form-col {
+          border-right: 1px solid var(--divider-color, #1f3a44);
+        }
+        .form-title {
+          margin: 0 0 8px;
+          font-size: 16px;
+          font-weight: 600;
+          letter-spacing: 0.04em;
+        }
+        .form-col label {
+          display: block;
+          font-size: 12px;
+          letter-spacing: 0.06em;
+          text-transform: uppercase;
+          color: var(--secondary-text-color, #7aa8b8);
+          margin: 12px 0 6px;
+        }
+        .form-col input,
+        .form-col select {
+          width: 100%;
+          box-sizing: border-box;
+          padding: 10px 12px;
+          background: var(--secondary-background-color, #0d1418);
+          color: var(--primary-text-color, #e8f6ff);
+          border: 1px solid var(--divider-color, #1f3a44);
+          border-radius: 6px;
+          font: inherit;
+        }
+        .form-actions {
+          display: flex;
+          flex-wrap: wrap;
+          gap: 8px;
+          margin-top: 16px;
+        }
+        .form-actions .btn {
+          margin-top: 0;
+        }
+        .btn-create {
+          background: var(--primary-color, #00e5ff);
+          color: #041016;
+          border: 0;
+          border-radius: 6px;
+          padding: 10px 16px;
+          font-weight: 600;
+          cursor: pointer;
+          font: inherit;
+        }
+        .btn-ghost {
+          background: transparent;
+          color: var(--primary-color, #00e5ff);
+          border: 1px solid var(--primary-color, #00e5ff);
+          border-radius: 6px;
+          padding: 10px 16px;
+          cursor: pointer;
+          font: inherit;
+        }
+        .btn-danger-outline {
+          background: transparent;
+          color: #e24b4a;
+          border: 1px solid #e24b4a;
+          border-radius: 6px;
+          padding: 10px 16px;
+          cursor: pointer;
+          font: inherit;
+        }
+        .feedback {
+          min-height: 20px;
+          font-size: 13px;
+          margin-top: 12px;
+        }
+        .search-row {
+          margin-bottom: 14px;
+        }
+        .search-row input {
+          width: 100%;
+          box-sizing: border-box;
+          padding: 8px 12px;
+        }
         .roster-table {
           width: 100%;
           border-collapse: collapse;
-          margin-top: 12px;
         }
         .roster-table th,
         .roster-table td {
-          padding: 8px 12px;
           text-align: left;
-          border-bottom: 1px solid var(--divider-color, #2a3555);
+          padding: 10px 8px;
+          border-bottom: 1px solid var(--divider-color, #1f3a44);
+          font-size: 14px;
         }
         .roster-table th {
-          font-size: 0.75rem;
+          font-size: 11px;
+          letter-spacing: 0.08em;
           text-transform: uppercase;
-          letter-spacing: 0.05em;
+          color: var(--secondary-text-color, #7aa8b8);
+        }
+        .roster-table tr.selected {
+          background: rgba(0, 229, 255, 0.07);
+          outline: 1px solid var(--primary-color, #00e5ff);
+        }
+        .empty {
           color: var(--secondary-text-color);
-        }
-        .form-grid {
-          display: grid;
-          grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
-          gap: 12px 16px;
-          align-items: end;
-          margin-top: 8px;
-        }
-        .field {
-          display: flex;
-          flex-direction: column;
-          gap: 4px;
-        }
-        .field label {
-          font-size: 0.75rem;
-          text-transform: uppercase;
-          letter-spacing: 0.04em;
-          color: var(--secondary-text-color);
-        }
-        .field-actions {
-          display: flex;
-          gap: 8px;
-          align-items: end;
-        }
-        .count-badge {
-          font-size: 0.85rem;
-          color: var(--secondary-text-color);
-          margin-left: 8px;
+          text-align: center;
+          padding: 32px;
         }
         .actions-cell {
           white-space: nowrap;
         }
+        .edit-btn,
+        .delete-btn {
+          margin-top: 0;
+          padding: 4px 10px;
+          font-size: 12px;
+          background: transparent;
+          color: var(--primary-color, #00e5ff);
+          border: 1px solid var(--primary-color, #00e5ff);
+          border-radius: 4px;
+          cursor: pointer;
+          font: inherit;
+        }
+        .edit-btn:hover,
+        .delete-btn:hover {
+          background: rgba(0, 229, 255, 0.1);
+        }
+        .delete-btn {
+          color: #e24b4a;
+          border-color: #e24b4a;
+          margin-left: 6px;
+        }
+        .delete-btn:hover {
+          background: rgba(226, 75, 74, 0.1);
+        }
         .poster-cell {
           min-width: 88px;
         }
+        .poster-cell a {
+          color: var(--primary-color, #00e5ff);
+          text-decoration: none;
+        }
+        .poster-cell a:hover {
+          text-decoration: underline;
+        }
         .poster-thumb {
-          width: 64px;
-          height: 36px;
+          width: 56px;
+          height: 32px;
           object-fit: cover;
-          border-radius: 4px;
-          background: #111;
           vertical-align: middle;
+          border: 1px solid var(--divider-color, #1f3a44);
+          margin-right: 6px;
+          background: #000;
         }
         .poster-missing {
           color: var(--secondary-text-color);
           font-size: 0.8rem;
         }
+        .name-status {
+          min-height: 18px;
+          font-size: 13px;
+          margin-top: 6px;
+        }
+        .name-status.status-ok {
+          color: #4cde97;
+        }
+        .name-status.status-err {
+          color: #e24b4a;
+        }
+        @media (max-width: 900px) {
+          .layout {
+            grid-template-columns: 1fr;
+          }
+          .form-col {
+            border-right: 0;
+            border-bottom: 1px solid var(--divider-color, #1f3a44);
+          }
+        }
       `,
     ];
+  }
+
+  override disconnectedCallback(): void {
+    if (this._checkTimer) {
+      clearTimeout(this._checkTimer);
+      this._checkTimer = null;
+    }
+    super.disconnectedCallback();
   }
 
   _token(): string {
@@ -178,6 +350,11 @@ class RegistrationPanel extends window.McPanel.Base {
     this._fNeocorp = "freelancer";
     this._fFaction = "";
     this._fNeoId = "";
+    this._nameStatus = "";
+    if (this._checkTimer) {
+      clearTimeout(this._checkTimer);
+      this._checkTimer = null;
+    }
   }
 
   _startEdit(player: RegPlayer) {
@@ -191,6 +368,52 @@ class RegistrationPanel extends window.McPanel.Base {
       : "freelancer";
     this._fFaction = player.faction || "";
     this._fNeoId = player.neo_id || "";
+    this._nameStatus = "";
+    if (this._checkTimer) {
+      clearTimeout(this._checkTimer);
+      this._checkTimer = null;
+    }
+  }
+
+  _onNameInput(value: string) {
+    this._fName = value;
+    if (this._checkTimer) clearTimeout(this._checkTimer);
+    this._checkTimer = setTimeout(() => this._checkName(value), 300);
+  }
+
+  _checkName(name: string) {
+    const trimmed = name.trim();
+    if (!trimmed) {
+      this._nameStatus = "";
+      return;
+    }
+    const needle = trimmed.toLowerCase();
+    const clash = this._roster.find((p) => {
+      if ((p.name || "").trim().toLowerCase() !== needle) return false;
+      // Editing: same player keeping their own name is fine.
+      if (
+        this._editingId != null &&
+        String(p.id) === String(this._editingId)
+      ) {
+        return false;
+      }
+      return true;
+    });
+    this._nameStatus = clash ? "taken" : "available";
+  }
+
+  _filteredRoster(): RegPlayer[] {
+    const term = this._search.trim().toLowerCase();
+    if (!term) return this._roster;
+    return this._roster.filter(
+      (p) =>
+        String(p.id ?? "")
+          .toLowerCase()
+          .includes(term) ||
+        String(p.name ?? "")
+          .toLowerCase()
+          .includes(term)
+    );
   }
 
   override async _boot() {
@@ -228,6 +451,7 @@ class RegistrationPanel extends window.McPanel.Base {
         type: "registration/get_roster",
       });
       this._roster = result?.players ?? [];
+      if (this._fName.trim()) this._checkName(this._fName);
     } catch (err) {
       this._roster = [];
       this._feedback("Could not load roster: " + this._formatErr(err), "err");
@@ -245,11 +469,10 @@ class RegistrationPanel extends window.McPanel.Base {
     if (video) {
       return html`<a href=${href} target="_blank" rel="noopener" title="Open poster">
         <video class="poster-thumb" src=${video} muted playsinline></video>
+        open
       </a>`;
     }
-    return html`<a class="btn-link" href=${href} target="_blank" rel="noopener"
-      >open</a
-    >`;
+    return html`<a href=${href} target="_blank" rel="noopener">open</a>`;
   }
 
   async _syncNow() {
@@ -268,7 +491,12 @@ class RegistrationPanel extends window.McPanel.Base {
   async _savePlayer() {
     const payload = this._formPayload();
     if (!payload.name) {
-      this._feedback("Name is required.", "warn");
+      this._feedback("Enter a name", "warn");
+      return;
+    }
+    this._checkName(payload.name);
+    if (this._nameStatus === "taken") {
+      this._feedback("Pick an unused name", "warn");
       return;
     }
     try {
@@ -277,17 +505,17 @@ class RegistrationPanel extends window.McPanel.Base {
           player_id: this._editingId,
           ...payload,
         });
-        this._feedback("Player updated.", "ok");
+        this._feedback(`Updated ${payload.name}`, "ok");
       } else {
         await this.hass!.callService("registration", "register_player", payload);
-        this._feedback("Player registered.", "ok");
+        this._feedback(`Registered ${payload.name}`, "ok");
       }
       this._clearForm();
       await this.hass!.callService("registration", "sync_now", {});
       await this._loadRoster();
     } catch (err) {
       this._feedback(
-        (this._editingId ? "Update failed: " : "Registration failed: ") +
+        (this._editingId ? "Update failed: " : "Register failed: ") +
           this._formatErr(err),
         "err"
       );
@@ -314,6 +542,7 @@ class RegistrationPanel extends window.McPanel.Base {
     const html = window.McPanel.html;
     const count = this._roster.length;
     const editing = this._editingId != null;
+    const filtered = this._filteredRoster();
     const loadFailed =
       !this.hass ||
       (this._feedbackKind === "err" &&
@@ -322,169 +551,192 @@ class RegistrationPanel extends window.McPanel.Base {
     return html`
       <div class="wrap">
         <header class="page-header">
-          <h1>
-            Registration
-            <span class="count-badge"
-              >(${count} player${count === 1 ? "" : "s"})</span
-            >
-          </h1>
-          <div class="header-actions">
-            ${this._feedbackTemplate()}
-            <button class="btn btn-secondary" @click=${() => this._syncNow()}>
+          <div class="header-row">
+            <div>
+              <h1>Registration</h1>
+              <p class="sub">
+                Player roster and registration via Mission Control
+                ${count
+                  ? html` · ${count} player${count === 1 ? "" : "s"}`
+                  : ""}
+              </p>
+            </div>
+            <button class="btn-ghost" @click=${() => this._syncNow()}>
               Sync Now
             </button>
           </div>
         </header>
 
-        <div id="cards">
-          <div class="card">
-            <div class="card-header">
-              ${editing ? "Update Player" : "Register Player"}
+        <div class="layout">
+          <div class="form-col">
+            <h2 class="form-title">
+              ${editing ? "Edit Player Registration" : "Register player"}
+            </h2>
+            <label for="f-name">Name</label>
+            <input
+              id="f-name"
+              type="text"
+              autocomplete="off"
+              .value=${this._fName}
+              @input=${(e: Event) => {
+                this._onNameInput((e.target as HTMLInputElement).value);
+              }}
+            />
+            <div
+              id="name-status"
+              class="name-status ${this._nameStatus === "available"
+                ? "status-ok"
+                : this._nameStatus === "taken"
+                  ? "status-err"
+                  : ""}"
+            >
+              ${this._nameStatus === "available"
+                ? "Name is available"
+                : this._nameStatus === "taken"
+                  ? "Name is already in use"
+                  : ""}
             </div>
-            <div class="card-body">
-              <div class="form-grid">
-                <div class="field">
-                  <label for="f-name">Name</label>
-                  <input
-                    id="f-name"
-                    type="text"
-                    autocomplete="off"
-                    .value=${this._fName}
-                    @input=${(e: Event) => {
-                      this._fName = (e.target as HTMLInputElement).value;
-                    }}
-                  />
-                </div>
-                <div class="field">
-                  <label for="f-role">Role</label>
-                  <select
-                    id="f-role"
-                    .value=${this._fRole}
-                    @change=${(e: Event) => {
-                      this._fRole = (e.target as HTMLSelectElement).value;
-                    }}
-                  >
-                    <option value="hunter">Hunter</option>
-                    <option value="bounty">Bounty</option>
-                  </select>
-                </div>
-                <div class="field">
-                  <label for="f-neocorp">NeoCorp</label>
-                  <select
-                    id="f-neocorp"
-                    .value=${this._fNeocorp}
-                    @change=${(e: Event) => {
-                      this._fNeocorp = (e.target as HTMLSelectElement).value;
-                    }}
-                  >
-                    <option value="freelancer">Freelancer</option>
-                    <option value="endline">Endline</option>
-                    <option value="reboot">Reboot</option>
-                    <option value="helix">Helix</option>
-                  </select>
-                </div>
-                <div class="field">
-                  <label for="f-faction">Faction</label>
-                  <input
-                    id="f-faction"
-                    type="text"
-                    autocomplete="off"
-                    .value=${this._fFaction}
-                    @input=${(e: Event) => {
-                      this._fFaction = (e.target as HTMLInputElement).value;
-                    }}
-                  />
-                </div>
-                <div class="field">
-                  <label for="f-neo-id">Neo ID</label>
-                  <input
-                    id="f-neo-id"
-                    type="text"
-                    autocomplete="off"
-                    .value=${this._fNeoId}
-                    @input=${(e: Event) => {
-                      this._fNeoId = (e.target as HTMLInputElement).value;
-                    }}
-                  />
-                </div>
-                <div class="field-actions">
-                  <button
-                    class="btn btn-primary"
-                    @click=${() => this._savePlayer()}
-                  >
-                    ${editing ? "Update" : "Register"}
-                  </button>
-                  <button
-                    class="btn btn-secondary"
-                    ?hidden=${!editing}
-                    @click=${() => this._clearForm()}
-                  >
-                    Cancel
-                  </button>
-                </div>
-              </div>
+            <label for="f-role">Role</label>
+            <select
+              id="f-role"
+              .value=${this._fRole}
+              @change=${(e: Event) => {
+                this._fRole = (e.target as HTMLSelectElement).value;
+              }}
+            >
+              <option value="hunter">Hunter</option>
+              <option value="bounty">Bounty</option>
+            </select>
+            <label for="f-neocorp">NeoCorp</label>
+            <select
+              id="f-neocorp"
+              .value=${this._fNeocorp}
+              @change=${(e: Event) => {
+                this._fNeocorp = (e.target as HTMLSelectElement).value;
+              }}
+            >
+              <option value="freelancer">Freelancer</option>
+              <option value="endline">Endline</option>
+              <option value="helix">Helix</option>
+              <option value="reboot">Reboot</option>
+            </select>
+            <label for="f-faction">Faction</label>
+            <input
+              id="f-faction"
+              type="text"
+              autocomplete="off"
+              .value=${this._fFaction}
+              @input=${(e: Event) => {
+                this._fFaction = (e.target as HTMLInputElement).value;
+              }}
+            />
+            <label for="f-neo-id">Neo ID</label>
+            <input
+              id="f-neo-id"
+              type="text"
+              autocomplete="off"
+              .value=${this._fNeoId}
+              @input=${(e: Event) => {
+                this._fNeoId = (e.target as HTMLInputElement).value;
+              }}
+            />
+            <div class="form-actions">
+              ${editing
+                ? html`
+                    <button class="btn-create" @click=${() => this._savePlayer()}>
+                      Save changes
+                    </button>
+                    <button
+                      class="btn-danger-outline"
+                      @click=${() => this._clearForm()}
+                    >
+                      Cancel
+                    </button>
+                  `
+                : html`
+                    <button class="btn-create" @click=${() => this._savePlayer()}>
+                      Create player
+                    </button>
+                    <button class="btn-ghost" @click=${() => this._syncNow()}>
+                      Refresh table
+                    </button>
+                  `}
             </div>
+            ${this._feedbackTemplate()}
           </div>
 
-          <div class="card" style="margin-top:16px">
-            <div class="card-header">Current Roster</div>
-            <div class="card-body">
-              ${loadFailed && count === 0
-                ? html`<p style="color:var(--error-color,#f44336)">
-                    Could not load roster.
-                  </p>`
-                : count === 0
-                  ? html`<p style="color:var(--secondary-text-color)">
-                      No players registered yet.
-                    </p>`
-                  : html`
-                      <table class="roster-table">
-                        <thead>
-                          <tr>
-                            <th>ID</th>
-                            <th>Name</th>
-                            <th>Role</th>
-                            <th>NeoCorp</th>
-                            <th>Faction</th>
-                            <th>Neo ID</th>
-                            <th>Poster</th>
-                            <th></th>
-                          </tr>
-                        </thead>
-                        <tbody>
-                          ${this._roster.map(
-                            (p) => html`
-                              <tr>
-                                <td>${p.id ?? ""}</td>
-                                <td>${p.name ?? ""}</td>
-                                <td>${p.role ?? ""}</td>
-                                <td>${this._titleCaseNeo(p.neocorp)}</td>
-                                <td>${p.faction ?? ""}</td>
-                                <td>${p.neo_id ?? ""}</td>
-                                <td class="poster-cell">
-                                  ${this._posterCell(p)}
-                                </td>
-                                <td class="actions-cell">
-                                  <button
-                                    class="btn btn-link"
-                                    @click=${() => this._startEdit(p)}
-                                  >
-                                    Edit
-                                  </button>
-                                  <button
-                                    class="btn btn-link"
-                                    @click=${() => this._deletePlayer(p)}
-                                  >
-                                    Delete
-                                  </button>
-                                </td>
-                              </tr>
-                            `
-                          )}
-                        </tbody>
-                      </table>
-                    `}
+          <div class="table-col">
+            <div class="search-row">
+              <input
+                id="search"
+                type="search"
+                placeholder="Search by name or ID…"
+                .value=${this._search}
+                @input=${(e: Event) => {
+                  this._search = (e.target as HTMLInputElement).value;
+                }}
+              />
             </div>
+            ${loadFailed && count === 0
+              ? html`<p class="empty" style="color:var(--error-color,#f44336)">
+                  Could not load roster.
+                </p>`
+              : filtered.length === 0
+                ? html`<p class="empty">
+                    ${count === 0
+                      ? "No players yet"
+                      : "No players match search"}
+                  </p>`
+                : html`
+                    <table class="roster-table">
+                      <thead>
+                        <tr>
+                          <th>ID</th>
+                          <th>Name</th>
+                          <th>Role</th>
+                          <th>NeoCorp</th>
+                          <th>Faction</th>
+                          <th>Neo ID</th>
+                          <th>Poster</th>
+                          <th></th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        ${filtered.map(
+                          (p) => html`
+                            <tr
+                              class=${this._editingId != null &&
+                              String(this._editingId) === String(p.id)
+                                ? "selected"
+                                : ""}
+                            >
+                              <td>${p.id ?? ""}</td>
+                              <td>${p.name ?? ""}</td>
+                              <td>${p.role ?? ""}</td>
+                              <td>${this._titleCaseNeo(p.neocorp)}</td>
+                              <td>${p.faction ?? ""}</td>
+                              <td>${p.neo_id ?? ""}</td>
+                              <td class="poster-cell">${this._posterCell(p)}</td>
+                              <td class="actions-cell">
+                                <button
+                                  class="edit-btn"
+                                  @click=${() => this._startEdit(p)}
+                                >
+                                  Edit
+                                </button>
+                                <button
+                                  class="delete-btn"
+                                  @click=${() => this._deletePlayer(p)}
+                                >
+                                  Delete
+                                </button>
+                              </td>
+                            </tr>
+                          `
+                        )}
+                      </tbody>
+                    </table>
+                  `}
           </div>
         </div>
       </div>
