@@ -1,10 +1,11 @@
-"""Bug Buster — Proxmox console, MQTT spy, companion health.
+"""Bug Buster — Proxmox console, MQTT spy, companion health, device logs.
 
 Proxmox monitoring sensors/buttons live in HA Core Proxmox VE (proxmoxve).
 This integration keeps Alleycat ops Core does not cover: termproxy console,
-MQTT spy, and companion /health probes.
+MQTT spy, companion /health probes, and Central device crash logs via MCS.
 
 Proxmox URL, node, and API tokens come from Core Configurator only.
+MCS Bearer for /device-logs is Core Configurator master_control_server token.
 """
 from __future__ import annotations
 
@@ -24,13 +25,16 @@ from homeassistant.components import websocket_api
 from .const import (
     CONF_MQTT_TOPIC,
     CONF_VERIFY_SSL,
+    DEFAULT_LOGS_PER_PAGE,
     DEFAULT_MQTT_TOPIC,
     DEFAULT_VERIFY_SSL,
     DOMAIN,
     EVENT_HEALTH_UPDATE,
     EVENT_HOSTS_UPDATE,
     POLL_INTERVAL,
+    WS_DEVICE_LOGS,
 )
+from .device_logs import fetch_device_logs
 from .health import probe_companions
 from .mqtt_spy import MqttSpy
 from .proxmox import ProxmoxClient, ProxmoxError, error_kind, normalize_proxmox_url
@@ -154,6 +158,7 @@ async def async_setup(hass: HomeAssistant, config: dict) -> bool:
     websocket_api.async_register_command(hass, ws_list_hosts)
     websocket_api.async_register_command(hass, ws_mqtt_snapshot)
     websocket_api.async_register_command(hass, ws_health)
+    websocket_api.async_register_command(hass, ws_device_logs)
     websocket_api.async_register_command(hass, ws_term_open)
     websocket_api.async_register_command(hass, ws_term_data)
     websocket_api.async_register_command(hass, ws_term_resize)
@@ -340,6 +345,24 @@ async def ws_health(hass: HomeAssistant, connection, msg) -> None:
     _domain(hass)["health"] = health
     hass.bus.async_fire(EVENT_HEALTH_UPDATE, {"health": health})
     connection.send_result(msg["id"], {"health": health})
+
+
+@websocket_api.websocket_command(
+    {
+        vol.Required("type"): WS_DEVICE_LOGS,
+        vol.Optional("page", default=1): cv.positive_int,
+        vol.Optional("per_page", default=DEFAULT_LOGS_PER_PAGE): cv.positive_int,
+    }
+)
+@websocket_api.async_response
+async def ws_device_logs(hass: HomeAssistant, connection, msg) -> None:
+    """Proxy MCS GET /device-logs (Central crash logs). Admin only."""
+    if not _require_admin(connection, msg):
+        return
+    page = int(msg.get("page") or 1)
+    per_page = min(int(msg.get("per_page") or DEFAULT_LOGS_PER_PAGE), 100)
+    result = await fetch_device_logs(hass, page=page, per_page=per_page)
+    connection.send_result(msg["id"], result)
 
 
 @websocket_api.websocket_command(

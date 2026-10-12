@@ -191,7 +191,7 @@ ha core restart
 1. Core Configurator entry: delete + re-add (or first import) so YAML/secrets re-seed MCS URL + token.
 2. Settings → Devices & Services → Add **Registration** (install-only — no token field).
 3. Confirm sidebar panels: Core Configurator, Registration.
-4. Registration **Sync Now** should load the roster (Role / NeoCorp / Faction via MCS field mapping).
+4. Registration **Sync Now** should load the roster (PDN / mode via MCS). Create an event and set it active before registering players (Central requires an active event).
 
 MCS itself is deployed on Proxmox, not HA — see [`Master Control Server Config Steps.md`](Master%20Control%20Server%20Config%20Steps.md).
 
@@ -349,7 +349,7 @@ App README: [`Apps/Galactic_Bounty_Network/README.md`](../Apps/Galactic_Bounty_N
 
 ### Phase 9 — Bug Buster + Core Proxmox VE
 
-Monitoring = HA Core **Proxmox VE**. Bug Buster = console + MQTT spy + companion health. Proxmox tokens and Live RTSP live in Core Configurator.
+Monitoring = HA Core **Proxmox VE**. Bug Buster = console + MQTT spy + companion health + Central device crash logs (via MCS). Proxmox tokens, MCS Bearer, and Live RTSP live in Core Configurator.
 
 **Walkthrough:** [`Bug Buster Config Steps.md`](Bug%20Buster%20Config%20Steps.md)
 
@@ -364,7 +364,7 @@ Merge from [`HomeAssist/configuration.yaml`](../HomeAssist/configuration.yaml): 
 
 1. Add **Proxmox VE** (Core) for sensors/buttons.
 2. Set Proxmox URL + token (+ Live RTSP) in **Core Configurator**.
-3. Add **Bug Buster** — confirm console, MQTT spy, and companion health.
+3. Add **Bug Buster** — confirm console, MQTT spy, companion health, and Device logs (needs MCS URL + Bearer).
 4. AlleycatTV / AlleycatTV Content do not edit server IP or RTSP — use Core Configurator only.
 
 App README: [`Apps/Bug_Buster/README.md`](../Apps/Bug_Buster/README.md)

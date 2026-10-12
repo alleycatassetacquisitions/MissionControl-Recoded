@@ -70,7 +70,7 @@ If the GitHub repo is **private**, `git clone` will ask for a username/password 
 1. Seed or edit Core Configurator with MCS URL + token (and Central primary/secondary URLs).
 2. Deploy Registration + Shared HA Helpers + Core Configurator to HA — see [`Home Assistant Config Steps.md`](Home%20Assistant%20Config%20Steps.md#deploy-mission-control-files-onto-ha) and [`File Structure.md` — On Home Assistant](File%20Structure.md#on-home-assistant).
 3. Add the Registration integration (install-only — no token form). Registration pushes Central URLs to MCS via `POST /config` and polls `GET /players`.
-4. Operators register / update / delete players from the Registration panel; HA services call MCS `POST` / `PUT` / `DELETE /players`. MCS maps canonical fields (`neocorp`, `role`) to Central legacy keys (`allegiance`, `hunter`).
+4. Operators create/activate an **event**, then register players (name + optional email) from the Registration panel. MCS proxies Central form-urlencoded create and returns **501** for player update/delete until Central ships those routes. Bug Buster reads Central crash logs via MCS `GET /device-logs`.
 
 ## Updating MCS code later
 

@@ -50,13 +50,13 @@ Panels talk to **Home Assistant** (services / websocket). They do not `fetch` LA
 | App | Path | What it does |
 | --- | --- | --- |
 | **Core Configurator** | [`Apps/Core_Configurator/`](Apps/Core_Configurator/) | Single catalog of service URLs and API tokens. Other apps call `get_url` / `get_extra` — they do not store their own IPs. |
-| **Registration** | [`Apps/Registration/`](Apps/Registration/) | HA face of player roster: add / edit / delete via Master Control Server (never opens a Central socket itself). |
-| **Master Control Server** | [`Apps/Master_Control_Server/`](Apps/Master_Control_Server/) | Proxmox FastAPI companion (`/opt/mcs/`). Only Central HTTP adapter. Not an HA process. |
+| **Registration** | [`Apps/Registration/`](Apps/Registration/) | HA face of events + player roster via Master Control Server (never opens a Central socket itself). |
+| **Master Control Server** | [`Apps/Master_Control_Server/`](Apps/Master_Control_Server/) | Proxmox FastAPI companion (`/opt/mcs/`). Only Central HTTP adapter (players, events, device-logs). Not an HA process. |
 | **Digital Node Nexus** | [`Apps/Digital_Node_Nexus/`](Apps/Digital_Node_Nexus/) | FDN paging / LED / haptic over the MQTT fabric (`mc/dnn`). |
 | **AlleycatTV** | [`Apps/AlleycatTV/`](Apps/AlleycatTV/) | Event display playback: HA MQTT commands (`mc/tv`), Proxmox content server, Pi client. |
 | **Galactic Bounty Network** | [`Apps/Galactic_Bounty_Network/`](Apps/Galactic_Bounty_Network/) | Bounty posters, boards, and capture (`gbn` + Proxmox poster server). |
 | **Broadcast Group Controller** | [`Apps/Broadcast_Group_Controller/`](Apps/Broadcast_Group_Controller/) | Physical placement (HA Areas) and Broadcast Group membership for fabric devices. |
-| **Bug Buster** | [`Apps/Bug_Buster/`](Apps/Bug_Buster/) | Ops console: Proxmox guest console, MQTT spy, companion health. Does not own players, groups, or posters. |
+| **Bug Buster** | [`Apps/Bug_Buster/`](Apps/Bug_Buster/) | Ops console: Proxmox guest console, MQTT spy, companion health, Central device logs via MCS. Does not own players, groups, or posters. |
 | **Meru** | [`Apps/Meru/`](Apps/Meru/) | Local LLM / story agent surface. |
 
 Code domains and forbidden aliases: [`Docs/Design Terms.md`](Docs/Design%20Terms.md).

@@ -1,8 +1,9 @@
 # Bug Buster Config Steps
 
 Bug Buster is the Mission Control ops panel for **Proxmox console** (termproxy),
-**MQTT spy**, and **companion `/health`**. Node/VM/LXC sensors and power buttons
-come from Home Assistant Core **Proxmox VE** — not from Bug Buster.
+**MQTT spy**, **companion `/health`**, and **Central device crash logs** (via
+MCS `GET /device-logs`). Node/VM/LXC sensors and power buttons come from Home
+Assistant Core **Proxmox VE** — not from Bug Buster.
 
 ## 1. Proxmox API user and token
 
@@ -44,11 +45,12 @@ Secrets example: [`HomeAssist/secrets.yaml.example`](../HomeAssist/secrets.yaml.
 ## 4. Deploy Bug Buster
 
 ```powershell
+# Rebuild panel first (from panel_kit): npm run build
 scp -r "z:\CodingProjects\Alleycat\MissionControl\Apps\Bug_Buster\HA_Component\custom_components\bug_buster" root@<HA-IP>:/config/custom_components/
 scp -r "z:\CodingProjects\Alleycat\MissionControl\Apps\Bug_Buster\HA_Component\www\bug_buster" root@<HA-IP>:/config/www/
 ```
 
-Also redeploy Core Configurator if you have not pulled Proxmox token / RTSP fields yet.
+Also redeploy Core Configurator if you have not pulled Proxmox token / RTSP / MCS Bearer fields yet. Device logs need the same MCS URL + token Registration uses.
 
 Merge from [`HomeAssist/configuration.yaml`](../HomeAssist/configuration.yaml):
 
@@ -63,5 +65,6 @@ Restart Home Assistant. Settings → Devices & services → Add **Bug Buster** i
 2. Sidebar **Bug Buster**: guest list loads; double-click opens xterm console.
 3. MQTT spy shows broker traffic (debug only — not a command path).
 4. Companion health row shows MCS / AlleycatTV / GBN `/health`.
+5. **Device logs** pane loads (or a clear MCS token/URL error). Refresh / Prev / Next page Central crash rows. Bug Buster never POSTs logs — devices do.
 
 App README: [`Apps/Bug_Buster/README.md`](../Apps/Bug_Buster/README.md)
