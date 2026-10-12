@@ -53,7 +53,7 @@ The Mission Control app that stores service URLs **and** shared API tokens/auth 
 
 ### DNN — Digital Node Nexus
 
-The Mission Control dashboard for sending messages to FDNs and gathering information from them. Phase 5 focuses on **paging** (MQTT page starts an FDN state machine). LED and haptic remain secondary tools. Roster targeting (player / role / NeoCorp) is read from Master Control Server.
+The Mission Control dashboard for sending messages to FDNs and gathering information from them. Phase 5 focuses on **paging** (MQTT page starts an FDN state machine). LED and haptic remain secondary tools. Roster targeting (player / mode|role) is read from Master Control Server; NeoCorp filters are pending Central restore.
 
 - **Communication:** MQTT (JSON payload contract; protobuf schema documented for firmware)
 - **Used for:** paging, mini-bosses, quests, and virus
@@ -81,22 +81,24 @@ The Mission Control app for creating and updating posters that players see on Al
 
 ### MCS — Master Control Server
 
-The Proxmox companion that is the only Central HTTP adapter. It owns Player, Role, NeoCorp, and Faction JSON on the Mission Control side of the wire, and maps Central legacy field names on read/write.
+The Proxmox companion that is the only Central HTTP adapter. It owns Mission Control’s Player and Event JSON, proxies Central device crash logs (`GET /device-logs`), and maps Central `mode` to the HA-facing `role` alias.
 
-Registration is its Home Assistant face. GBN overlays Player data from MCS. Home Assistant does not talk to the Central Server itself.
+Registration is its Home Assistant face for players/events. Bug Buster reads device logs through MCS. GBN overlays Player data from MCS. Home Assistant does not talk to the Central Server itself.
+
+NeoCorp / faction remain empty optional fields until Central restores them (or Mission Control drops them from overlays).
 
 - **Communication:** HTTP
 - **Code:** `master_control_server`
 
 ### Registration
 
-The Mission Control dashboard for adding, editing, and deleting player registration information. It talks to MCS (services + panel), not to the Central Server on its own.
+The Mission Control dashboard for venue **events** (create / edit / set-active) and **player** registration (name + optional email). It talks to MCS (services + panel), not to the Central Server on its own. Player edit/delete stay in the UI but are disabled until Central ships those routes.
 
 - **Code:** `registration`
 
 ### Bug Buster
 
-The Mission Control ops tools for Proxmox console (termproxy), health checks, and MQTT debug. It reads Proxmox URL/credentials from Core Configurator. Monitoring sensors and power controls are HA Core Proxmox VE. It does not own players, Broadcast Groups, posters, or API tokens.
+The Mission Control ops tools for Proxmox console (termproxy), companion `/health` checks, MQTT debug, and Central **device crash logs** (via MCS). It reads Proxmox URL/credentials and the MCS Bearer from Core Configurator. Monitoring sensors and power controls are HA Core Proxmox VE. It does not own players, Broadcast Groups, posters, or API tokens.
 
 - **Code:** `bug_buster`
 
@@ -130,9 +132,15 @@ Digital Node Nexus and AlleycatTV own payloads (LED, haptic, playback). They do 
 
 ## Players and identity
 
+### Event
+
+A venue session on Central Server. Players register into the **active** event. Mission Control creates/edits/activates events via Master Control Server (`POST` / `PATCH` / `PUT …/active`). List and get-active may be gated until Central ships those reads; MCS keeps a last-known active id in memory for the Registration panel.
+
 ### Player
 
 A person playing the game. A Player is a Central Server record, served locally by Master Control Server.
+
+Current Central-aligned fields: `id`, `name`, `pdn_code`, `mode` (`unassigned` \| `hunter` \| `bounty`), `created_at`, optional `email`. Registration writes **name + email** only. Player update/delete are empty in Mission Control until Central adds those routes.
 
 Players are **not** Home Assistant devices. Registration exposes connectivity and a roster summary as entities, plus services for operator workflows. Do not create one `device_tracker` (or similar) per Player.
 
@@ -140,15 +148,17 @@ Players are **not** Home Assistant devices. Registration exposes connectivity an
 
 A group a player can belong to. Possible NeoCorp values are **Freelancer**, **Helix**, **Endline**, and **Reboot**.
 
-Canonical JSON field: `neocorp` (lowercase on the wire). Central Server historically used `allegiance`; Master Control Server maps between them so Home Assistant never sees `allegiance`.
+**Pending:** Central’s current schema no longer exposes NeoCorp. Registration no longer writes it. Either Central restores it, or Mission Control removes it from GBN targeting overlays. Canonical JSON field was `neocorp` (lowercase); Central historically used `allegiance`.
 
 ### Faction
 
 A named group a player can belong to. There is no limit on faction names.
 
-### Role
+**Pending:** same as NeoCorp — gone from Central’s current player API; Registration no longer writes faction.
 
-A field on a Player, owned by Master Control Server / Central Server. Values: **hunter** or **bounty**. Central may send `mode`, `role`, or numeric `hunter` (`1`/`2`); MCS normalizes to `role`. GBN must not define or impersonate Role. GBN stores `player_id` as a foreign key and overlays live Player data from Master Control Server.
+### Role / Mode
+
+A field on a Player, owned by Master Control Server / Central Server. Values: **unassigned**, **hunter**, or **bounty**. Central’s wire name is `mode`; MCS exposes `mode` and keeps `role` as the HA-facing alias. GBN must not define or impersonate Role. GBN stores `player_id` as a foreign key and overlays live Player data from Master Control Server.
 
 ### ID
 
