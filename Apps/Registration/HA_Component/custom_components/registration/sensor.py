@@ -2,7 +2,7 @@
 
 One sensor: registration_roster_count.
   - State: integer — number of players currently in the roster.
-  - Attributes: roster list (id, name, role, neocorp, faction, neo_id).
+  - Attributes: roster list (id, name, pdn_code, mode, role, created_at, email).
 
 Players are game records, NOT Home Assistant devices. Do not create a
 device_tracker or any per-player entity.
@@ -69,10 +69,11 @@ class RegistrationRosterSensor(
                 {
                     "id": p.get("id", ""),
                     "name": p.get("name", ""),
-                    "role": p.get("role", ""),
-                    "neocorp": p.get("neocorp", ""),
-                    "faction": p.get("faction", ""),
-                    "neo_id": p.get("neo_id", ""),
+                    "pdn_code": p.get("pdn_code", ""),
+                    "mode": p.get("mode") or p.get("role", ""),
+                    "role": p.get("role") or p.get("mode", ""),
+                    "created_at": p.get("created_at", ""),
+                    "email": p.get("email", ""),
                 }
                 for p in players
             ]

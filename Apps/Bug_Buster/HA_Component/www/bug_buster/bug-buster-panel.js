@@ -20,6 +20,11 @@
       this._proxmoxNode = "";
       this._inventory = {};
       this._health = [];
+      this._deviceLogs = [];
+      this._logsPage = 1;
+      this._logsPerPage = 20;
+      this._logsError = null;
+      this._logsLoading = false;
       this._unsubs = [];
       this._termUnsub = null;
       this._term = null;
@@ -40,6 +45,7 @@
       await this._loadHosts();
       await this._loadMqtt();
       await this._loadHealth();
+      await this._loadDeviceLogs();
       await this._subscribe();
     }
     _teardown() {
@@ -87,6 +93,29 @@
         this._paintHealth();
       } catch (err) {
         console.warn("[Bug Buster] health failed", err);
+      }
+    }
+    async _loadDeviceLogs(page) {
+      if (page != null) this._logsPage = Math.max(1, Number(page) || 1);
+      this._logsLoading = true;
+      this._paintDeviceLogs();
+      try {
+        const res = await this._ws("bug_buster/device_logs", {
+          page: this._logsPage,
+          per_page: this._logsPerPage
+        });
+        this._deviceLogs = Array.isArray(res.device_logs) ? res.device_logs : [];
+        const pag = res.pagination || {};
+        if (pag.page != null) this._logsPage = Number(pag.page) || this._logsPage;
+        if (pag.per_page != null) this._logsPerPage = Number(pag.per_page) || this._logsPerPage;
+        this._logsError = res.error || null;
+      } catch (err) {
+        this._deviceLogs = [];
+        this._logsError = err.message || String(err);
+        console.warn("[Bug Buster] device_logs failed", err);
+      } finally {
+        this._logsLoading = false;
+        this._paintDeviceLogs();
       }
     }
     async _loadMqtt() {
@@ -152,6 +181,15 @@
       root.getElementById("term-disconnect")?.addEventListener("click", () => this._closeTerm());
       root.getElementById("host-refresh")?.addEventListener("click", () => this._loadHosts());
       root.getElementById("health-refresh")?.addEventListener("click", () => this._loadHealth());
+      root.getElementById("logs-refresh")?.addEventListener("click", () => this._loadDeviceLogs());
+      root.getElementById("logs-prev")?.addEventListener("click", () => {
+        if (this._logsPage > 1) this._loadDeviceLogs(this._logsPage - 1);
+      });
+      root.getElementById("logs-next")?.addEventListener("click", () => {
+        if (this._deviceLogs.length >= this._logsPerPage) {
+          this._loadDeviceLogs(this._logsPage + 1);
+        }
+      });
     }
     _paintHealth() {
       const el = this.shadowRoot.getElementById("health-list");
@@ -169,6 +207,74 @@
         <span class="muted">${this._esc(h.url || "not configured")}</span>
       </div>`;
       }).join("");
+    }
+    _paintDeviceLogs() {
+      const el = this.shadowRoot.getElementById("logs-list");
+      const meta = this.shadowRoot.getElementById("logs-meta");
+      const prev = this.shadowRoot.getElementById("logs-prev");
+      const next = this.shadowRoot.getElementById("logs-next");
+      if (meta) {
+        meta.textContent = this._logsLoading ? "Loading\u2026" : `Page ${this._logsPage} \xB7 ${this._deviceLogs.length} row${this._deviceLogs.length === 1 ? "" : "s"}`;
+      }
+      if (prev) prev.disabled = this._logsLoading || this._logsPage <= 1;
+      if (next) {
+        next.disabled = this._logsLoading || this._deviceLogs.length < this._logsPerPage;
+      }
+      if (!el) return;
+      if (this._logsError) {
+        el.innerHTML = `<div class="empty error"><strong>Device logs unavailable</strong><p>${this._esc(this._logsError)}</p></div>`;
+        return;
+      }
+      if (this._logsLoading && !this._deviceLogs.length) {
+        el.innerHTML = `<p class="empty">Loading device logs\u2026</p>`;
+        return;
+      }
+      if (!this._deviceLogs.length) {
+        el.innerHTML = `<p class="empty">No device crash logs yet.</p>`;
+        return;
+      }
+      el.innerHTML = `
+      <table class="logs-table">
+        <thead>
+          <tr>
+            <th>Received</th>
+            <th>MAC</th>
+            <th>#</th>
+            <th>Reset</th>
+            <th>Uptime</th>
+            <th>Version</th>
+            <th>Task</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${this._deviceLogs.map((row) => this._logRow(row)).join("")}
+        </tbody>
+      </table>`;
+    }
+    _logRow(row) {
+      const received = this._fmtWhen(row.received_at);
+      const uptime = this._fmtUptimeMs(row.uptime_ms);
+      return `<tr>
+      <td>${this._esc(received)}</td>
+      <td class="mono">${this._esc(row.device_mac || "\u2014")}</td>
+      <td>${this._esc(row.crash_number ?? "\u2014")}</td>
+      <td>${this._esc(row.reset_reason ?? "\u2014")}</td>
+      <td>${this._esc(uptime)}</td>
+      <td>${this._esc(row.software_version || "\u2014")}</td>
+      <td>${this._esc(row.task_name || "\u2014")}</td>
+    </tr>`;
+    }
+    _fmtWhen(iso) {
+      if (!iso) return "\u2014";
+      const d = new Date(iso);
+      if (Number.isNaN(d.getTime())) return String(iso);
+      return d.toLocaleString();
+    }
+    _fmtUptimeMs(ms) {
+      const n = Number(ms);
+      if (!Number.isFinite(n) || n < 0) return "\u2014";
+      if (n < 1e3) return `${Math.round(n)} ms`;
+      return this._fmtUptime(n / 1e3);
     }
     _hostByVmid(vmid) {
       return this._hosts.find((h) => Number(h.vmid) === Number(vmid));
@@ -578,13 +684,13 @@ ${item.hex}` : "";
           flex: 1;
           min-height: 0;
           display: grid;
-          grid-template-columns: 1.2fr 1fr;
-          grid-template-rows: 1fr 280px;
+          grid-template-columns: 1fr 1fr;
+          grid-template-rows: minmax(160px, 0.9fr) minmax(180px, 0.7fr) minmax(220px, 1.2fr);
           gap: 12px;
           padding: 0 16px 16px;
         }
         .hosts { grid-column: 1 / -1; min-height: 0; display: flex; flex-direction: column; }
-        .mqtt, .term {
+        .mqtt, .term, .logs, .health {
           min-height: 0;
           display: flex;
           flex-direction: column;
@@ -680,9 +786,27 @@ ${item.hex}` : "";
         .health-row.ok strong { color: #7dffb3; }
         .health-row.bad strong { color: #ff6b8a; }
         .health-row .muted { color: #9aa8c7; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+        #health-list, #logs-list { flex: 1; min-height: 0; overflow: auto; }
+        #logs-meta { text-transform: none; letter-spacing: 0; color: #9aa8c7; font-size: 11px; margin-left: auto; }
+        .logs-pager { display: flex; gap: 6px; }
+        .logs-pager .ghost { margin-left: 0; }
+        .logs-pager button:disabled { opacity: 0.4; cursor: default; }
+        .logs-table {
+          width: 100%; border-collapse: collapse; font-size: 12px;
+        }
+        .logs-table th, .logs-table td {
+          padding: 6px 8px; text-align: left; border-bottom: 1px solid #1a2440;
+          white-space: nowrap;
+        }
+        .logs-table th {
+          color: var(--ac-cyan, #00e5ff); font-weight: 600;
+          position: sticky; top: 0; background: var(--card-background-color, #12192e);
+          letter-spacing: 0.06em; text-transform: uppercase; font-size: 10px;
+        }
+        .logs-table td.mono { font-family: "Share Tech Mono", ui-monospace, monospace; color: #b8f5d0; }
         .cc-note { font-size: 12px; color: #9aa8c7; margin: 0 16px 0 0; max-width: 280px; }
         @media (max-width: 980px) {
-          .body { grid-template-columns: 1fr; grid-template-rows: auto auto auto auto; }
+          .body { grid-template-columns: 1fr; grid-template-rows: auto; }
           .hosts { max-height: 320px; }
           .health-row { grid-template-columns: 1fr; }
         }
@@ -691,14 +815,14 @@ ${item.hex}` : "";
         <header class="page-header">
           <div>
             <h1>Bug Buster</h1>
-            <p class="subtitle">Proxmox console \xB7 MQTT spy \xB7 companion health</p>
+            <p class="subtitle">Proxmox console \xB7 MQTT spy \xB7 companion health \xB7 device logs</p>
           </div>
           <div class="stats">
             <span id="host-count">0/0 online</span>
             <span id="poll-meta">Proxmox never</span>
             <span id="mqtt-meta">0 msgs</span>
           </div>
-          <p class="cc-note">Proxmox URL and API token: Core Configurator. Monitoring entities: HA Proxmox VE integration.</p>
+          <p class="cc-note">Proxmox URL and API token: Core Configurator. Monitoring entities: HA Proxmox VE integration. Device logs use the MCS Bearer token.</p>
           <span id="feedback" class="feedback"></span>
         </header>
         <div class="body">
@@ -709,12 +833,24 @@ ${item.hex}` : "";
             </div>
             <div id="host-grid"><p class="empty">Waiting for Proxmox guest list\u2026</p></div>
           </section>
-          <section class="mqtt">
+          <section class="health">
             <div class="pane-head">
               <span>Companion health</span>
               <button class="ghost" id="health-refresh" type="button">Refresh</button>
             </div>
             <div id="health-list"><p class="empty">No companion health yet.</p></div>
+          </section>
+          <section class="logs">
+            <div class="pane-head">
+              <span>Device logs</span>
+              <span id="logs-meta">Page 1</span>
+              <div class="logs-pager">
+                <button class="ghost" id="logs-prev" type="button">Prev</button>
+                <button class="ghost" id="logs-next" type="button">Next</button>
+                <button class="ghost" id="logs-refresh" type="button">Refresh</button>
+              </div>
+            </div>
+            <div id="logs-list"><p class="empty">No device crash logs yet.</p></div>
           </section>
           <section class="mqtt">
             <div class="pane-head">

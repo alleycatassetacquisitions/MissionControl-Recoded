@@ -18,10 +18,24 @@ TOKEN = "test-token"
 MOCK_ROSTER = {
     "count": 2,
     "players": [
-        {"id": "p1", "name": "Alice", "role": "hunter", "neocorp": "Helix",
-         "faction": "Phoenix", "neo_id": "neo-001"},
-        {"id": "p2", "name": "Bob", "role": "freelancer", "neocorp": "Freelancer",
-         "faction": "", "neo_id": "neo-002"},
+        {
+            "id": "p1",
+            "name": "Alice",
+            "pdn_code": "1234",
+            "mode": "hunter",
+            "role": "hunter",
+            "created_at": "2026-01-01T00:00:00Z",
+            "email": "a@example.com",
+        },
+        {
+            "id": "p2",
+            "name": "Bob",
+            "pdn_code": "5678",
+            "mode": "unassigned",
+            "role": "unassigned",
+            "created_at": "2026-01-02T00:00:00Z",
+            "email": "",
+        },
     ],
 }
 
@@ -73,16 +87,16 @@ async def test_sensor_state_is_roster_count(hass: HomeAssistant, loaded_entry):
 
 @pytest.mark.asyncio
 async def test_sensor_attributes_contain_roster(hass: HomeAssistant, loaded_entry):
-    """Attributes include full canonical player fields."""
+    """Attributes include Central-aligned player fields."""
     state = hass.states.get("sensor.registration_roster_count")
     roster = state.attributes.get("roster", [])
     assert len(roster) == 2
     assert roster[0]["id"] == "p1"
     assert roster[0]["name"] == "Alice"
+    assert roster[0]["pdn_code"] == "1234"
+    assert roster[0]["mode"] == "hunter"
     assert roster[0]["role"] == "hunter"
-    assert roster[0]["neocorp"] == "Helix"
-    assert roster[0]["faction"] == "Phoenix"
-    assert roster[0]["neo_id"] == "neo-001"
+    assert roster[0]["email"] == "a@example.com"
 
 
 @pytest.mark.asyncio

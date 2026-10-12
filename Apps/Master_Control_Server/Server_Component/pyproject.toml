@@ -18,7 +18,7 @@ test = [
 ]
 
 [tool.setuptools]
-py-modules = ["main", "models", "central_client"]
+py-modules = ["main", "models", "central_client", "player_normalize"]
 
 [tool.coverage.run]
 omit = ["tests/*"]

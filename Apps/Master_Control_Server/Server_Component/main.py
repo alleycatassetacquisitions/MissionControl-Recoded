@@ -6,31 +6,51 @@ Design contracts:
     MCS stores them in memory and uses them for all Central calls.
   - Env vars (CENTRAL_PRIMARY_URL, CENTRAL_SECONDARY_URL) are first-boot
     defaults only. HA overwrites them on every setup.
-  - MCS_API_TOKEN guards /players and /config. The same token is stored in
-    Core Configurator (master_control_server extra.token) and set as this
-    env var on the Proxmox LXC (see ProxmoxInstallFiles/install-mcs-proxmox.sh).
+  - MCS_API_TOKEN guards /players, /events, /device-logs, and /config.
   - Players are game records, not Home Assistant devices.
-  - Central legacy keys (allegiance, hunter/mode) are normalized to canonical
-    Design Terms fields (neocorp, role) on read; writes reverse-map.
+  - Central create is form-urlencoded (name + email); list returns pdn/mode.
+  - Player update/delete return 501 until Central ships those routes.
+  - Event list/get-active are stubbed (501 / MCS memory) until Central ready.
 """
 from __future__ import annotations
 
 import logging
 import os
 from contextlib import asynccontextmanager
-from typing import Annotated
+from datetime import datetime, timezone
+from typing import Annotated, Any
 
-from fastapi import Depends, FastAPI, HTTPException, Security, status
+from fastapi import Depends, FastAPI, HTTPException, Query, Security, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 
 from central_client import (
+    EVENTS_LIST_NOT_READY,
+    PLAYER_DELETE_NOT_READY,
+    PLAYER_UPDATE_NOT_READY,
+    create_event,
     create_player,
-    delete_player,
+    detail_from_body,
+    fetch_device_logs,
     fetch_normalized_players,
-    update_player,
+    set_active_event,
+    update_event,
 )
-from models import ConfigUpdate, HealthResponse, Player, PlayerWrite, Roster
-from player_normalize import normalize_player, to_central_create_body, to_central_write_body
+from models import (
+    ActiveEventMemory,
+    ActiveEventState,
+    ConfigUpdate,
+    DeviceLog,
+    DeviceLogsResponse,
+    Event,
+    EventCreate,
+    EventUpdate,
+    HealthResponse,
+    Pagination,
+    Player,
+    PlayerWrite,
+    Roster,
+)
+from player_normalize import normalize_player, to_central_create_form
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -43,6 +63,51 @@ _config: dict[str, str] = {
     "central_secondary": os.getenv("CENTRAL_SECONDARY_URL", ""),
     "api_token": os.getenv("MCS_API_TOKEN", ""),
 }
+
+# Last-known active event (MCS memory until Central GET /events/active ships)
+_active_event: dict[str, Any] = {
+    "id": None,
+    "name": None,
+    "venue_name": None,
+    "created_at": None,
+    "set_at": None,
+}
+
+# Flip to True when Central notifies that GET /events and GET /events/active
+# are live — Registration Phase 2 gates on the ready flag / 501.
+_EVENTS_LIST_READY = False
+_EVENTS_ACTIVE_CENTRAL_READY = False
+
+
+def _remember_active_event(event: dict[str, Any] | Event) -> None:
+    """Store last-known active event after successful set_active / create+activate."""
+    if isinstance(event, Event):
+        data = event.model_dump()
+    else:
+        data = event
+    _active_event["id"] = str(data.get("id") or "") or None
+    _active_event["name"] = data.get("name")
+    _active_event["venue_name"] = data.get("venue_name")
+    _active_event["created_at"] = data.get("created_at") or ""
+    _active_event["set_at"] = datetime.now(timezone.utc).isoformat()
+
+
+def _active_event_state() -> ActiveEventState:
+    event_id = _active_event.get("id")
+    event: Event | None = None
+    if event_id:
+        event = Event(
+            id=str(event_id),
+            name=str(_active_event.get("name") or ""),
+            venue_name=_active_event.get("venue_name"),
+            created_at=str(_active_event.get("created_at") or ""),
+        )
+    return ActiveEventState(
+        ready=_EVENTS_ACTIVE_CENTRAL_READY,
+        active_event_id=str(event_id) if event_id else None,
+        event=event,
+        source="mcs_memory",
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -60,7 +125,6 @@ def _verify_token(
     """Validate the Bearer token. Raises 401 on failure."""
     token = _config["api_token"]
     if not token:
-        # If MCS has no token configured yet, deny all protected calls.
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail="MCS token not configured. Push /config from Home Assistant first.",
@@ -82,15 +146,41 @@ def _require_central() -> None:
         )
 
 
-def _central_error(status_code: int, action: str) -> HTTPException:
+def _central_error(
+    status_code: int,
+    action: str,
+    body: Any | None = None,
+) -> HTTPException:
+    detail = detail_from_body(body)
     if status_code == 0:
         return HTTPException(
             status_code=status.HTTP_502_BAD_GATEWAY,
             detail=f"Central Server unreachable during {action}.",
         )
+    # Pass through client errors (esp. 409 No active event / duplicate name)
+    if 400 <= status_code < 500:
+        return HTTPException(
+            status_code=status_code,
+            detail=detail or f"Central Server returned HTTP {status_code} during {action}.",
+        )
     return HTTPException(
         status_code=status.HTTP_502_BAD_GATEWAY,
-        detail=f"Central Server returned HTTP {status_code} during {action}.",
+        detail=detail or f"Central Server returned HTTP {status_code} during {action}.",
+    )
+
+
+def _event_from_central(resp: Any) -> Event | None:
+    if not isinstance(resp, dict):
+        return None
+    event_id = resp.get("id")
+    name = resp.get("name")
+    if not event_id or not name:
+        return None
+    return Event(
+        id=str(event_id),
+        name=str(name),
+        venue_name=resp.get("venue_name"),
+        created_at=str(resp.get("created_at") or ""),
     )
 
 
@@ -116,13 +206,13 @@ app = FastAPI(
         "Sole Central HTTP adapter for Mission Control. "
         "Owned by Home Assistant Registration integration."
     ),
-    version="1.0.0",
+    version="1.1.0",
     lifespan=_lifespan,
 )
 
 
 # ---------------------------------------------------------------------------
-# Endpoints
+# Ops
 # ---------------------------------------------------------------------------
 
 
@@ -136,17 +226,48 @@ async def health() -> HealthResponse:
     )
 
 
-@app.get("/players", response_model=Roster, tags=["players"])
-async def get_players(
+@app.post(
+    "/config",
+    status_code=status.HTTP_204_NO_CONTENT,
+    tags=["ops"],
+)
+async def update_config(
+    update: ConfigUpdate,
     _token: Annotated[str, Depends(_verify_token)],
-) -> Roster:
-    """Return the full player roster from Central Server (canonical fields)."""
-    players_raw = await fetch_normalized_players(
+) -> None:
+    """Accept Central Server URLs pushed by the Registration HA integration."""
+    if update.central_primary:
+        _config["central_primary"] = update.central_primary
+    if update.central_secondary:
+        _config["central_secondary"] = update.central_secondary
+    _LOGGER.info(
+        "MCS config updated — central_primary=%r central_secondary=%r",
         _config["central_primary"],
         _config["central_secondary"],
     )
+
+
+# ---------------------------------------------------------------------------
+# Players
+# ---------------------------------------------------------------------------
+
+
+@app.get("/players", response_model=Roster, tags=["players"])
+async def get_players(
+    _token: Annotated[str, Depends(_verify_token)],
+    page: Annotated[int | None, Query(ge=0)] = None,
+    per_page: Annotated[int | None, Query(ge=0)] = None,
+) -> Roster:
+    """Return player roster from Central (canonical fields + optional pagination)."""
+    players_raw, pagination = await fetch_normalized_players(
+        _config["central_primary"],
+        _config["central_secondary"],
+        page=page,
+        per_page=per_page,
+    )
     players = [Player(**item) for item in players_raw]
-    return Roster(players=players, count=len(players))
+    page_model = Pagination(**pagination) if pagination else None
+    return Roster(players=players, count=len(players), pagination=page_model)
 
 
 @app.get("/players/{player_id}", response_model=Player, tags=["players"])
@@ -155,7 +276,7 @@ async def get_player(
     _token: Annotated[str, Depends(_verify_token)],
 ) -> Player:
     """Return a single player by ID."""
-    players_raw = await fetch_normalized_players(
+    players_raw, _pagination = await fetch_normalized_players(
         _config["central_primary"],
         _config["central_secondary"],
     )
@@ -178,78 +299,42 @@ async def post_player(
     body: PlayerWrite,
     _token: Annotated[str, Depends(_verify_token)],
 ) -> Player:
-    """Create a player on Central. Accepts canonical fields; writes legacy keys."""
+    """Create a player on Central (form-urlencoded name + optional email)."""
     _require_central()
-    central_body = to_central_create_body(
-        name=body.name,
-        role=body.role,
-        neocorp=body.neocorp,
-        faction=body.faction,
-        neo_id=body.neo_id,
-    )
+    form = to_central_create_form(name=body.name, email=body.email)
     status_code, resp = await create_player(
         _config["central_primary"],
         _config["central_secondary"],
-        central_body,
+        form,
     )
+    # Central registers with empty 200; treat 2xx as success
     if status_code == 0 or status_code >= 400:
-        raise _central_error(status_code, "create")
+        raise _central_error(status_code, "create", resp)
     if isinstance(resp, dict):
         try:
             return Player(**normalize_player(resp))
         except Exception:  # noqa: BLE001
             pass
-    # Central may return minimal payload — echo request with unknown id.
+    # Empty body — echo request; Registration refreshes roster for pdn_code
     return Player(
-        id=str((resp or {}).get("id", "")) if isinstance(resp, dict) else "",
+        id=str(resp.get("id", "")) if isinstance(resp, dict) else "",
         name=body.name,
-        role=central_body["role"],
-        neocorp=central_body["allegiance"],
-        faction=body.faction,
-        neo_id=body.neo_id,
+        email=body.email or "",
+        mode="unassigned",
+        role="unassigned",
     )
 
 
 @app.put("/players/{player_id}", response_model=Player, tags=["players"])
 async def put_player(
-    player_id: str,
-    body: PlayerWrite,
+    player_id: str,  # noqa: ARG001
+    body: PlayerWrite,  # noqa: ARG001
     _token: Annotated[str, Depends(_verify_token)],
 ) -> Player:
-    """Update a player on Central."""
-    _require_central()
-    central_body = to_central_write_body(
-        name=body.name,
-        role=body.role,
-        neocorp=body.neocorp,
-        faction=body.faction,
-        neo_id=body.neo_id,
-    )
-    status_code, resp = await update_player(
-        _config["central_primary"],
-        _config["central_secondary"],
-        player_id,
-        central_body,
-    )
-    if status_code == 404:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"Player {player_id!r} not found on Central.",
-        )
-    if status_code == 0 or status_code >= 400:
-        raise _central_error(status_code, "update")
-    if isinstance(resp, dict):
-        try:
-            return Player(**normalize_player({**resp, "id": resp.get("id", player_id)}))
-        except Exception:  # noqa: BLE001
-            pass
-    return Player(
-        id=player_id,
-        name=body.name,
-        role=central_body["role"],
-        neocorp=central_body["allegiance"],
-        faction=body.faction,
-        neo_id=body.neo_id,
+    """Update a player — not available until Central ships PATCH/PUT."""
+    raise HTTPException(
+        status_code=status.HTTP_501_NOT_IMPLEMENTED,
+        detail=PLAYER_UPDATE_NOT_READY,
     )
 
 
@@ -259,45 +344,225 @@ async def put_player(
     tags=["players"],
 )
 async def remove_player(
-    player_id: str,
+    player_id: str,  # noqa: ARG001
     _token: Annotated[str, Depends(_verify_token)],
 ) -> None:
-    """Delete a player on Central."""
+    """Delete a player — not available until Central ships DELETE."""
+    raise HTTPException(
+        status_code=status.HTTP_501_NOT_IMPLEMENTED,
+        detail=PLAYER_DELETE_NOT_READY,
+    )
+
+
+# ---------------------------------------------------------------------------
+# Events
+# ---------------------------------------------------------------------------
+
+
+@app.get("/events", tags=["events"])
+async def get_events(
+    _token: Annotated[str, Depends(_verify_token)],
+) -> dict[str, Any]:
+    """List events — stubbed until Central GET /events is ready."""
+    if not _EVENTS_LIST_READY:
+        raise HTTPException(
+            status_code=status.HTTP_501_NOT_IMPLEMENTED,
+            detail=EVENTS_LIST_NOT_READY,
+        )
+    # Ready path wired for when the flag flips (Phase 4 rollout step 4)
     _require_central()
-    status_code, _resp = await delete_player(
+    from central_client import list_events
+
+    status_code, resp = await list_events(
         _config["central_primary"],
         _config["central_secondary"],
-        player_id,
+    )
+    if status_code == 0 or status_code >= 400:
+        raise _central_error(status_code, "list events", resp)
+    if isinstance(resp, list):
+        events = [_event_from_central(item) for item in resp]
+        return {"events": [e for e in events if e is not None], "ready": True}
+    if isinstance(resp, dict) and "events" in resp:
+        events = [_event_from_central(item) for item in resp["events"]]
+        return {"events": [e for e in events if e is not None], "ready": True}
+    return {"events": [], "ready": True}
+
+
+@app.get("/events/active", response_model=ActiveEventState, tags=["events"])
+async def get_active_event_route(
+    _token: Annotated[str, Depends(_verify_token)],
+) -> ActiveEventState:
+    """Return last-known active event from MCS memory (Central get-active pending)."""
+    # Always serve MCS memory so Registration can show "Active: …"
+    return _active_event_state()
+
+
+@app.post(
+    "/events",
+    response_model=Event,
+    status_code=status.HTTP_201_CREATED,
+    tags=["events"],
+)
+async def post_event(
+    body: EventCreate,
+    _token: Annotated[str, Depends(_verify_token)],
+    set_active: Annotated[bool, Query()] = False,
+) -> Event:
+    """Create an event on Central. Optional ``set_active`` then PUT .../active."""
+    _require_central()
+    payload: dict[str, Any] = {"name": body.name}
+    if body.venue_name is not None:
+        payload["venue_name"] = body.venue_name
+    status_code, resp = await create_event(
+        _config["central_primary"],
+        _config["central_secondary"],
+        payload,
+    )
+    if status_code == 0 or status_code >= 400:
+        raise _central_error(status_code, "create event", resp)
+    event = _event_from_central(resp)
+    if event is None:
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail="Central created event but returned an unexpected body.",
+        )
+    if set_active:
+        act_status, act_body = await set_active_event(
+            _config["central_primary"],
+            _config["central_secondary"],
+            event.id,
+        )
+        if act_status == 0 or act_status >= 400:
+            raise _central_error(act_status, "set active event", act_body)
+        _remember_active_event(event)
+    return event
+
+
+@app.patch("/events/{event_id}", response_model=Event, tags=["events"])
+async def patch_event(
+    event_id: str,
+    body: EventUpdate,
+    _token: Annotated[str, Depends(_verify_token)],
+) -> Event:
+    """Update an event on Central."""
+    _require_central()
+    payload: dict[str, Any] = {}
+    if body.name is not None:
+        payload["name"] = body.name
+    if "venue_name" in body.model_fields_set:
+        payload["venue_name"] = body.venue_name
+    if not payload:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Supply at least one of name or venue_name.",
+        )
+    status_code, resp = await update_event(
+        _config["central_primary"],
+        _config["central_secondary"],
+        event_id,
+        payload,
     )
     if status_code == 404:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"Player {player_id!r} not found on Central.",
+            detail=f"Event {event_id!r} not found on Central.",
         )
     if status_code == 0 or status_code >= 400:
-        raise _central_error(status_code, "delete")
+        raise _central_error(status_code, "update event", resp)
+    event = _event_from_central(resp)
+    if event is None:
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail="Central updated event but returned an unexpected body.",
+        )
+    # Refresh memory cache if this is the active event
+    if _active_event.get("id") == event.id:
+        _remember_active_event(event)
+    return event
 
 
-@app.post(
-    "/config",
+@app.put(
+    "/events/{event_id}/active",
     status_code=status.HTTP_204_NO_CONTENT,
-    tags=["ops"],
+    tags=["events"],
 )
-async def update_config(
-    update: ConfigUpdate,
+async def put_active_event(
+    event_id: str,
     _token: Annotated[str, Depends(_verify_token)],
+    body: ActiveEventMemory | None = None,
 ) -> None:
-    """Accept Central Server URLs pushed by the Registration HA integration.
+    """Select the active event on Central; remember id (+ optional name) in MCS memory.
 
-    Called on every HA start and whenever Core Configurator fires
-    core_configurator_updated with central_primary or central_secondary.
+    Optional JSON body ``{name, venue_name}`` is MCS-only display memory — not
+    forwarded to Central (Central PUT /active has no body).
     """
-    if update.central_primary:
-        _config["central_primary"] = update.central_primary
-    if update.central_secondary:
-        _config["central_secondary"] = update.central_secondary
-    _LOGGER.info(
-        "MCS config updated — central_primary=%r central_secondary=%r",
+    _require_central()
+    status_code, resp = await set_active_event(
         _config["central_primary"],
         _config["central_secondary"],
+        event_id,
+    )
+    if status_code == 404:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Event {event_id!r} not found on Central.",
+        )
+    if status_code == 0 or status_code >= 400:
+        raise _central_error(status_code, "set active event", resp)
+    # Preserve name/venue when re-activating the same cached event; else id only
+    if _active_event.get("id") != event_id:
+        _active_event["name"] = None
+        _active_event["venue_name"] = None
+        _active_event["created_at"] = ""
+    _active_event["id"] = event_id
+    if body is not None:
+        if body.name:
+            _active_event["name"] = body.name
+        if body.venue_name is not None:
+            _active_event["venue_name"] = body.venue_name
+    _active_event["set_at"] = datetime.now(timezone.utc).isoformat()
+
+
+# ---------------------------------------------------------------------------
+# Device logs
+# ---------------------------------------------------------------------------
+
+
+@app.get("/device-logs", response_model=DeviceLogsResponse, tags=["device-logs"])
+async def get_device_logs(
+    _token: Annotated[str, Depends(_verify_token)],
+    page: Annotated[int, Query(ge=0)] = 1,
+    per_page: Annotated[int, Query(ge=0)] = 20,
+) -> DeviceLogsResponse:
+    """Proxy Central GET /device-logs with pagination."""
+    _require_central()
+    status_code, resp = await fetch_device_logs(
+        _config["central_primary"],
+        _config["central_secondary"],
+        page=page or 1,
+        per_page=per_page or 20,
+    )
+    if status_code == 0 or status_code >= 400:
+        raise _central_error(status_code, "list device logs", resp)
+    if not isinstance(resp, dict):
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail="Central device-logs response was not JSON object.",
+        )
+    raw_logs = resp.get("device_logs") or []
+    pagination_raw = resp.get("pagination") or {}
+    logs: list[DeviceLog] = []
+    for item in raw_logs:
+        if not isinstance(item, dict):
+            continue
+        try:
+            logs.append(DeviceLog(**item))
+        except Exception as exc:  # noqa: BLE001
+            _LOGGER.warning("Skipping malformed device log: %s", exc)
+    return DeviceLogsResponse(
+        device_logs=logs,
+        pagination=Pagination(
+            page=int(pagination_raw.get("page", page or 1)),
+            per_page=int(pagination_raw.get("per_page", per_page or 20)),
+        ),
     )
