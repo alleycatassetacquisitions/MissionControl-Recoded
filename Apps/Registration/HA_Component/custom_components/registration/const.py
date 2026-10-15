@@ -20,4 +20,14 @@ UPDATE_INTERVAL = timedelta(seconds=60)
 
 # Websocket command namespace.
 WS_GET_ROSTER = f"{DOMAIN}/get_roster"
-WS_REGISTER_PLAYER = f"{DOMAIN}/register_player"
+WS_GET_EVENTS = f"{DOMAIN}/get_events"
+WS_GET_ACTIVE_EVENT = f"{DOMAIN}/get_active_event"
+
+# hass.data keys (under DOMAIN)
+EVENT_CACHE_KEY = "event_cache"
+EVENT_STORE = "event_store"
+ACTIVE_EVENT_ID_KEY = "active_event_id"
+
+# Persist known events + last active across HA restarts (until Central GET /events).
+STORAGE_VERSION = 1
+STORAGE_KEY = f"{DOMAIN}.events"

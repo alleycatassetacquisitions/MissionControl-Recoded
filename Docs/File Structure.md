@@ -93,7 +93,7 @@ MissionControl\
 │   │   ├── Server_Component\          ← deploys to LXC /opt/mcs/ (not HA)
 │   │   │   ├── main.py
 │   │   │   ├── models.py
-│   │   │   ├── player_normalize.py  ← Central allegiance/hunter → neocorp/role
+│   │   │   ├── player_normalize.py  ← Central mode/pdn/email → MCS Player (role alias)
 │   │   │   ├── central_client.py
 │   │   │   └── tests\
 │   │   └── docs\
@@ -223,7 +223,7 @@ Phase 6: HA integration on the MQTT fabric (`mc/tv`), Proxmox content server
 
 ### Bug Buster
 
-Proxmox guest console (termproxy), MQTT spy, and companion health. Ops only — it does not own players, Broadcast Groups, or posters. Monitoring sensors/power buttons are HA Core Proxmox VE. In code this is `bug_buster`.
+Proxmox guest console (termproxy), MQTT spy, companion health, and Central device crash logs via MCS. Ops only — it does not own players, Broadcast Groups, or posters. Monitoring sensors/power buttons are HA Core Proxmox VE. In code this is `bug_buster`.
 
 **Path:** `Apps\Bug_Buster\`  
 **On HA:** `/config/custom_components/bug_buster/` + `/config/www/bug_buster/`  
@@ -239,7 +239,7 @@ Single source of truth for Alleycat service **URLs and API tokens** (MCS URL + B
 
 ### Digital Node Nexus
 
-Manages communications with FDNs (Fixed Data Nodes). Mission Control talks to FDNs here first, and later to PDNs (Portable Data Nodes) as well. Phase 5 ships a paging-first HA integration on the MQTT fabric; MCS supplies read-only roster for player/role/NeoCorp targeting.
+Manages communications with FDNs (Fixed Data Nodes). Mission Control talks to FDNs here first, and later to PDNs (Portable Data Nodes) as well. Phase 5 ships a paging-first HA integration on the MQTT fabric; MCS supplies read-only roster for player/mode (role alias) targeting; NeoCorp pending Central.
 
 **Path:** `Apps\Digital_Node_Nexus\`  
 **On HA:** `/config/custom_components/digital_node_nexus/` + `/config/www/digital_node_nexus/`  
@@ -256,7 +256,7 @@ Manages bounty posters, bounty boards, and poster capture. In code this is `gbn`
 
 ### Registration
 
-Home Assistant face of Master Control Server: roster sensor, services (`sync_now`, `register_player`, `update_player`, `delete_player`), and sidebar panel. Talks only to MCS — never opens a Central socket. MCS URL and token come from Core Configurator.
+Home Assistant face of Master Control Server: events strip, roster sensor, services (`sync_now`, `register_player`, `create_event`, `update_event`, `set_active_event`; player update/delete gated 501), and sidebar panel. Talks only to MCS — never opens a Central socket. MCS URL and token come from Core Configurator.
 
 **Path:** `Apps\Registration\`  
 **On HA:** `/config/custom_components/registration/` + `/config/www/registration/`  
@@ -264,7 +264,7 @@ Home Assistant face of Master Control Server: roster sensor, services (`sync_now
 
 ### Master Control Server
 
-Proxmox companion FastAPI service. The only Central HTTP adapter. Normalizes Central legacy fields (`allegiance`, `hunter`/`mode`) to canonical `neocorp` / `role`. Exposes `GET`/`POST`/`PUT`/`DELETE /players` and `POST /config`. Not a Home Assistant process.
+Proxmox companion FastAPI service. The only Central HTTP adapter. Players (`GET`/`POST`; update/delete **501**), events (`POST`/`PATCH`/`PUT …/active`; list/active gated), device logs (`GET /device-logs`), and `POST /config`. Normalizes Central `mode` → HA `role`. Not a Home Assistant process.
 
 **Path:** `Apps\Master_Control_Server\`  
 **On LXC:** `/opt/mcs/` (uvicorn via systemd `mcs`)  

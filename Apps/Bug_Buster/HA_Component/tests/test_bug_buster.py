@@ -119,6 +119,101 @@ async def test_list_hosts_requires_admin(hass: HomeAssistant):
 
 
 @pytest.mark.asyncio
+async def test_device_logs_requires_admin(hass: HomeAssistant):
+    from custom_components import bug_buster as bb
+
+    connection = MagicMock()
+    connection.user = MagicMock(is_admin=False)
+    connection.send_error = MagicMock()
+    msg = {"id": 2, "type": f"{DOMAIN}/device_logs", "page": 1, "per_page": 20}
+
+    await bb.ws_device_logs.__wrapped__(hass, connection, msg)
+    connection.send_error.assert_called_once()
+    assert connection.send_error.call_args[0][1] == "unauthorized"
+
+
+@pytest.mark.asyncio
+async def test_device_logs_ws_proxies_mcs(hass: HomeAssistant):
+    from custom_components import bug_buster as bb
+
+    sample = {
+        "device_logs": [
+            {
+                "id": "d1",
+                "device_mac": "aa:bb:cc:dd:ee:ff",
+                "crash_number": 1,
+                "uptime_ms": 1000,
+                "received_at": "2026-01-01T00:00:00Z",
+                "reset_reason": 3,
+                "software_version": "1.0.0",
+                "task_name": "main",
+            }
+        ],
+        "pagination": {"page": 2, "per_page": 10},
+    }
+    connection = MagicMock()
+    connection.user = MagicMock(is_admin=True)
+    connection.send_result = MagicMock()
+    msg = {"id": 3, "type": f"{DOMAIN}/device_logs", "page": 2, "per_page": 10}
+
+    with patch(
+        "custom_components.bug_buster.fetch_device_logs",
+        new_callable=AsyncMock,
+        return_value=sample,
+    ) as fetch:
+        await bb.ws_device_logs.__wrapped__(hass, connection, msg)
+
+    fetch.assert_awaited_once_with(hass, page=2, per_page=10)
+    connection.send_result.assert_called_once_with(3, sample)
+
+
+@pytest.mark.asyncio
+async def test_fetch_device_logs_uses_async_request(hass: HomeAssistant):
+    from custom_components.bug_buster import device_logs as logs_mod
+
+    mock_resp = MagicMock()
+    mock_resp.status = 200
+    mock_resp.json = AsyncMock(
+        return_value={
+            "device_logs": [{"id": "d1", "device_mac": "aa:bb:cc:dd:ee:ff"}],
+            "pagination": {"page": 1, "per_page": 20},
+        }
+    )
+    mock_resp.release = MagicMock()
+
+    with (
+        patch.object(logs_mod, "get_extra", return_value="tok"),
+        patch.object(
+            logs_mod, "async_request", new_callable=AsyncMock, return_value=mock_resp
+        ) as req,
+    ):
+        result = await logs_mod.fetch_device_logs(hass, page=1, per_page=20)
+
+    assert result["device_logs"][0]["device_mac"] == "aa:bb:cc:dd:ee:ff"
+    assert result["pagination"] == {"page": 1, "per_page": 20}
+    assert "error" not in result
+    req.assert_awaited_once()
+    assert req.await_args.args[2] == "GET"
+    assert req.await_args.args[3] == "/device-logs?page=1&per_page=20"
+    assert req.await_args.kwargs["token"] == "tok"
+
+
+@pytest.mark.asyncio
+async def test_fetch_device_logs_missing_token(hass: HomeAssistant):
+    from custom_components.bug_buster import device_logs as logs_mod
+
+    with (
+        patch.object(logs_mod, "get_extra", return_value=""),
+        patch.object(logs_mod, "async_request", new_callable=AsyncMock) as req,
+    ):
+        result = await logs_mod.fetch_device_logs(hass)
+
+    assert result["device_logs"] == []
+    assert "MCS token" in result["error"]
+    req.assert_not_awaited()
+
+
+@pytest.mark.asyncio
 async def test_setup_entry_registers_client(hass: HomeAssistant):
     entry = MockConfigEntry(
         domain=DOMAIN,

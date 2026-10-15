@@ -13,11 +13,15 @@ master_control_server). Registration never stores credentials in its config entr
 """
 from __future__ import annotations
 
+import json
 import logging
+from typing import Any
 
 from homeassistant.components import websocket_api
 from homeassistant.config_entries import ConfigEntry
-from homeassistant.core import Event, HomeAssistant, callback
+from homeassistant.core import Event, HomeAssistant, ServiceCall, callback
+from homeassistant.exceptions import HomeAssistantError
+from homeassistant.helpers.storage import Store
 
 import voluptuous as vol
 from homeassistant.helpers import config_validation as cv
@@ -28,10 +32,17 @@ except ImportError:
     async_request = None  # type: ignore[assignment]
 
 from .const import (
+    ACTIVE_EVENT_ID_KEY,
     DOMAIN,
+    EVENT_CACHE_KEY,
+    EVENT_STORE,
     KEY_CENTRAL_PRIMARY,
     KEY_CENTRAL_SECONDARY,
     KEY_MCS,
+    STORAGE_KEY,
+    STORAGE_VERSION,
+    WS_GET_ACTIVE_EVENT,
+    WS_GET_EVENTS,
     WS_GET_ROSTER,
 )
 from .coordinator import McsDataUpdateCoordinator, _mcs_token
@@ -43,10 +54,7 @@ PLATFORMS = ["sensor"]
 _PLAYER_WRITE_SCHEMA = vol.Schema(
     {
         vol.Required("name"): cv.string,
-        vol.Optional("role", default="hunter"): cv.string,
-        vol.Optional("neocorp", default="freelancer"): cv.string,
-        vol.Optional("faction", default=""): cv.string,
-        vol.Optional("neo_id", default=""): cv.string,
+        vol.Optional("email", default=""): cv.string,
     }
 )
 
@@ -56,20 +64,172 @@ _PLAYER_UPDATE_SCHEMA = _PLAYER_WRITE_SCHEMA.extend(
 
 _PLAYER_DELETE_SCHEMA = vol.Schema({vol.Required("player_id"): cv.string})
 
+_EVENT_CREATE_SCHEMA = vol.Schema(
+    {
+        vol.Required("name"): cv.string,
+        vol.Optional("venue_name", default=""): cv.string,
+        vol.Optional("set_active", default=False): cv.boolean,
+    }
+)
+
+_EVENT_UPDATE_SCHEMA = vol.Schema(
+    {
+        vol.Required("event_id"): cv.string,
+        vol.Optional("name"): cv.string,
+        vol.Optional("venue_name"): vol.Any(cv.string, None),
+    }
+)
+
+_EVENT_SET_ACTIVE_SCHEMA = vol.Schema({vol.Required("event_id"): cv.string})
+
 
 # ---------------------------------------------------------------------------
-# Config-push helper
+# Helpers
 # ---------------------------------------------------------------------------
+
+
+def _event_cache(hass: HomeAssistant) -> dict[str, dict[str, Any]]:
+    store = hass.data.setdefault(DOMAIN, {})
+    return store.setdefault(EVENT_CACHE_KEY, {})
+
+
+def _cache_event(hass: HomeAssistant, event: dict[str, Any] | None) -> None:
+    """Merge into session cache — never clobber a known name with a blank."""
+    if not isinstance(event, dict):
+        return
+    event_id = event.get("id")
+    if not event_id:
+        return
+    key = str(event_id)
+    prev = _event_cache(hass).get(key) or {}
+    new_name = (event.get("name") or "").strip()
+    new_created = (event.get("created_at") or "").strip()
+    venue = event.get("venue_name")
+    if venue is None and "venue_name" not in event:
+        venue = prev.get("venue_name")
+    _event_cache(hass)[key] = {
+        "id": key,
+        "name": new_name or prev.get("name") or "",
+        "venue_name": venue,
+        "created_at": new_created or prev.get("created_at") or "",
+    }
+
+
+async def _save_event_store(hass: HomeAssistant) -> None:
+    """Persist known events + active id so names survive HA restart."""
+    store: Store | None = hass.data.get(DOMAIN, {}).get(EVENT_STORE)
+    if store is None:
+        return
+    await store.async_save(
+        {
+            "events": dict(_event_cache(hass)),
+            "active_event_id": hass.data[DOMAIN].get(ACTIVE_EVENT_ID_KEY),
+        }
+    )
+
+
+async def _load_event_store(hass: HomeAssistant) -> None:
+    """Load persisted events into memory (until Central GET /events is ready)."""
+    store = Store(hass, STORAGE_VERSION, STORAGE_KEY)
+    hass.data.setdefault(DOMAIN, {})[EVENT_STORE] = store
+    data = await store.async_load() or {}
+    for item in (data.get("events") or {}).values():
+        if isinstance(item, dict):
+            _cache_event(hass, item)
+    active_id = data.get("active_event_id")
+    if active_id:
+        hass.data[DOMAIN][ACTIVE_EVENT_ID_KEY] = str(active_id)
+
+
+async def _remember_active(hass: HomeAssistant, event_id: str | None) -> None:
+    hass.data.setdefault(DOMAIN, {})[ACTIVE_EVENT_ID_KEY] = event_id
+    await _save_event_store(hass)
+
+
+def _enrich_active_from_cache(
+    hass: HomeAssistant, data: dict[str, Any]
+) -> dict[str, Any]:
+    """Fill empty active-event name from session cache when MCS only has the id."""
+    event_id = data.get("active_event_id")
+    event = data.get("event")
+    if not event_id:
+        # Fall back to HA-persisted active when MCS memory was wiped
+        event_id = hass.data.get(DOMAIN, {}).get(ACTIVE_EVENT_ID_KEY)
+        if event_id:
+            data = {**data, "active_event_id": event_id}
+    if not event_id:
+        return data
+    cached = _event_cache(hass).get(str(event_id))
+    if not cached:
+        return data
+    if not isinstance(event, dict):
+        event = {
+            "id": str(event_id),
+            "name": "",
+            "venue_name": None,
+            "created_at": "",
+        }
+    if not (event.get("name") or "").strip() and cached.get("name"):
+        event = {**event, "name": cached["name"]}
+    if event.get("venue_name") is None and cached.get("venue_name") is not None:
+        event = {**event, "venue_name": cached.get("venue_name")}
+    if not (event.get("id") or "").strip():
+        event = {**event, "id": str(event_id)}
+    data = {**data, "event": event, "active_event_id": str(event_id)}
+    return data
+
+
+async def _restore_active_to_mcs(hass: HomeAssistant) -> None:
+    """After HA/MCS restart, re-apply last active + name hint to MCS memory."""
+    event_id = hass.data.get(DOMAIN, {}).get(ACTIVE_EVENT_ID_KEY)
+    if not event_id:
+        return
+    cached = _event_cache(hass).get(str(event_id)) or {}
+    memory: dict[str, Any] = {}
+    if cached.get("name"):
+        memory["name"] = cached["name"]
+    if cached.get("venue_name") is not None:
+        memory["venue_name"] = cached["venue_name"]
+    try:
+        await _mcs_request(
+            hass,
+            "PUT",
+            f"/events/{event_id}/active",
+            json_body=memory or None,
+            action="restore_active_event",
+        )
+        _LOGGER.info(
+            "Registration: restored active event %s (%s) to MCS memory",
+            event_id,
+            cached.get("name") or "unnamed",
+        )
+    except HomeAssistantError as err:
+        _LOGGER.warning(
+            "Registration: could not restore active event to MCS: %s", err
+        )
+
+
+async def _response_detail(response) -> str:
+    """Extract human-readable detail from MCS/Central error body."""
+    try:
+        text = (await response.text()).strip()
+    except Exception:  # noqa: BLE001
+        return ""
+    if not text:
+        return ""
+    try:
+        data = json.loads(text)
+        if isinstance(data, dict):
+            detail = data.get("detail") or data.get("message") or data.get("error")
+            if detail:
+                return str(detail)
+    except Exception:  # noqa: BLE001
+        pass
+    return text
 
 
 async def _push_central_config(hass: HomeAssistant) -> None:
-    """Push current central_primary / central_secondary from CC to MCS /config.
-
-    Called on setup (first boot + every HA restart) and whenever
-    core_configurator_updated fires for either key.
-
-    If MCS is unreachable: log and continue. No retry (design principle 6).
-    """
+    """Push current central_primary / central_secondary from CC to MCS /config."""
     try:
         from custom_components.core_configurator.helpers import get_url
         from custom_components.shared_libraries.http import async_request as request
@@ -115,45 +275,56 @@ async def _push_central_config(hass: HomeAssistant) -> None:
         )
 
 
-def _player_payload(service_call) -> dict:
-    return {
-        "name": service_call.data.get("name", ""),
-        "role": service_call.data.get("role", "hunter") or "hunter",
-        "neocorp": service_call.data.get("neocorp", "freelancer") or "freelancer",
-        "faction": service_call.data.get("faction", "") or "",
-        "neo_id": service_call.data.get("neo_id", "") or "",
-    }
+def _player_payload(service_call: ServiceCall) -> dict[str, str]:
+    payload: dict[str, str] = {"name": service_call.data.get("name", "")}
+    email = (service_call.data.get("email") or "").strip()
+    if email:
+        payload["email"] = email
+    return payload
 
 
-async def _mcs_mutate(
+async def _mcs_request(
     hass: HomeAssistant,
     method: str,
     path: str,
     *,
-    json: dict | None = None,
+    json_body: dict | None = None,
     action: str,
-) -> bool:
+) -> Any | None:
+    """Call MCS; raise HomeAssistantError with Central/MCS detail on failure.
+
+    Returns parsed JSON body (or None for empty success bodies).
+    """
     if async_request is None:
-        _LOGGER.error("Registration: shared_libraries not available")
-        return False
+        raise HomeAssistantError("Registration: shared_libraries not available")
     token = _mcs_token(hass)
     if not token:
-        _LOGGER.warning(
-            "Registration: MCS token not set in Core Configurator — %s skipped.",
-            action,
+        raise HomeAssistantError(
+            "MCS token not set in Core Configurator — "
+            f"{action} skipped."
         )
-        return False
     response = await async_request(
-        hass, KEY_MCS, method, path, token=token, json=json
+        hass, KEY_MCS, method, path, token=token, json=json_body
     )
-    if response is None or response.status >= 400:
-        _LOGGER.warning(
-            "Registration: %s failed (status=%s)",
-            action,
-            response.status if response else "no response",
+    if response is None:
+        raise HomeAssistantError(f"MCS unreachable during {action}.")
+    if response.status >= 400:
+        detail = await _response_detail(response)
+        raise HomeAssistantError(
+            detail or f"MCS returned HTTP {response.status} during {action}."
         )
-        return False
-    return True
+    if response.status == 204:
+        return None
+    try:
+        text = (await response.text()).strip()
+    except Exception:  # noqa: BLE001
+        return None
+    if not text:
+        return None
+    try:
+        return json.loads(text)
+    except Exception:  # noqa: BLE001
+        return text
 
 
 # ---------------------------------------------------------------------------
@@ -162,19 +333,18 @@ async def _mcs_mutate(
 
 
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
-    """Set up Registration.
-
-    Services and websocket must register before any MCS poll. MCS /players can
-    exceed the HA HTTP timeout while Central is slow; using first_refresh would
-    raise ConfigEntryNotReady and leave Sync Now unavailable (design principle 6).
-    """
+    """Set up Registration."""
     coordinator = McsDataUpdateCoordinator(hass)
     hass.data.setdefault(DOMAIN, {})[entry.entry_id] = coordinator
+    _event_cache(hass)  # ensure cache exists
+    await _load_event_store(hass)
 
     _register_services(hass, entry)
     _register_ws(hass)
 
     await _push_central_config(hass)
+    # MCS memory is wiped on its restart — re-seed last active + display name
+    await _restore_active_to_mcs(hass)
 
     @callback
     def _on_cc_updated(event: Event) -> None:
@@ -189,7 +359,6 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     )
 
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
-    # Soft refresh — unavailable sensors are OK when MCS/Central is slow.
     await coordinator.async_refresh()
     return True
 
@@ -197,80 +366,156 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 def _register_services(hass: HomeAssistant, entry: ConfigEntry) -> None:
     """Register HA services for Registration."""
 
-    async def _handle_sync_now(_service_call) -> None:
+    async def _handle_sync_now(_service_call: ServiceCall) -> None:
+        # Re-push Central URLs then refresh roster (active event change → new roster)
+        await _push_central_config(hass)
         coordinator: McsDataUpdateCoordinator = hass.data[DOMAIN][entry.entry_id]
         await coordinator.async_refresh()
 
-    async def _handle_register_player(service_call) -> None:
-        ok = await _mcs_mutate(
+    async def _handle_register_player(service_call: ServiceCall) -> None:
+        await _mcs_request(
             hass,
             "POST",
             "/players",
-            json=_player_payload(service_call),
+            json_body=_player_payload(service_call),
             action="register_player",
         )
-        if ok:
-            await hass.data[DOMAIN][entry.entry_id].async_refresh()
+        await hass.data[DOMAIN][entry.entry_id].async_refresh()
 
-    async def _handle_update_player(service_call) -> None:
+    async def _handle_update_player(service_call: ServiceCall) -> None:
         player_id = service_call.data["player_id"]
-        ok = await _mcs_mutate(
+        await _mcs_request(
             hass,
             "PUT",
             f"/players/{player_id}",
-            json=_player_payload(service_call),
+            json_body=_player_payload(service_call),
             action="update_player",
         )
-        if ok:
-            await hass.data[DOMAIN][entry.entry_id].async_refresh()
+        await hass.data[DOMAIN][entry.entry_id].async_refresh()
 
-    async def _handle_delete_player(service_call) -> None:
+    async def _handle_delete_player(service_call: ServiceCall) -> None:
         player_id = service_call.data["player_id"]
-        ok = await _mcs_mutate(
+        await _mcs_request(
             hass,
             "DELETE",
             f"/players/{player_id}",
             action="delete_player",
         )
-        if ok:
+        await hass.data[DOMAIN][entry.entry_id].async_refresh()
+
+    async def _handle_create_event(service_call: ServiceCall) -> None:
+        name = service_call.data["name"].strip()
+        venue = (service_call.data.get("venue_name") or "").strip()
+        set_active = bool(service_call.data.get("set_active"))
+        body: dict[str, Any] = {"name": name}
+        if venue:
+            body["venue_name"] = venue
+        # Create first, then set-active with name hint — more reliable than
+        # ?set_active=true alone for MCS display memory after restarts.
+        event = await _mcs_request(
+            hass, "POST", "/events", json_body=body, action="create_event"
+        )
+        merged: dict[str, Any] = {"name": name}
+        if venue:
+            merged["venue_name"] = venue
+        if isinstance(event, dict):
+            merged = {**merged, **event}
+            if not (merged.get("name") or "").strip():
+                merged["name"] = name
+        _cache_event(hass, merged if merged.get("id") else None)
+        await _save_event_store(hass)
+
+        event_id = str(merged["id"]) if merged.get("id") else ""
+        if set_active and event_id:
+            memory: dict[str, Any] = {"name": name}
+            if venue:
+                memory["venue_name"] = venue
+            await _mcs_request(
+                hass,
+                "PUT",
+                f"/events/{event_id}/active",
+                json_body=memory,
+                action="set_active_event",
+            )
+            await _remember_active(hass, event_id)
             await hass.data[DOMAIN][entry.entry_id].async_refresh()
 
-    if not hass.services.has_service(DOMAIN, "sync_now"):
-        hass.services.async_register(DOMAIN, "sync_now", _handle_sync_now)
-    if not hass.services.has_service(DOMAIN, "register_player"):
-        hass.services.async_register(
-            DOMAIN,
-            "register_player",
-            _handle_register_player,
-            schema=_PLAYER_WRITE_SCHEMA,
+    async def _handle_update_event(service_call: ServiceCall) -> None:
+        event_id = service_call.data["event_id"]
+        body: dict[str, Any] = {}
+        if "name" in service_call.data and service_call.data["name"] is not None:
+            body["name"] = service_call.data["name"]
+        if "venue_name" in service_call.data:
+            body["venue_name"] = service_call.data["venue_name"]
+        if not body:
+            raise HomeAssistantError("Supply at least one of name or venue_name.")
+        event = await _mcs_request(
+            hass,
+            "PATCH",
+            f"/events/{event_id}",
+            json_body=body,
+            action="update_event",
         )
-    if not hass.services.has_service(DOMAIN, "update_player"):
-        hass.services.async_register(
-            DOMAIN,
-            "update_player",
-            _handle_update_player,
-            schema=_PLAYER_UPDATE_SCHEMA,
+        merged: dict[str, Any] = {"id": event_id, **body}
+        if isinstance(event, dict):
+            merged = {**merged, **event}
+        _cache_event(hass, merged)
+        await _save_event_store(hass)
+
+    async def _handle_set_active_event(service_call: ServiceCall) -> None:
+        event_id = service_call.data["event_id"]
+        cached = _event_cache(hass).get(event_id) or {}
+        # Pass known name to MCS memory (not forwarded to Central) so Active
+        # keeps showing the title instead of a bare UUID after set-active.
+        memory: dict[str, Any] = {}
+        if cached.get("name"):
+            memory["name"] = cached["name"]
+        if cached.get("venue_name") is not None:
+            memory["venue_name"] = cached["venue_name"]
+        await _mcs_request(
+            hass,
+            "PUT",
+            f"/events/{event_id}/active",
+            json_body=memory or None,
+            action="set_active_event",
         )
-    if not hass.services.has_service(DOMAIN, "delete_player"):
-        hass.services.async_register(
-            DOMAIN,
-            "delete_player",
-            _handle_delete_player,
-            schema=_PLAYER_DELETE_SCHEMA,
-        )
+        if event_id not in _event_cache(hass):
+            _event_cache(hass)[event_id] = {
+                "id": event_id,
+                "name": cached.get("name") or "",
+                "venue_name": cached.get("venue_name"),
+                "created_at": cached.get("created_at") or "",
+            }
+        await _remember_active(hass, event_id)
+        await hass.data[DOMAIN][entry.entry_id].async_refresh()
+
+    registrations = (
+        ("sync_now", _handle_sync_now, None),
+        ("register_player", _handle_register_player, _PLAYER_WRITE_SCHEMA),
+        ("update_player", _handle_update_player, _PLAYER_UPDATE_SCHEMA),
+        ("delete_player", _handle_delete_player, _PLAYER_DELETE_SCHEMA),
+        ("create_event", _handle_create_event, _EVENT_CREATE_SCHEMA),
+        ("update_event", _handle_update_event, _EVENT_UPDATE_SCHEMA),
+        ("set_active_event", _handle_set_active_event, _EVENT_SET_ACTIVE_SCHEMA),
+    )
+    for name, handler, schema in registrations:
+        if not hass.services.has_service(DOMAIN, name):
+            hass.services.async_register(DOMAIN, name, handler, schema=schema)
+
+
+def _coordinator(hass: HomeAssistant) -> McsDataUpdateCoordinator | None:
+    domain_data = hass.data.get(DOMAIN) or {}
+    for value in domain_data.values():
+        if isinstance(value, McsDataUpdateCoordinator):
+            return value
+    return None
 
 
 @websocket_api.websocket_command({vol.Required("type"): WS_GET_ROSTER})
 @websocket_api.async_response
 async def ws_get_roster(hass: HomeAssistant, connection, msg) -> None:
     """Return the coordinator-cached roster for the Registration panel."""
-    domain_data = hass.data.get(DOMAIN) or {}
-    # Prefer a coordinator entry over the ws_registered flag key.
-    coordinator: McsDataUpdateCoordinator | None = None
-    for value in domain_data.values():
-        if isinstance(value, McsDataUpdateCoordinator):
-            coordinator = value
-            break
+    coordinator = _coordinator(hass)
     if coordinator is None:
         connection.send_result(msg["id"], {"players": [], "count": 0})
         return
@@ -284,12 +529,128 @@ async def ws_get_roster(hass: HomeAssistant, connection, msg) -> None:
     )
 
 
+@websocket_api.websocket_command({vol.Required("type"): WS_GET_EVENTS})
+@websocket_api.async_response
+async def ws_get_events(hass: HomeAssistant, connection, msg) -> None:
+    """List events from MCS; stub-aware when Central GET /events is not ready."""
+    cached = list(_event_cache(hass).values())
+    if async_request is None:
+        connection.send_result(
+            msg["id"],
+            {
+                "ready": False,
+                "events": cached,
+                "detail": "shared_libraries not available",
+            },
+        )
+        return
+    token = _mcs_token(hass)
+    if not token:
+        connection.send_result(
+            msg["id"],
+            {
+                "ready": False,
+                "events": cached,
+                "detail": "MCS token not set in Core Configurator",
+            },
+        )
+        return
+    response = await async_request(hass, KEY_MCS, "GET", "/events", token=token)
+    if response is None:
+        connection.send_result(
+            msg["id"],
+            {"ready": False, "events": cached, "detail": "MCS unreachable"},
+        )
+        return
+    if response.status == 501:
+        detail = await _response_detail(response)
+        connection.send_result(
+            msg["id"],
+            {
+                "ready": False,
+                "events": cached,
+                "detail": detail
+                or "Waiting on Central GET /events — using session cache only",
+            },
+        )
+        return
+    if response.status >= 400:
+        detail = await _response_detail(response)
+        connection.send_result(
+            msg["id"],
+            {
+                "ready": False,
+                "events": cached,
+                "detail": detail or f"MCS returned HTTP {response.status}",
+            },
+        )
+        return
+    try:
+        data = await response.json()
+    except Exception:  # noqa: BLE001
+        connection.send_result(
+            msg["id"],
+            {"ready": False, "events": cached, "detail": "Invalid events JSON"},
+        )
+        return
+    events: list[dict[str, Any]] = []
+    raw_list = data.get("events") if isinstance(data, dict) else data
+    if isinstance(raw_list, list):
+        for item in raw_list:
+            if isinstance(item, dict) and item.get("id"):
+                _cache_event(hass, item)
+                events.append(_event_cache(hass)[str(item["id"])])
+    connection.send_result(
+        msg["id"],
+        {"ready": True, "events": events or cached, "detail": None},
+    )
+
+
+@websocket_api.websocket_command({vol.Required("type"): WS_GET_ACTIVE_EVENT})
+@websocket_api.async_response
+async def ws_get_active_event(hass: HomeAssistant, connection, msg) -> None:
+    """Return MCS last-known / future Central active event."""
+    empty = {
+        "ready": False,
+        "active_event_id": None,
+        "event": None,
+        "source": "mcs_memory",
+    }
+    if async_request is None:
+        connection.send_result(msg["id"], empty)
+        return
+    token = _mcs_token(hass)
+    if not token:
+        connection.send_result(msg["id"], empty)
+        return
+    response = await async_request(
+        hass, KEY_MCS, "GET", "/events/active", token=token
+    )
+    if response is None or response.status >= 400:
+        connection.send_result(msg["id"], empty)
+        return
+    try:
+        data = await response.json()
+    except Exception:  # noqa: BLE001
+        connection.send_result(msg["id"], empty)
+        return
+    if not isinstance(data, dict):
+        connection.send_result(msg["id"], empty)
+        return
+    data = _enrich_active_from_cache(hass, data)
+    if data.get("event"):
+        _cache_event(hass, data["event"])
+    connection.send_result(msg["id"], data)
+
+
 @callback
 def _register_ws(hass: HomeAssistant) -> None:
     store = hass.data.setdefault(DOMAIN, {})
     if store.get("ws_registered"):
         return
     websocket_api.async_register_command(hass, ws_get_roster)
+    websocket_api.async_register_command(hass, ws_get_events)
+    websocket_api.async_register_command(hass, ws_get_active_event)
     store["ws_registered"] = True
 
 

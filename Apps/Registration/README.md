@@ -1,6 +1,6 @@
 # Registration
 
-Home Assistant face of **Master Control Server**. Operators manage the player roster here; MCS is the only process that talks to Central Server.
+Home Assistant face of **Master Control Server**. Operators manage events and the player roster here; MCS is the only process that talks to Central Server.
 
 **Code:** `registration`  
 **Path:** `Apps/Registration/HA_Component/`  
@@ -14,7 +14,7 @@ Home Assistant face of **Master Control Server**. Operators manage the player ro
 |---|---|
 | Core Configurator | MCS URL (`master_control_server`), MCS Bearer (`extra.token`), `central_primary` / `central_secondary` |
 | Shared HA Helpers | `async_request`, `mc-panel.js` |
-| Master Control Server | Roster + create/update/delete |
+| Master Control Server | Events + roster + create player |
 
 Registration never stores the MCS token in its own config entry.
 
@@ -24,12 +24,27 @@ Registration never stores the MCS token in its own config entry.
 
 | Service | MCS call |
 |---|---|
-| `registration.sync_now` | Refresh coordinator (`GET /players`) |
-| `registration.register_player` | `POST /players` |
-| `registration.update_player` | `PUT /players/{player_id}` |
-| `registration.delete_player` | `DELETE /players/{player_id}` |
+| `registration.sync_now` | Push `/config` + refresh coordinator (`GET /players`) |
+| `registration.register_player` | `POST /players` (`name`, optional `email`) |
+| `registration.create_event` | `POST /events` (+ optional `?set_active=true`) |
+| `registration.update_event` | `PATCH /events/{event_id}` |
+| `registration.set_active_event` | `PUT /events/{event_id}/active` |
+| `registration.update_player` | **501** until Central ships update |
+| `registration.delete_player` | **501** until Central ships delete |
 
-Canonical payload fields: `name`, `role` (`hunter` \| `bounty`), `neocorp` (lowercase: `freelancer` \| `helix` \| `endline` \| `reboot`), `faction`, `neo_id`.
+Register payload: `name` + optional `email`. NeoCorp / faction / neo_id are **not** written (pending Central restore or MC deprecation).
+
+**409** errors from Central (especially `No active event`) are raised as `HomeAssistantError` so the panel can show them.
+
+---
+
+## Websocket
+
+| Type | Purpose |
+|---|---|
+| `registration/get_roster` | Coordinator-cached players |
+| `registration/get_events` | MCS list when ready; else `{ready:false}` + session cache of created/updated events |
+| `registration/get_active_event` | MCS last-known active (`source: mcs_memory` until Central get-active) |
 
 ---
 
@@ -37,11 +52,10 @@ Canonical payload fields: `name`, `role` (`hunter` \| `bounty`), `neocorp` (lowe
 
 Sidebar panel (`www/registration/registration-panel.js`):
 
-- Labeled form (Name, Role, NeoCorp, Faction, Neo ID)
-- Role / NeoCorp dropdowns (Freelancer default)
-- Roster table with Edit / Delete
-- Reads via websocket `registration/get_roster` (coordinator cache)
-- Writes via HA services only — no direct LAN `fetch`
+- **Events strip** — create / edit / set-active + Active indicator
+- Register form: **Name** + **Email**
+- Roster: **PDN**, Name, Mode, Created, Email, Poster; Edit/Delete disabled with tooltip
+- Reads via websocket; writes via HA services only
 
 Load order in `configuration.yaml` `frontend.extra_module_url` (panel kit only — full shell order including custom-sidebar is in [`HomeAssist/configuration.yaml`](../../HomeAssist/configuration.yaml)):
 
@@ -72,28 +86,18 @@ HA_Component/
 
 ## Deploy (HA)
 
+Rebuild the panel first (from repo root / panel_kit):
+
 ```powershell
-scp -r "Apps\Registration\HA_Component\custom_components\registration" root@<HA-IP>:/config/custom_components/
-scp -r "Apps\Registration\HA_Component\www\registration" root@<HA-IP>:/config/www/
+cd Libraries\Shared_HA_Helpers\panel_kit
+npm run build
+```
+
+Then copy to HA:
+
+```powershell
+scp -r "z:\CodingProjects\Alleycat\MissionControl\Apps\Registration\HA_Component\custom_components\registration" root@<HA-IP>:/config/custom_components/
+scp -r "z:\CodingProjects\Alleycat\MissionControl\Apps\Registration\HA_Component\www\registration" root@<HA-IP>:/config/www/
 ```
 
 Then `ha core restart` and hard-refresh the browser.
-
-## Deploy (MCS — field mapping + write API)
-
-From the **Proxmox host** (not the LXC console):
-
-```powershell
-scp "Apps\Master_Control_Server\Server_Component\player_normalize.py" root@<PROXMOX-IP>:/root/
-scp "Apps\Master_Control_Server\Server_Component\central_client.py" root@<PROXMOX-IP>:/root/
-scp "Apps\Master_Control_Server\Server_Component\models.py" root@<PROXMOX-IP>:/root/
-scp "Apps\Master_Control_Server\Server_Component\main.py" root@<PROXMOX-IP>:/root/
-```
-
-```bash
-pct push 102 /root/player_normalize.py /opt/mcs/player_normalize.py
-pct push 102 /root/central_client.py /opt/mcs/central_client.py
-pct push 102 /root/models.py /opt/mcs/models.py
-pct push 102 /root/main.py /opt/mcs/main.py
-pct exec 102 -- systemctl restart mcs
-```
