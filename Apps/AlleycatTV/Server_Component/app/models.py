@@ -106,3 +106,4 @@ class CacheReport(BaseModel):
     files: List[dict] = []
     cache_bytes: int = 0
     free_bytes: Optional[int] = None
+    cache_max_bytes: Optional[int] = None

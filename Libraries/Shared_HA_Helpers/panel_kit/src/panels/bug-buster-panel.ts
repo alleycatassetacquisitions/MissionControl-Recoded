@@ -217,10 +217,14 @@ class BugBusterPanel extends window.McPanel.Base {
     el.innerHTML = this._health.map((h) => {
       const ok = !!h.ok;
       const status = h.status != null ? `HTTP ${h.status}` : (h.error || "—");
+      const url = h.url ? String(h.url) : "";
+      const urlHtml = url
+        ? `<a class="muted" href="${this._esc(url)}" target="_blank" rel="noopener noreferrer">${this._esc(url)}</a>`
+        : `<span class="muted">not configured</span>`;
       return `<div class="health-row ${ok ? "ok" : "bad"}">
         <strong>${this._esc(h.key)}</strong>
-        <span>${this._esc(status)}</span>
-        <span class="muted">${this._esc(h.url || "not configured")}</span>
+        <span class="status">${this._esc(status)}</span>
+        ${urlHtml}
       </div>`;
     }).join("");
   }
@@ -304,12 +308,26 @@ class BugBusterPanel extends window.McPanel.Base {
   }
 
   _selectHost(vmid) {
-    this._selected = Number(vmid);
+    const next = Number(vmid);
+    const hadSession =
+      this._termConnected || Boolean(this._termUnsub) || Boolean(this._term);
+    const switchingAway =
+      hadSession && this._termVmid != null && Number(this._termVmid) !== next;
+
+    this._selected = next;
     this._paintHosts();
     const host = this._hostByVmid(vmid);
     const label = this.shadowRoot.getElementById("term-host");
     if (label) {
       label.textContent = host ? `${host.name} (CT ${host.vmid})` : "No host selected";
+    }
+
+    // One console at a time: drop the old session when picking a different guest.
+    // User must click Connect to open the newly selected container.
+    if (switchingAway) {
+      void this._closeTerm(true).then(() => {
+        this._feedback("Console disconnected — click Connect for the selected guest", "warn");
+      });
     }
   }
 
@@ -551,10 +569,6 @@ class BugBusterPanel extends window.McPanel.Base {
     }).join("");
     list.querySelectorAll(".host-card").forEach((btn) => {
       btn.addEventListener("click", () => this._selectHost(btn.dataset.vmid));
-      btn.addEventListener("dblclick", () => {
-        this._selectHost(btn.dataset.vmid);
-        this._connectTerm();
-      });
     });
     const label = this.shadowRoot.getElementById("term-host");
     if (label && this._selected) {
@@ -589,9 +603,9 @@ class BugBusterPanel extends window.McPanel.Base {
     const empty = log.querySelector(".empty");
     if (empty) empty.remove();
     log.insertAdjacentHTML("beforeend", this._mqttRow(item));
-    const near = log.scrollHeight - log.scrollTop - log.clientHeight < 80;
-    if (near) log.scrollTop = log.scrollHeight;
     while (log.children.length > 200) log.removeChild(log.firstChild);
+    // Live feed: always pin to newest while receiving (pause stops appends).
+    log.scrollTop = log.scrollHeight;
   }
 
   _mqttRow(item) {
@@ -640,22 +654,32 @@ class BugBusterPanel extends window.McPanel.Base {
         @import url("/local/bug_buster/vendor/xterm.css");
         :host {
           display: block;
+          position: relative;
+          box-sizing: border-box;
+          /* Fill HA content area; keep a viewport floor when the parent height is indefinite. */
           height: 100%;
+          min-height: calc(100dvh - var(--header-height, 56px));
           background: var(--primary-background-color, #0b1020);
           color: var(--primary-text-color, #e8eefc);
           overflow: hidden;
         }
         .wrap {
+          position: absolute;
+          inset: 0;
           display: flex;
           flex-direction: column;
-          height: 100%;
+          max-width: none;
+          margin: 0;
+          padding: 0;
           min-height: 0;
+          overflow: hidden;
+          box-sizing: border-box;
         }
         .page-header {
           display: flex;
           align-items: center;
           gap: 16px;
-          padding: 14px 20px;
+          padding: 10px 16px;
           flex-shrink: 0;
         }
         .page-header h1 { margin: 0; font-size: 20px; }
@@ -709,19 +733,23 @@ class BugBusterPanel extends window.McPanel.Base {
         .modal-actions button { flex: 1; }
         .modal-actions .ghost { margin-left: 0; }
         .body {
-          flex: 1;
+          flex: 1 1 0;
           min-height: 0;
           display: grid;
           grid-template-columns: 1fr 1fr;
-          grid-template-rows: minmax(160px, 0.9fr) minmax(180px, 0.7fr) minmax(220px, 1.2fr);
+          /* Usable mins + grow into leftover space; MQTT/console get the largest share. */
+          grid-template-rows: minmax(150px, 1fr) minmax(170px, 1.15fr) minmax(240px, 1.75fr);
           gap: 12px;
           padding: 0 16px 16px;
+          overflow: hidden;
+          align-content: stretch;
         }
-        .hosts { grid-column: 1 / -1; min-height: 0; display: flex; flex-direction: column; }
+        .hosts { grid-column: 1 / -1; min-height: 0; display: flex; flex-direction: column; overflow: hidden; }
         .mqtt, .term, .logs, .health {
           min-height: 0;
           display: flex;
           flex-direction: column;
+          overflow: hidden;
           background: var(--card-background-color, #12192e);
           border: 1px solid var(--divider-color, #2a3a5c);
           border-radius: 10px;
@@ -731,6 +759,7 @@ class BugBusterPanel extends window.McPanel.Base {
           align-items: center;
           gap: 10px;
           padding: 10px 14px;
+          flex-shrink: 0;
           border-bottom: 1px solid var(--divider-color, #2a3a5c);
           font-size: 12px;
           letter-spacing: 0.08em;
@@ -750,6 +779,8 @@ class BugBusterPanel extends window.McPanel.Base {
           cursor: pointer;
         }
         #host-grid {
+          flex: 1 1 0;
+          min-height: 0;
           overflow: auto;
           padding: 12px;
           display: grid;
@@ -777,11 +808,16 @@ class BugBusterPanel extends window.McPanel.Base {
         .bar { height: 6px; background: #1a2440; border-radius: 99px; margin: 3px 0 8px; overflow: hidden; }
         .bar i { display: block; height: 100%; background: linear-gradient(90deg, var(--ac-cyan, #00e5ff), var(--ac-magenta, #ff2bd6)); }
         .host-meta { display: flex; justify-content: space-between; font-size: 11px; color: #9aa8c7; gap: 6px; }
-        #mqtt-log, #xterm { flex: 1; min-height: 0; overflow: auto; }
+        #mqtt-log, #xterm {
+          flex: 1 1 0;
+          min-height: 0;
+          overflow: auto;
+          overscroll-behavior: contain;
+        }
         #xterm { height: 100%; }
-        #mqtt-log { padding: 8px 12px; font-size: 12px; }
-        .mqtt-row { display: grid; grid-template-columns: 72px 1fr 64px; gap: 6px 10px; padding: 6px 0; border-bottom: 1px solid #1a2440; }
-        .mqtt-row .payload { grid-column: 1 / -1; margin: 0; white-space: pre-wrap; word-break: break-word; color: #b8f5d0; font-size: 11px; }
+        #mqtt-log { padding: 6px 10px; font-size: 12px; }
+        .mqtt-row { display: grid; grid-template-columns: 72px 1fr 64px; gap: 4px 10px; padding: 5px 0; border-bottom: 1px solid #1a2440; }
+        .mqtt-row .payload { grid-column: 1 / -1; margin: 0; white-space: pre-wrap; word-break: break-word; overflow-wrap: anywhere; color: #b8f5d0; font-size: 11px; }
         .mqtt-row .topic { color: var(--ac-cyan, #00e5ff); }
         .mqtt-row .kind { text-transform: uppercase; font-size: 10px; color: #9aa8c7; text-align: right; }
         .mqtt-row.binary .kind { color: #ff2bd6; }
@@ -808,13 +844,36 @@ class BugBusterPanel extends window.McPanel.Base {
         .term-actions { display: flex; gap: 8px; margin-left: auto; align-items: center; }
         #term-host, #term-state { text-transform: none; letter-spacing: 0; color: #9aa8c7; font-size: 11px; }
         .health-row {
-          display: grid; grid-template-columns: 160px 120px 1fr; gap: 8px;
-          padding: 8px 10px; border-bottom: 1px solid rgba(255,255,255,0.06); font-size: 13px;
+          display: grid;
+          grid-template-columns: minmax(0, 1fr) auto;
+          gap: 4px 12px;
+          padding: 8px 10px;
+          border-bottom: 1px solid rgba(255,255,255,0.06);
+          font-size: 13px;
+          align-items: baseline;
         }
         .health-row.ok strong { color: #7dffb3; }
         .health-row.bad strong { color: #ff6b8a; }
-        .health-row .muted { color: #9aa8c7; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-        #health-list, #logs-list { flex: 1; min-height: 0; overflow: auto; }
+        .health-row .status { color: #e8eefc; white-space: nowrap; }
+        .health-row .muted {
+          grid-column: 1 / -1;
+          color: #9aa8c7;
+          overflow-wrap: anywhere;
+          word-break: break-word;
+          white-space: normal;
+          font-size: 12px;
+        }
+        .health-row a.muted {
+          color: var(--ac-cyan, #00e5ff);
+          text-decoration: none;
+        }
+        .health-row a.muted:hover { text-decoration: underline; }
+        #health-list, #logs-list {
+          flex: 1 1 0;
+          min-height: 0;
+          overflow: auto;
+          overscroll-behavior: contain;
+        }
         #logs-meta { text-transform: none; letter-spacing: 0; color: #9aa8c7; font-size: 11px; margin-left: auto; }
         .logs-pager { display: flex; gap: 6px; }
         .logs-pager .ghost { margin-left: 0; }
@@ -834,9 +893,29 @@ class BugBusterPanel extends window.McPanel.Base {
         .logs-table td.mono { font-family: "Share Tech Mono", ui-monospace, monospace; color: #b8f5d0; }
         .cc-note { font-size: 12px; color: #9aa8c7; margin: 0 16px 0 0; max-width: 280px; }
         @media (max-width: 980px) {
-          .body { grid-template-columns: 1fr; grid-template-rows: auto; }
-          .hosts { max-height: 320px; }
+          :host {
+            height: auto;
+            min-height: calc(100dvh - var(--header-height, 56px));
+            overflow: auto;
+          }
+          .wrap {
+            position: relative;
+            inset: auto;
+            height: auto;
+            min-height: calc(100dvh - var(--header-height, 56px));
+          }
+          .body {
+            grid-template-columns: 1fr;
+            grid-template-rows: none;
+            overflow: visible;
+            flex: 1 1 auto;
+          }
+          .hosts { min-height: 180px; max-height: 280px; }
+          .health, .logs { min-height: 180px; max-height: 320px; }
+          .mqtt, .term { min-height: 280px; }
+          #mqtt-log, #xterm { max-height: 45vh; }
           .health-row { grid-template-columns: 1fr; }
+          .health-row .status { justify-self: start; }
         }
       </style>
       <div class="wrap">

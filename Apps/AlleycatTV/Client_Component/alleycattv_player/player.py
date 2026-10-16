@@ -708,14 +708,17 @@ class AlleycatTVPlayer:
                 mgr = get_cache_manager()
                 if mgr:
                     report = mgr.get_status()
+                    files = report.get("files", [])
+                    cache_bytes = sum(int(f.get("size_bytes") or 0) for f in files)
                     url = f"{SERVER_URL}/api/devices/{PI_ID}/cache"
                     req = urllib.request.Request(
                         url,
                         data=json.dumps(
                             {
-                                "files": report.get("files", []),
-                                "cache_bytes": report.get("disk_used", 0),
+                                "files": files,
+                                "cache_bytes": cache_bytes,
                                 "free_bytes": report.get("disk_free"),
+                                "cache_max_bytes": report.get("cache_max_bytes"),
                             }
                         ).encode("utf-8"),
                         headers={"Content-Type": "application/json"},
