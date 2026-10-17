@@ -84,7 +84,7 @@ Player roster from Central (active event), normalized to MCS fields. Optional `p
 }
 ```
 
-`role` is the HA-facing alias of Central `mode` (`unassigned` \| `hunter` \| `bounty`). NeoCorp / faction / neo_id are empty unless Central restores them.
+`role` / `mode` are HA-facing aliases derived from Central `team_name` (hunter/bounty) when present. Roster also includes `team_id`, `team_name`, `active`, `event_id`. NeoCorp / faction / neo_id stay empty until Central’s affiliation API ships.
 
 ### `GET /players/{player_id}` — Bearer required
 
@@ -92,16 +92,17 @@ Single player record. Returns `404` if not found.
 
 ### `POST /players` — Bearer required
 
-Create a player. MCS body: `{ "name", "email?" }`. Forwards to Central as **`application/x-www-form-urlencoded`**. Central currently returns empty **200**; MCS responds **201** with echoed name/email (`mode=unassigned`) so Registration can refresh the roster for `pdn_code`.
+Create a player. MCS body: `{ "name", "email?" }`. Forwards to Central as **`application/json`**. Central returns **`PlayerResponse`** (incl. `pdn_code`); MCS responds **201** with the normalized player.
 
 **409 passthrough:** Central text such as `No active event`, duplicate name, or codes exhausted is returned as HTTP 409 with that detail (not a generic 502).
 
-### `PUT /players/{player_id}` / `DELETE /players/{player_id}` — Bearer required
+### `PUT /players/{player_id}` — Bearer required
 
-**501 Not Implemented** until Central ships player update/delete. Stable details:
+Proxies to Central **`PATCH /players/{id}`**. Body may include `name`, `email` / `clear_email`, `team_id` / `clear_team`, `active`.
 
-- update: `Player update not available; waiting on Central PATCH/PUT /players/{id}`
-- delete: `Player delete not available; waiting on Central DELETE /players/{id}`
+### `DELETE /players/{player_id}` — Bearer required
+
+**Soft-deactivate:** Central `PATCH { "active": false }` (no hard DELETE on Central). Returns **204**.
 
 ### `POST /events` — Bearer required
 
@@ -117,22 +118,36 @@ Select active event → Central `PUT` (204). Remembers `active_event_id` in MCS 
 
 ### `GET /events` — Bearer required
 
-**501** until Central ships list. Detail: `Event list not available; waiting on Central GET /events`.
+Lists events from Central (`{ events, ready: true }`).
 
 ### `GET /events/active` — Bearer required
 
-Returns MCS last-known active event (not a local event DB):
+Derived from Central **`GET /game-state`** (`active_event`). Falls back to MCS memory if Central is unreachable:
 
 ```json
 {
-  "ready": false,
+  "ready": true,
   "active_event_id": "…",
   "event": { "id": "…", "name": "…", "venue_name": null, "created_at": "" },
-  "source": "mcs_memory"
+  "source": "central"
 }
 ```
 
-`ready` flips when Central `GET /events/active` is enabled.
+### `GET /game-state` — Bearer required
+
+Full Central game-state snapshot (`active_event`, `scoring`, `accepting_delayed_scores`, `server_time_utc`). Used by Game Master.
+
+### `PUT /scoring` / `PUT /events/{event_id}/scoring` — Bearer required
+
+Toggle scoring (`{ "enabled": true|false }`). Convenience `/scoring` uses the active event.
+
+### `PUT /delayed-scores` / `PUT /events/{event_id}/delayed-scores` — Bearer required
+
+Toggle delayed-score acceptance for an event.
+
+### `GET /events/{event_id}/teams` — Bearer required
+
+List teams for an event (Registration team assign). Also `POST` create / `PATCH` rename.
 
 ### `GET /device-logs` — Bearer required
 

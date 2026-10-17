@@ -1,8 +1,8 @@
 """Normalize Central Server player records to Mission Control fields.
 
-Central PlayerResponse: id, pdn_code, name, created_at (+ optional team_id).
-Mode / email may appear when Central adds them. ``role`` is the HA-facing
-alias of ``mode`` (unassigned / hunter / bounty).
+Central PlayerResponse: id, event_id, pdn_code, name, email, created_at,
+team_id, team_name, active. ``role`` / ``mode`` are HA-facing aliases derived
+from team_name when it matches hunter/bounty; otherwise unassigned.
 """
 from __future__ import annotations
 
@@ -24,7 +24,7 @@ def _first(*values: Any) -> Any:
 
 
 def normalize_mode(raw: dict[str, Any]) -> str:
-    """Resolve mode from mode / role / hunter int. Default unassigned."""
+    """Resolve mode from mode / role / team_name / hunter int. Default unassigned."""
     mode = _first(raw.get("mode"), raw.get("role"), raw.get("Role"))
     if isinstance(mode, str):
         lowered = mode.strip().lower()
@@ -35,12 +35,24 @@ def normalize_mode(raw: dict[str, Any]) -> str:
         if lowered in ("2", "bounty"):
             return "bounty"
 
+    team_name = _first(raw.get("team_name"), raw.get("teamName"))
+    if isinstance(team_name, str):
+        lowered = team_name.strip().lower()
+        if "hunter" in lowered:
+            return "hunter"
+        if "bounty" in lowered:
+            return "bounty"
+
     hunter = raw.get("hunter")
     if hunter is not None:
         try:
             return _ROLE_FROM_HUNTER.get(int(hunter), "unassigned")
         except (TypeError, ValueError):
             pass
+
+    team_id = raw.get("team_id")
+    if team_id is None and not team_name:
+        return "unassigned"
     return "unassigned"
 
 
@@ -78,9 +90,18 @@ def normalize_player(raw: dict[str, Any]) -> dict[str, Any]:
     pdn = _first(raw.get("pdn_code"), raw.get("pdn"), raw.get("PDN")) or ""
     email = _first(raw.get("email"), raw.get("Email")) or ""
     created_at = _first(raw.get("created_at"), raw.get("createdAt")) or ""
+    event_id = raw.get("event_id")
+    if event_id is not None:
+        event_id = str(event_id)
     team_id = raw.get("team_id")
     if team_id is not None:
         team_id = str(team_id)
+    team_name = _first(raw.get("team_name"), raw.get("teamName")) or ""
+    active = raw.get("active")
+    if active is None:
+        active = True
+    else:
+        active = bool(active)
 
     return {
         "id": str(player_id),
@@ -93,35 +114,64 @@ def normalize_player(raw: dict[str, Any]) -> dict[str, Any]:
         "neocorp": normalize_neocorp(raw),
         "faction": str(faction),
         "neo_id": str(neo_id),
+        "event_id": event_id,
         "team_id": team_id,
+        "team_name": str(team_name),
+        "active": active,
     }
 
 
+def to_central_create_body(
+    *,
+    name: str,
+    email: str = "",
+) -> dict[str, Any]:
+    """Build Central JSON body for POST /players."""
+    body: dict[str, Any] = {"name": name.strip()}
+    email_clean = (email or "").strip()
+    if email_clean:
+        body["email"] = email_clean
+    return body
+
+
+def to_central_update_body(
+    *,
+    name: str | None = None,
+    email: str | None = None,
+    clear_email: bool = False,
+    team_id: str | None = None,
+    clear_team: bool = False,
+    active: bool | None = None,
+) -> dict[str, Any]:
+    """Build Central JSON body for PATCH /players/{id}.
+
+    Omitted fields are left out so Central preserves them. ``clear_email`` /
+    ``clear_team`` send JSON null.
+    """
+    body: dict[str, Any] = {}
+    if name is not None and name.strip():
+        body["name"] = name.strip()
+    if clear_email:
+        body["email"] = None
+    elif email is not None:
+        body["email"] = email.strip() if email.strip() else None
+    if clear_team:
+        body["team_id"] = None
+    elif team_id is not None and str(team_id).strip():
+        body["team_id"] = str(team_id).strip()
+    if active is not None:
+        body["active"] = bool(active)
+    return body
+
+
+# Back-compat aliases
 def to_central_create_form(
     *,
     name: str,
     email: str = "",
-) -> dict[str, str]:
-    """Build Central form fields for POST /players (x-www-form-urlencoded)."""
-    form: dict[str, str] = {"name": name.strip()}
-    email_clean = (email or "").strip()
-    if email_clean:
-        form["email"] = email_clean
-    return form
-
-
-# Back-compat aliases used by older tests / callers
-def to_central_create_body(
-    *,
-    name: str,
-    role: str = "hunter",  # noqa: ARG001 — ignored; Central has no role on create
-    neocorp: str = "freelancer",  # noqa: ARG001
-    faction: str = "",  # noqa: ARG001
-    neo_id: str = "",  # noqa: ARG001
-    email: str = "",
-) -> dict[str, str]:
-    """Deprecated name — returns form fields for Central create."""
-    return to_central_create_form(name=name, email=email)
+) -> dict[str, Any]:
+    """Deprecated name — returns JSON body for Central create."""
+    return to_central_create_body(name=name, email=email)
 
 
 def to_central_write_body(
@@ -132,6 +182,6 @@ def to_central_write_body(
     faction: str = "",  # noqa: ARG001
     neo_id: str = "",  # noqa: ARG001
     email: str = "",
-) -> dict[str, str]:
-    """Deprecated — player update is 501 until Central ships PATCH/PUT."""
-    return to_central_create_form(name=name, email=email)
+) -> dict[str, Any]:
+    """Deprecated — use to_central_create_body / to_central_update_body."""
+    return to_central_create_body(name=name, email=email)

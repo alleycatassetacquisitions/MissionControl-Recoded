@@ -1,4 +1,4 @@
-"""Tests for GET/POST /players and 501 update/delete.
+"""Tests for GET/POST/PUT/DELETE /players.
 
 Central Server responses are mocked via unittest.mock so no live HTTP is made.
 """
@@ -7,8 +7,6 @@ from __future__ import annotations
 from unittest.mock import AsyncMock, patch
 
 from fastapi.testclient import TestClient
-
-from central_client import PLAYER_DELETE_NOT_READY, PLAYER_UPDATE_NOT_READY
 
 MOCK_PLAYERS = [
     {
@@ -22,7 +20,10 @@ MOCK_PLAYERS = [
         "neocorp": "",
         "faction": "",
         "neo_id": "",
-        "team_id": None,
+        "event_id": "e1",
+        "team_id": "t1",
+        "team_name": "Hunter",
+        "active": True,
     },
     {
         "id": "p2",
@@ -35,7 +36,10 @@ MOCK_PLAYERS = [
         "neocorp": "",
         "faction": "",
         "neo_id": "",
+        "event_id": "e1",
         "team_id": None,
+        "team_name": "",
+        "active": True,
     },
 ]
 
@@ -93,6 +97,8 @@ def test_get_players_field_names(client: TestClient, auth_headers: dict):
     assert player["mode"] == "hunter"
     assert player["role"] == "hunter"
     assert player["email"] == "a@example.com"
+    assert player["team_name"] == "Hunter"
+    assert player["active"] is True
 
 
 def test_get_players_empty_roster(client: TestClient, auth_headers: dict):
@@ -134,7 +140,7 @@ def test_get_player_by_id_not_found(client: TestClient, auth_headers: dict):
 # ---------------------------------------------------------------------------
 
 
-def test_post_player_sends_form_fields(client: TestClient, auth_headers: dict):
+def test_post_player_sends_json_body(client: TestClient, auth_headers: dict):
     with patch(
         "main.create_player",
         new=AsyncMock(return_value=(200, None)),
@@ -148,9 +154,9 @@ def test_post_player_sends_form_fields(client: TestClient, auth_headers: dict):
     assert resp.json()["name"] == "Alex"
     assert resp.json()["email"] == "alex@example.com"
     assert resp.json()["mode"] == "unassigned"
-    form = mock_create.await_args.args[2]
-    assert form == {"name": "Alex", "email": "alex@example.com"}
-    assert "allegiance" not in form
+    body = mock_create.await_args.args[2]
+    assert body == {"name": "Alex", "email": "alex@example.com"}
+    assert "allegiance" not in body
 
 
 def test_post_player_passthrough_409(client: TestClient, auth_headers: dict):
@@ -178,7 +184,11 @@ def test_post_player_with_central_json_body(client: TestClient, auth_headers: di
                     "name": "N",
                     "pdn_code": "9999",
                     "created_at": "2026-01-01T00:00:00Z",
-                    "mode": "unassigned",
+                    "event_id": "e1",
+                    "email": None,
+                    "team_id": None,
+                    "team_name": None,
+                    "active": True,
                 },
             )
         ),
@@ -190,22 +200,45 @@ def test_post_player_with_central_json_body(client: TestClient, auth_headers: di
         )
     assert resp.status_code == 201
     assert resp.json()["pdn_code"] == "9999"
+    assert resp.json()["active"] is True
 
 
-def test_put_player_returns_501(client: TestClient, auth_headers: dict):
-    resp = client.put(
-        "/players/p1",
-        headers=auth_headers,
-        json={"name": "Alice", "email": "a@example.com"},
-    )
-    assert resp.status_code == 501
-    assert resp.json()["detail"] == PLAYER_UPDATE_NOT_READY
+def test_put_player_proxies_patch(client: TestClient, auth_headers: dict):
+    updated = {
+        "id": "p1",
+        "name": "Alice Updated",
+        "pdn_code": "1234",
+        "created_at": "2026-01-01T00:00:00Z",
+        "event_id": "e1",
+        "email": "a@example.com",
+        "team_id": "t1",
+        "team_name": "Hunter",
+        "active": True,
+    }
+    with patch(
+        "main.update_player",
+        new=AsyncMock(return_value=(200, updated)),
+    ) as mock_update:
+        resp = client.put(
+            "/players/p1",
+            headers=auth_headers,
+            json={"name": "Alice Updated", "email": "a@example.com", "team_id": "t1"},
+        )
+    assert resp.status_code == 200
+    assert resp.json()["name"] == "Alice Updated"
+    assert resp.json()["team_name"] == "Hunter"
+    assert mock_update.await_args.args[2] == "p1"
+    assert mock_update.await_args.args[3]["name"] == "Alice Updated"
 
 
-def test_delete_player_returns_501(client: TestClient, auth_headers: dict):
-    resp = client.delete("/players/p1", headers=auth_headers)
-    assert resp.status_code == 501
-    assert resp.json()["detail"] == PLAYER_DELETE_NOT_READY
+def test_delete_player_soft_deactivates(client: TestClient, auth_headers: dict):
+    with patch(
+        "main.deactivate_player",
+        new=AsyncMock(return_value=(200, {"id": "p1", "active": False})),
+    ) as mock_deact:
+        resp = client.delete("/players/p1", headers=auth_headers)
+    assert resp.status_code == 204
+    assert mock_deact.await_args.args[2] == "p1"
 
 
 def test_post_player_requires_auth(client: TestClient):

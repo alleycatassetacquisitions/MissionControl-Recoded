@@ -14,7 +14,7 @@ Build on these. A custom MQTT client, a second device list, or a panel that `fet
 | HTTP session | `async_get_clientsession` | Do not create a bare `ClientSession` / httpx in integrations |
 | Device + Area registry | `device_registry` / `area_registry` | FDN and AlleycatTV Pi go here; placement writes `area_id` |
 | State machine | entities | Presence, LED, playback, health — not ad-hoc dicts the panel re-fetches |
-| Actions | services + `services.yaml` | e.g. `registration.sync_now`, `registration.register_player`, `registration.create_event`, `registration.update_event`, `registration.set_active_event` (player update/delete stay registered but return 501 until Central ships them) |
+| Actions | services + `services.yaml` | e.g. `registration.sync_now`, `registration.register_player`, `registration.create_event`, `registration.update_event`, `registration.set_active_event`, `registration.update_player`, `registration.delete_player` (soft-deactivate) |
 | Operator UI | frontend + `panel_custom` | Panels are views; integrations own I/O |
 | Polling | `DataUpdateCoordinator` | Master Control Server / Proxmox / content health — not a home-rolled timer per app |
 | Config | config entries + config flow | YAML import is bootstrap only; live source of truth is the entry + Core Configurator |
@@ -26,7 +26,8 @@ Build on these. A custom MQTT client, a second device list, or a panel that `fet
 | --- | --- | --- |
 | Core Configurator | Home Assistant integration `core_configurator` | Exclusive catalog for service URLs and shared API tokens. YAML seeds once; the config entry is live. Callers read `get_url` / `get_extra`. |
 | Shared HA helpers | `custom_component` `shared_libraries`, no sidebar | HTTP client (auth included), MQTT fabric helpers, panel kit. Other integrations list `"shared_libraries"` in manifest `dependencies`. Not a product with its own tab. See `Libraries/Shared_HA_Helpers/README.md`. |
-| Master Control Server | Proxmox companion service | Only Central HTTP adapter. Players: `GET`/`POST /players` (create is form-urlencoded to Central; update/delete **501** until Central ships them). Events: `POST`/`PATCH`/`PUT …/active`; list/get-active gated until Central. Device logs: `GET /device-logs`. Also `POST /config`. Normalizes Central `mode` → HA `role`; NeoCorp/faction empty pending Central. Not a Home Assistant process. |
+| Master Control Server | Proxmox companion service | Only Central HTTP adapter. Players: JSON `POST`/`PATCH` (HA `PUT`), soft-deactivate `DELETE`. Events list + `game-state` active. Teams + scoring/delayed-scores for Game Master. Device logs: `GET /device-logs`. Also `POST /config`. Not a Home Assistant process. |
+| Game Master | HA config entry + sidebar panel | Gameplay controls: `GET /game-state`, toggle scoring + delayed scores via MCS. Event select stays on Registration. Hours/specials gated until Central APIs exist. |
 | Registration | Home Assistant integration `registration` | Home Assistant face of Master Control Server: coordinator, roster sensor, events strip + register services, panel. No Central URL or MCS token of its own — both come from Core Configurator. |
 | Digital Node Nexus | Home Assistant integration `digital_node_nexus` | FDN domain: page (primary), LED, haptic. Fabric owns MQTT presence. MCS supplies read-only Player/mode (role alias) for targeting; NeoCorp filters pending Central restore. Broadcast Group Controller owns placement and membership. |
 | AlleycatTV | Home Assistant integration `alleycattv` + Proxmox content server | Playback and content files. Home Assistant is the only MQTT command publisher. Deploy: `Docs/AlleycatTV Config Steps.md`. |

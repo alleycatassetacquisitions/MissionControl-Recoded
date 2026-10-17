@@ -67,6 +67,9 @@ gbn: {}
 # Proxmox URL/tokens come from Core Configurator — not from this block.
 bug_buster: {}
 
+# Loads Game Master (scoring / delayed-scores via MCS).
+game_master: {}
+
 # Merge into the live /config/configuration.yaml as ONE frontend: block.
 # If frontend / extra_module_url already exists, prepend the shell URLs into that
 # list — do not paste a second frontend:/themes:/extra_module_url: underneath
@@ -142,3 +145,10 @@ panel_custom:
     sidebar_icon: mdi:ladybug
     url_path: bug-buster
     module_url: /local/bug_buster/bug-buster-panel.js
+
+  # ─── Game Master ───────────────────────────────────────────────────────────
+  - name: game-master-panel
+    sidebar_title: Game Master
+    sidebar_icon: mdi:crown
+    url_path: game-master
+    module_url: /local/game_master/game-master-panel.js

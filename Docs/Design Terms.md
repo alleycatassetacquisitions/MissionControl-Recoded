@@ -81,18 +81,18 @@ The Mission Control app for creating and updating posters that players see on Al
 
 ### MCS — Master Control Server
 
-The Proxmox companion that is the only Central HTTP adapter. It owns Mission Control’s Player and Event JSON, proxies Central device crash logs (`GET /device-logs`), and maps Central `mode` to the HA-facing `role` alias.
+The Proxmox companion that is the only Central HTTP adapter. It owns Mission Control’s Player and Event JSON, proxies Central game-state / scoring / teams / device crash logs, and derives HA `mode`/`role` from Central `team_name` when helpful.
 
-Registration is its Home Assistant face for players/events. Bug Buster reads device logs through MCS. GBN overlays Player data from MCS. Home Assistant does not talk to the Central Server itself.
+Registration is its Home Assistant face for players/events. **Game Master** is the face for gameplay toggles (scoring live/off, delayed scores). Bug Buster reads device logs through MCS. GBN overlays Player data from MCS. Home Assistant does not talk to the Central Server itself.
 
-NeoCorp / faction remain empty optional fields until Central restores them (or Mission Control drops them from overlays).
+NeoCorp / faction remain empty optional fields until Central’s **affiliation** management API ships (schema already exists; HTTP pending).
 
 - **Communication:** HTTP
 - **Code:** `master_control_server`
 
 ### Registration
 
-The Mission Control dashboard for venue **events** (create / edit / set-active) and **player** registration (name + optional email). It talks to MCS (services + panel), not to the Central Server on its own. Player edit/delete stay in the UI but are disabled until Central ships those routes.
+The Mission Control dashboard for venue **events** (create / edit / set-active) and **player** registration (name + optional email, team assign, soft-deactivate). It talks to MCS (services + panel), not to the Central Server on its own. Gameplay scoring toggles are on **Game Master**, not here.
 
 - **Code:** `registration`
 
@@ -134,31 +134,31 @@ Digital Node Nexus and AlleycatTV own payloads (LED, haptic, playback). They do 
 
 ### Event
 
-A venue session on Central Server. Players register into the **active** event. Mission Control creates/edits/activates events via Master Control Server (`POST` / `PATCH` / `PUT …/active`). List and get-active may be gated until Central ships those reads; MCS keeps a last-known active id in memory for the Registration panel.
+A venue session on Central Server. Players register into the **active** event. Mission Control creates/edits/activates events via Master Control Server (`POST` / `PATCH` / `PUT …/active`). Active event is read from Central `GET /game-state` (MCS `GET /events/active`).
 
 ### Player
 
 A person playing the game. A Player is a Central Server record, served locally by Master Control Server.
 
-Current Central-aligned fields: `id`, `name`, `pdn_code`, `mode` (`unassigned` \| `hunter` \| `bounty`), `created_at`, optional `email`. Registration writes **name + email** only. Player update/delete are empty in Mission Control until Central adds those routes.
+Current Central-aligned fields: `id`, `event_id`, `name`, `pdn_code`, `email`, `team_id`, `team_name`, `active`, `created_at`. Registration writes **name + email** on create; update may set name/email/team/`active`. Hard delete is not offered — deactivate sets `active: false`.
 
 Players are **not** Home Assistant devices. Registration exposes connectivity and a roster summary as entities, plus services for operator workflows. Do not create one `device_tracker` (or similar) per Player.
 
+### Game Master
+
+The Mission Control dashboard for **gameplay** controls on the active event: scoring on/off (“game live”), accept delayed scores, and (later) hours of operation / special-event triggers. It talks to MCS only. Changing which event is active stays on Registration.
+
 ### NeoCorp
 
-A group a player can belong to. Possible NeoCorp values are **Freelancer**, **Helix**, **Endline**, and **Reboot**.
-
-**Pending:** Central’s current schema no longer exposes NeoCorp. Registration no longer writes it. Either Central restores it, or Mission Control removes it from GBN targeting overlays. Canonical JSON field was `neocorp` (lowercase); Central historically used `allegiance`.
+Historical label for corporation membership. Central now models this as **event affiliations** (categories + choices + player assignment). Seed data may use Allegiance/Faction category names. Registration will wire affiliation UI when Central ships the management JSON API.
 
 ### Faction
 
-A named group a player can belong to. There is no limit on faction names.
-
-**Pending:** same as NeoCorp — gone from Central’s current player API; Registration no longer writes faction.
+A named affiliation choice within an event category (often seeded as “Faction”). Same pending path as NeoCorp — wait for Central affiliation HTTP.
 
 ### Role / Mode
 
-A field on a Player, owned by Master Control Server / Central Server. Values: **unassigned**, **hunter**, or **bounty**. Central’s wire name is `mode`; MCS exposes `mode` and keeps `role` as the HA-facing alias. GBN must not define or impersonate Role. GBN stores `player_id` as a foreign key and overlays live Player data from Master Control Server.
+Legacy HA alias for hunter/bounty assignment. Central now uses **teams** (`team_id` / `team_name`); MCS may still derive `mode`/`role` from team names such as Hunter/Bounty for older consumers. GBN must not define Role. GBN stores `player_id` as a foreign key and overlays live Player data from Master Control Server.
 
 ### ID
 

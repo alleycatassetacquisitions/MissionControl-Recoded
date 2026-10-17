@@ -42,6 +42,27 @@ def test_normalize_defaults_mode_unassigned():
     )
     assert out["mode"] == "unassigned"
     assert out["role"] == "unassigned"
+    assert out["active"] is True
+    assert out["team_name"] == ""
+
+
+def test_normalize_team_name_to_mode():
+    out = normalize_player(
+        {
+            "id": "p1",
+            "name": "Alice",
+            "pdn_code": "0001",
+            "created_at": "2026-01-01T00:00:00Z",
+            "event_id": "e1",
+            "team_id": "t1",
+            "team_name": "Hunter",
+            "active": True,
+        }
+    )
+    assert out["mode"] == "hunter"
+    assert out["team_name"] == "Hunter"
+    assert out["event_id"] == "e1"
+    assert out["active"] is True
 
 
 def test_normalize_legacy_allegiance_still_maps():
@@ -85,8 +106,8 @@ def test_to_central_create_form_omits_empty_email():
     assert "email" not in form
 
 
-def test_to_central_create_body_is_form_fields():
-    """Legacy helper name now returns form fields, not allegiance JSON."""
+def test_to_central_create_body_is_json_fields():
+    """Helper returns JSON create fields, not allegiance payload."""
     body = to_central_create_body(name="New", email="n@ex.com")
     assert body == {"name": "New", "email": "n@ex.com"}
     assert "allegiance" not in body

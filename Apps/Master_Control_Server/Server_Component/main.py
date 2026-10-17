@@ -6,11 +6,10 @@ Design contracts:
     MCS stores them in memory and uses them for all Central calls.
   - Env vars (CENTRAL_PRIMARY_URL, CENTRAL_SECONDARY_URL) are first-boot
     defaults only. HA overwrites them on every setup.
-  - MCS_API_TOKEN guards /players, /events, /device-logs, and /config.
+  - MCS_API_TOKEN guards /players, /events, /game-state, /device-logs, /config.
   - Players are game records, not Home Assistant devices.
-  - Central create is form-urlencoded (name + email); list returns pdn/mode.
-  - Player update/delete return 501 until Central ships those routes.
-  - Event list/get-active are stubbed (501 / MCS memory) until Central ready.
+  - Central create/update are application/json; delete is soft-deactivate.
+  - Active event comes from Central GET /game-state.
 """
 from __future__ import annotations
 
@@ -24,16 +23,22 @@ from fastapi import Depends, FastAPI, HTTPException, Query, Security, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 
 from central_client import (
-    EVENTS_LIST_NOT_READY,
-    PLAYER_DELETE_NOT_READY,
-    PLAYER_UPDATE_NOT_READY,
     create_event,
     create_player,
+    create_team,
+    deactivate_player,
     detail_from_body,
     fetch_device_logs,
+    fetch_game_state,
     fetch_normalized_players,
+    list_events,
+    list_teams,
     set_active_event,
+    set_delayed_scores,
+    set_scoring,
     update_event,
+    update_player,
+    update_team,
 )
 from models import (
     ActiveEventMemory,
@@ -41,16 +46,25 @@ from models import (
     ConfigUpdate,
     DeviceLog,
     DeviceLogsResponse,
+    EnabledBody,
     Event,
     EventCreate,
     EventUpdate,
+    GameState,
     HealthResponse,
     Pagination,
     Player,
     PlayerWrite,
     Roster,
+    ScoringState,
+    Team,
+    TeamWrite,
 )
-from player_normalize import normalize_player, to_central_create_form
+from player_normalize import (
+    normalize_player,
+    to_central_create_body,
+    to_central_update_body,
+)
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -64,7 +78,7 @@ _config: dict[str, str] = {
     "api_token": os.getenv("MCS_API_TOKEN", ""),
 }
 
-# Last-known active event (MCS memory until Central GET /events/active ships)
+# Last-known active event (cache; authoritative source is Central game-state)
 _active_event: dict[str, Any] = {
     "id": None,
     "name": None,
@@ -73,14 +87,9 @@ _active_event: dict[str, Any] = {
     "set_at": None,
 }
 
-# Flip to True when Central notifies that GET /events and GET /events/active
-# are live — Registration Phase 2 gates on the ready flag / 501.
-_EVENTS_LIST_READY = False
-_EVENTS_ACTIVE_CENTRAL_READY = False
-
 
 def _remember_active_event(event: dict[str, Any] | Event) -> None:
-    """Store last-known active event after successful set_active / create+activate."""
+    """Store last-known active event after successful set_active / game-state."""
     if isinstance(event, Event):
         data = event.model_dump()
     else:
@@ -92,7 +101,7 @@ def _remember_active_event(event: dict[str, Any] | Event) -> None:
     _active_event["set_at"] = datetime.now(timezone.utc).isoformat()
 
 
-def _active_event_state() -> ActiveEventState:
+def _active_event_from_memory() -> ActiveEventState:
     event_id = _active_event.get("id")
     event: Event | None = None
     if event_id:
@@ -103,7 +112,7 @@ def _active_event_state() -> ActiveEventState:
             created_at=str(_active_event.get("created_at") or ""),
         )
     return ActiveEventState(
-        ready=_EVENTS_ACTIVE_CENTRAL_READY,
+        ready=True,
         active_event_id=str(event_id) if event_id else None,
         event=event,
         source="mcs_memory",
@@ -157,7 +166,6 @@ def _central_error(
             status_code=status.HTTP_502_BAD_GATEWAY,
             detail=f"Central Server unreachable during {action}.",
         )
-    # Pass through client errors (esp. 409 No active event / duplicate name)
     if 400 <= status_code < 500:
         return HTTPException(
             status_code=status_code,
@@ -184,6 +192,71 @@ def _event_from_central(resp: Any) -> Event | None:
     )
 
 
+def _game_state_from_central(resp: Any) -> GameState:
+    if not isinstance(resp, dict):
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail="Central game-state response was not a JSON object.",
+        )
+    active = _event_from_central(resp.get("active_event"))
+    scoring_raw = resp.get("scoring")
+    scoring: ScoringState | None = None
+    if isinstance(scoring_raw, dict):
+        scoring = ScoringState(
+            enabled=bool(scoring_raw.get("enabled")),
+            started_at=(
+                str(scoring_raw["started_at"])
+                if scoring_raw.get("started_at") is not None
+                else None
+            ),
+        )
+    delayed = resp.get("accepting_delayed_scores")
+    if delayed is not None:
+        delayed = bool(delayed)
+    return GameState(
+        active_event=active,
+        scoring=scoring,
+        accepting_delayed_scores=delayed,
+        server_time_utc=str(resp.get("server_time_utc") or ""),
+    )
+
+
+def _team_from_central(resp: Any) -> Team | None:
+    if not isinstance(resp, dict):
+        return None
+    team_id = resp.get("id")
+    event_id = resp.get("event_id")
+    name = resp.get("name")
+    if not team_id or not event_id or not name:
+        return None
+    return Team(id=str(team_id), event_id=str(event_id), name=str(name))
+
+
+async def _resolve_active_event_id() -> str:
+    """Return Central active event id, or raise 409 if none."""
+    status_code, resp = await fetch_game_state(
+        _config["central_primary"],
+        _config["central_secondary"],
+    )
+    if status_code == 0 or status_code >= 400:
+        # Fall back to MCS memory
+        mem_id = _active_event.get("id")
+        if mem_id:
+            return str(mem_id)
+        raise _central_error(status_code, "resolve active event", resp)
+    state = _game_state_from_central(resp)
+    if state.active_event is None:
+        mem_id = _active_event.get("id")
+        if mem_id:
+            return str(mem_id)
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="No active event",
+        )
+    _remember_active_event(state.active_event)
+    return state.active_event.id
+
+
 # ---------------------------------------------------------------------------
 # App
 # ---------------------------------------------------------------------------
@@ -206,7 +279,7 @@ app = FastAPI(
         "Sole Central HTTP adapter for Mission Control. "
         "Owned by Home Assistant Registration integration."
     ),
-    version="1.1.0",
+    version="1.2.0",
     lifespan=_lifespan,
 )
 
@@ -299,15 +372,19 @@ async def post_player(
     body: PlayerWrite,
     _token: Annotated[str, Depends(_verify_token)],
 ) -> Player:
-    """Create a player on Central (form-urlencoded name + optional email)."""
+    """Create a player on Central (JSON name + optional email)."""
     _require_central()
-    form = to_central_create_form(name=body.name, email=body.email)
+    if not (body.name or "").strip():
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="name is required",
+        )
+    payload = to_central_create_body(name=body.name, email=body.email or "")
     status_code, resp = await create_player(
         _config["central_primary"],
         _config["central_secondary"],
-        form,
+        payload,
     )
-    # Central registers with empty 200; treat 2xx as success
     if status_code == 0 or status_code >= 400:
         raise _central_error(status_code, "create", resp)
     if isinstance(resp, dict):
@@ -315,7 +392,6 @@ async def post_player(
             return Player(**normalize_player(resp))
         except Exception:  # noqa: BLE001
             pass
-    # Empty body — echo request; Registration refreshes roster for pdn_code
     return Player(
         id=str(resp.get("id", "")) if isinstance(resp, dict) else "",
         name=body.name,
@@ -327,14 +403,41 @@ async def post_player(
 
 @app.put("/players/{player_id}", response_model=Player, tags=["players"])
 async def put_player(
-    player_id: str,  # noqa: ARG001
-    body: PlayerWrite,  # noqa: ARG001
+    player_id: str,
+    body: PlayerWrite,
     _token: Annotated[str, Depends(_verify_token)],
 ) -> Player:
-    """Update a player — not available until Central ships PATCH/PUT."""
+    """Update a player — proxies to Central PATCH /players/{id}."""
+    _require_central()
+    payload = to_central_update_body(
+        name=body.name if (body.name or "").strip() else None,
+        email=body.email if body.email is not None and not body.clear_email else None,
+        clear_email=body.clear_email,
+        team_id=body.team_id if not body.clear_team else None,
+        clear_team=body.clear_team,
+        active=body.active,
+    )
+    if not payload:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Supply name, email, team_id, or active",
+        )
+    status_code, resp = await update_player(
+        _config["central_primary"],
+        _config["central_secondary"],
+        player_id,
+        payload,
+    )
+    if status_code == 0 or status_code >= 400:
+        raise _central_error(status_code, "update", resp)
+    if isinstance(resp, dict):
+        try:
+            return Player(**normalize_player(resp))
+        except Exception:  # noqa: BLE001
+            pass
     raise HTTPException(
-        status_code=status.HTTP_501_NOT_IMPLEMENTED,
-        detail=PLAYER_UPDATE_NOT_READY,
+        status_code=status.HTTP_502_BAD_GATEWAY,
+        detail="Central updated player but returned an unexpected body.",
     )
 
 
@@ -344,14 +447,18 @@ async def put_player(
     tags=["players"],
 )
 async def remove_player(
-    player_id: str,  # noqa: ARG001
+    player_id: str,
     _token: Annotated[str, Depends(_verify_token)],
 ) -> None:
-    """Delete a player — not available until Central ships DELETE."""
-    raise HTTPException(
-        status_code=status.HTTP_501_NOT_IMPLEMENTED,
-        detail=PLAYER_DELETE_NOT_READY,
+    """Soft-deactivate a player via Central PATCH {active: false}."""
+    _require_central()
+    status_code, resp = await deactivate_player(
+        _config["central_primary"],
+        _config["central_secondary"],
+        player_id,
     )
+    if status_code == 0 or status_code >= 400:
+        raise _central_error(status_code, "deactivate", resp)
 
 
 # ---------------------------------------------------------------------------
@@ -363,16 +470,8 @@ async def remove_player(
 async def get_events(
     _token: Annotated[str, Depends(_verify_token)],
 ) -> dict[str, Any]:
-    """List events — stubbed until Central GET /events is ready."""
-    if not _EVENTS_LIST_READY:
-        raise HTTPException(
-            status_code=status.HTTP_501_NOT_IMPLEMENTED,
-            detail=EVENTS_LIST_NOT_READY,
-        )
-    # Ready path wired for when the flag flips (Phase 4 rollout step 4)
+    """List events from Central."""
     _require_central()
-    from central_client import list_events
-
     status_code, resp = await list_events(
         _config["central_primary"],
         _config["central_secondary"],
@@ -392,9 +491,35 @@ async def get_events(
 async def get_active_event_route(
     _token: Annotated[str, Depends(_verify_token)],
 ) -> ActiveEventState:
-    """Return last-known active event from MCS memory (Central get-active pending)."""
-    # Always serve MCS memory so Registration can show "Active: …"
-    return _active_event_state()
+    """Return active event from Central GET /game-state (MCS memory fallback)."""
+    if not (_config["central_primary"] or _config["central_secondary"]):
+        return _active_event_from_memory()
+    status_code, resp = await fetch_game_state(
+        _config["central_primary"],
+        _config["central_secondary"],
+    )
+    if status_code == 0 or status_code >= 400:
+        return _active_event_from_memory()
+    state = _game_state_from_central(resp)
+    if state.active_event is not None:
+        _remember_active_event(state.active_event)
+        return ActiveEventState(
+            ready=True,
+            active_event_id=state.active_event.id,
+            event=state.active_event,
+            source="central",
+        )
+    # Clear memory when Central reports none
+    _active_event["id"] = None
+    _active_event["name"] = None
+    _active_event["venue_name"] = None
+    _active_event["created_at"] = ""
+    return ActiveEventState(
+        ready=True,
+        active_event_id=None,
+        event=None,
+        source="central",
+    )
 
 
 @app.post(
@@ -475,7 +600,6 @@ async def patch_event(
             status_code=status.HTTP_502_BAD_GATEWAY,
             detail="Central updated event but returned an unexpected body.",
         )
-    # Refresh memory cache if this is the active event
     if _active_event.get("id") == event.id:
         _remember_active_event(event)
     return event
@@ -509,7 +633,6 @@ async def put_active_event(
         )
     if status_code == 0 or status_code >= 400:
         raise _central_error(status_code, "set active event", resp)
-    # Preserve name/venue when re-activating the same cached event; else id only
     if _active_event.get("id") != event_id:
         _active_event["name"] = None
         _active_event["venue_name"] = None
@@ -521,6 +644,231 @@ async def put_active_event(
         if body.venue_name is not None:
             _active_event["venue_name"] = body.venue_name
     _active_event["set_at"] = datetime.now(timezone.utc).isoformat()
+
+
+# ---------------------------------------------------------------------------
+# Game state / scoring (Game Master)
+# ---------------------------------------------------------------------------
+
+
+@app.get("/game-state", response_model=GameState, tags=["game-state"])
+async def get_game_state_route(
+    _token: Annotated[str, Depends(_verify_token)],
+) -> GameState:
+    """Proxy Central GET /game-state."""
+    _require_central()
+    status_code, resp = await fetch_game_state(
+        _config["central_primary"],
+        _config["central_secondary"],
+    )
+    if status_code == 0 or status_code >= 400:
+        raise _central_error(status_code, "get game state", resp)
+    state = _game_state_from_central(resp)
+    if state.active_event is not None:
+        _remember_active_event(state.active_event)
+    return state
+
+
+@app.put(
+    "/events/{event_id}/scoring",
+    response_model=ScoringState,
+    tags=["game-state"],
+)
+async def put_scoring(
+    event_id: str,
+    body: EnabledBody,
+    _token: Annotated[str, Depends(_verify_token)],
+) -> ScoringState:
+    """Proxy Central PUT /events/{id}/scoring."""
+    _require_central()
+    status_code, resp = await set_scoring(
+        _config["central_primary"],
+        _config["central_secondary"],
+        event_id,
+        body.enabled,
+    )
+    if status_code == 0 or status_code >= 400:
+        raise _central_error(status_code, "set scoring", resp)
+    if not isinstance(resp, dict):
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail="Central scoring response was not JSON.",
+        )
+    return ScoringState(
+        enabled=bool(resp.get("enabled")),
+        started_at=(
+            str(resp["started_at"]) if resp.get("started_at") is not None else None
+        ),
+    )
+
+
+@app.put(
+    "/scoring",
+    response_model=ScoringState,
+    tags=["game-state"],
+)
+async def put_scoring_active(
+    body: EnabledBody,
+    _token: Annotated[str, Depends(_verify_token)],
+) -> ScoringState:
+    """Toggle scoring for the Central active event (convenience for Game Master)."""
+    _require_central()
+    event_id = await _resolve_active_event_id()
+    status_code, resp = await set_scoring(
+        _config["central_primary"],
+        _config["central_secondary"],
+        event_id,
+        body.enabled,
+    )
+    if status_code == 0 or status_code >= 400:
+        raise _central_error(status_code, "set scoring", resp)
+    if not isinstance(resp, dict):
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail="Central scoring response was not JSON.",
+        )
+    return ScoringState(
+        enabled=bool(resp.get("enabled")),
+        started_at=(
+            str(resp["started_at"]) if resp.get("started_at") is not None else None
+        ),
+    )
+
+
+@app.put(
+    "/events/{event_id}/delayed-scores",
+    response_model=EnabledBody,
+    tags=["game-state"],
+)
+async def put_delayed_scores_route(
+    event_id: str,
+    body: EnabledBody,
+    _token: Annotated[str, Depends(_verify_token)],
+) -> EnabledBody:
+    """Proxy Central PUT /events/{id}/delayed-scores."""
+    _require_central()
+    status_code, resp = await set_delayed_scores(
+        _config["central_primary"],
+        _config["central_secondary"],
+        event_id,
+        body.enabled,
+    )
+    if status_code == 0 or status_code >= 400:
+        raise _central_error(status_code, "set delayed scores", resp)
+    if isinstance(resp, dict) and "enabled" in resp:
+        return EnabledBody(enabled=bool(resp["enabled"]))
+    return EnabledBody(enabled=body.enabled)
+
+
+@app.put(
+    "/delayed-scores",
+    response_model=EnabledBody,
+    tags=["game-state"],
+)
+async def put_delayed_scores_active(
+    body: EnabledBody,
+    _token: Annotated[str, Depends(_verify_token)],
+) -> EnabledBody:
+    """Toggle delayed scores for the Central active event."""
+    _require_central()
+    event_id = await _resolve_active_event_id()
+    status_code, resp = await set_delayed_scores(
+        _config["central_primary"],
+        _config["central_secondary"],
+        event_id,
+        body.enabled,
+    )
+    if status_code == 0 or status_code >= 400:
+        raise _central_error(status_code, "set delayed scores", resp)
+    if isinstance(resp, dict) and "enabled" in resp:
+        return EnabledBody(enabled=bool(resp["enabled"]))
+    return EnabledBody(enabled=body.enabled)
+
+
+# ---------------------------------------------------------------------------
+# Teams
+# ---------------------------------------------------------------------------
+
+
+@app.get("/events/{event_id}/teams", response_model=list[Team], tags=["teams"])
+async def get_teams(
+    event_id: str,
+    _token: Annotated[str, Depends(_verify_token)],
+) -> list[Team]:
+    """List teams for an event."""
+    _require_central()
+    status_code, resp = await list_teams(
+        _config["central_primary"],
+        _config["central_secondary"],
+        event_id,
+    )
+    if status_code == 0 or status_code >= 400:
+        raise _central_error(status_code, "list teams", resp)
+    if not isinstance(resp, list):
+        return []
+    teams = [_team_from_central(item) for item in resp]
+    return [t for t in teams if t is not None]
+
+
+@app.post(
+    "/events/{event_id}/teams",
+    response_model=Team,
+    status_code=status.HTTP_201_CREATED,
+    tags=["teams"],
+)
+async def post_team(
+    event_id: str,
+    body: TeamWrite,
+    _token: Annotated[str, Depends(_verify_token)],
+) -> Team:
+    """Create a team on an event."""
+    _require_central()
+    status_code, resp = await create_team(
+        _config["central_primary"],
+        _config["central_secondary"],
+        event_id,
+        {"name": body.name},
+    )
+    if status_code == 0 or status_code >= 400:
+        raise _central_error(status_code, "create team", resp)
+    team = _team_from_central(resp)
+    if team is None:
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail="Central created team but returned an unexpected body.",
+        )
+    return team
+
+
+@app.patch(
+    "/events/{event_id}/teams/{team_id}",
+    response_model=Team,
+    tags=["teams"],
+)
+async def patch_team(
+    event_id: str,
+    team_id: str,
+    body: TeamWrite,
+    _token: Annotated[str, Depends(_verify_token)],
+) -> Team:
+    """Rename a team."""
+    _require_central()
+    status_code, resp = await update_team(
+        _config["central_primary"],
+        _config["central_secondary"],
+        event_id,
+        team_id,
+        {"name": body.name},
+    )
+    if status_code == 0 or status_code >= 400:
+        raise _central_error(status_code, "update team", resp)
+    team = _team_from_central(resp)
+    if team is None:
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail="Central updated team but returned an unexpected body.",
+        )
+    return team
 
 
 # ---------------------------------------------------------------------------

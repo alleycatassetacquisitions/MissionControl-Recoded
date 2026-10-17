@@ -1,0 +1,13 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "Game Master",
+        "description": "Adds the Game Master panel for scoring and game-state controls. Set the Master Control Server URL and API token in Core Configurator first. Select the active event in Registration."
+      }
+    },
+    "abort": {
+      "single_instance_allowed": "Only one Game Master integration is allowed."
+    }
+  }
+}

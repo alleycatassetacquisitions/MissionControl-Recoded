@@ -64,6 +64,11 @@ MissionControl\
 │   │   └── HA_Component\
 │   │       ├── www\
 │   │       └── custom_components\
+│   ├── Game_Master\
+│   │   ├── README.md
+│   │   └── HA_Component\
+│   │       ├── www\
+│   │       └── custom_components\
 │   ├── Core_Configurator\
 │   │   ├── README.md
 │   │   └── HA_Component\
@@ -256,15 +261,23 @@ Manages bounty posters, bounty boards, and poster capture. In code this is `gbn`
 
 ### Registration
 
-Home Assistant face of Master Control Server: events strip, roster sensor, services (`sync_now`, `register_player`, `create_event`, `update_event`, `set_active_event`; player update/delete gated 501), and sidebar panel. Talks only to MCS — never opens a Central socket. MCS URL and token come from Core Configurator.
+Home Assistant face of Master Control Server: events strip, roster sensor, services (`sync_now`, `register_player`, `create_event`, `update_event`, `set_active_event`, `update_player`, soft-deactivate `delete_player`), and sidebar panel. Talks only to MCS — never opens a Central socket. MCS URL and token come from Core Configurator.
 
 **Path:** `Apps\Registration\`  
 **On HA:** `/config/custom_components/registration/` + `/config/www/registration/`  
 **App README:** [`Apps/Registration/README.md`](../Apps/Registration/README.md)
 
+### Game Master
+
+Home Assistant gameplay panel: active-event status from MCS `GET /game-state`, toggle scoring (“game live”) and delayed scores. Event select and player desk stay on Registration. Hours of operation / specials gated until Central APIs exist.
+
+**Path:** `Apps\Game_Master\`  
+**On HA:** `/config/custom_components/game_master/` + `/config/www/game_master/`  
+**App README:** [`Apps/Game_Master/README.md`](../Apps/Game_Master/README.md)
+
 ### Master Control Server
 
-Proxmox companion FastAPI service. The only Central HTTP adapter. Players (`GET`/`POST`; update/delete **501**), events (`POST`/`PATCH`/`PUT …/active`; list/active gated), device logs (`GET /device-logs`), and `POST /config`. Normalizes Central `mode` → HA `role`. Not a Home Assistant process.
+Proxmox companion FastAPI service. The only Central HTTP adapter. Players (JSON create/PATCH; soft-deactivate), events list + game-state active, teams, scoring/delayed-scores, device logs (`GET /device-logs`), and `POST /config`. Not a Home Assistant process.
 
 **Path:** `Apps\Master_Control_Server\`  
 **On LXC:** `/opt/mcs/` (uvicorn via systemd `mcs`)  
