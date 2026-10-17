@@ -1,7 +1,6 @@
 "use strict";
 (() => {
   // src/panels/registration-panel.ts
-  var EDIT_DELETE_HINT = "Waiting on Central player update/delete";
   var RegistrationPanel = class extends window.McPanel.Base {
     constructor() {
       super();
@@ -26,6 +25,12 @@
       this._evEditName = "";
       this._evEditVenue = "";
       this._evSetActiveId = "";
+      this._teams = [];
+      this._editId = "";
+      this._editName = "";
+      this._editEmail = "";
+      this._editTeamId = "";
+      this._editActive = true;
     }
     static get properties() {
       return {
@@ -49,7 +54,13 @@
         _evEditId: { state: true },
         _evEditName: { state: true },
         _evEditVenue: { state: true },
-        _evSetActiveId: { state: true }
+        _evSetActiveId: { state: true },
+        _teams: { state: true },
+        _editId: { state: true },
+        _editName: { state: true },
+        _editEmail: { state: true },
+        _editTeamId: { state: true },
+        _editActive: { state: true }
       };
     }
     static get styles() {
@@ -417,8 +428,14 @@
         (p) => String(p.id ?? "").toLowerCase().includes(term) || String(p.name ?? "").toLowerCase().includes(term) || String(p.pdn_code ?? "").toLowerCase().includes(term) || String(p.email ?? "").toLowerCase().includes(term)
       );
     }
-    _modeOf(p) {
-      return (p.mode || p.role || "unassigned").toString();
+    _teamOf(p) {
+      const name = (p.team_name || "").trim();
+      if (name) return name;
+      if (p.team_id) return String(p.team_id);
+      return "Unassigned";
+    }
+    _activeOf(p) {
+      return p.active === false ? "Inactive" : "Active";
     }
     _formatCreated(value) {
       if (!value) return "";
@@ -453,6 +470,18 @@
         this._loadActiveEvent(),
         this._loadPosters()
       ]);
+      await this._loadTeams();
+    }
+    async _loadTeams() {
+      try {
+        const result = await this.hass.callWS({
+          type: "registration/get_teams",
+          event_id: this._activeEventId || void 0
+        });
+        this._teams = result?.teams ?? [];
+      } catch (_) {
+        this._teams = [];
+      }
     }
     async _loadPosters() {
       this._postersByPlayer = {};
@@ -631,8 +660,69 @@
         await this.hass.callService("registration", "sync_now", {});
         await this._loadRoster();
         await this._loadEvents();
+        await this._loadTeams();
       } catch (err) {
         this._feedback("Set active failed: " + this._formatErr(err), "err");
+      }
+    }
+    _beginEdit(p) {
+      this._editId = String(p.id ?? "");
+      this._editName = p.name || "";
+      this._editEmail = p.email || "";
+      this._editTeamId = p.team_id ? String(p.team_id) : "";
+      this._editActive = p.active !== false;
+    }
+    _cancelEdit() {
+      this._editId = "";
+      this._editName = "";
+      this._editEmail = "";
+      this._editTeamId = "";
+      this._editActive = true;
+    }
+    async _saveEdit() {
+      if (!this._editId) return;
+      const name = this._editName.trim();
+      if (!name) {
+        this._feedback("Enter a name", "warn");
+        return;
+      }
+      const payload = {
+        player_id: this._editId,
+        name,
+        active: this._editActive
+      };
+      const email = this._editEmail.trim();
+      if (email) payload.email = email;
+      else payload.clear_email = true;
+      if (this._editTeamId) payload.team_id = this._editTeamId;
+      else payload.clear_team = true;
+      try {
+        await this.hass.callService("registration", "update_player", payload);
+        this._feedback(`Updated ${name}`, "ok");
+        this._cancelEdit();
+        await this.hass.callService("registration", "sync_now", {});
+        await this._loadRoster();
+      } catch (err) {
+        this._feedback("Update failed: " + this._formatErr(err), "err");
+      }
+    }
+    async _deactivatePlayer(p) {
+      const id = String(p.id ?? "");
+      if (!id) return;
+      const label = p.name || id;
+      if (!window.confirm(`Deactivate ${label}? They stay on the roster as inactive.`)) {
+        return;
+      }
+      try {
+        await this.hass.callService("registration", "delete_player", {
+          player_id: id
+        });
+        this._feedback(`Deactivated ${label}`, "ok");
+        if (this._editId === id) this._cancelEdit();
+        await this.hass.callService("registration", "sync_now", {});
+        await this._loadRoster();
+      } catch (err) {
+        this._feedback("Deactivate failed: " + this._formatErr(err), "err");
       }
     }
     async _savePlayer() {
@@ -705,9 +795,7 @@
                 Active:
                 <strong>${this._activeLabel()}</strong>
               </p>
-              ${!this._eventsReady ? html`<p class="events-gate">
-                    ${this._eventsDetail || "Waiting on Central event list \u2014 create events below; the dropdown uses this session\u2019s cache until list/active ships."}
-                  </p>` : ""}
+              ${!this._eventsReady && this._eventsDetail ? html`<p class="events-gate">${this._eventsDetail}</p>` : ""}
               <div class="mode-toggle" role="tablist" aria-label="Event action">
                 <button
                   type="button"
@@ -883,6 +971,61 @@
                 Refresh table
               </button>
             </div>
+
+            ${this._editId ? html`
+                  <h2 class="form-title" style="margin-top:28px">Edit player</h2>
+                  <label for="edit-name">Name</label>
+                  <input
+                    id="edit-name"
+                    type="text"
+                    .value=${this._editName}
+                    @input=${(e) => {
+        this._editName = e.target.value;
+      }}
+                  />
+                  <label for="edit-email">Email</label>
+                  <input
+                    id="edit-email"
+                    type="email"
+                    .value=${this._editEmail}
+                    @input=${(e) => {
+        this._editEmail = e.target.value;
+      }}
+                  />
+                  <label for="edit-team">Team</label>
+                  <select
+                    id="edit-team"
+                    .value=${this._editTeamId}
+                    @change=${(e) => {
+        this._editTeamId = e.target.value;
+      }}
+                  >
+                    <option value="">Unassigned</option>
+                    ${this._teams.map(
+        (t) => html`<option value=${t.id ?? ""}>
+                          ${t.name || t.id}
+                        </option>`
+      )}
+                  </select>
+                  <label class="check-row">
+                    <input
+                      type="checkbox"
+                      .checked=${this._editActive}
+                      @change=${(e) => {
+        this._editActive = e.target.checked;
+      }}
+                    />
+                    Active registration
+                  </label>
+                  <div class="form-actions">
+                    <button class="btn-create" @click=${() => this._saveEdit()}>
+                      Save player
+                    </button>
+                    <button class="btn-ghost" @click=${() => this._cancelEdit()}>
+                      Cancel
+                    </button>
+                  </div>
+                ` : ""}
             ${this._feedbackTemplate()}
           </div>
 
@@ -909,7 +1052,8 @@
                         <tr>
                           <th>PDN</th>
                           <th>Name</th>
-                          <th>Mode</th>
+                          <th>Team</th>
+                          <th>Status</th>
                           <th>Created</th>
                           <th>Email</th>
                           <th>Poster</th>
@@ -923,24 +1067,25 @@
                             <tr class=${highlighted ? "highlight" : ""}>
                               <td>${p.pdn_code ?? ""}</td>
                               <td>${p.name ?? ""}</td>
-                              <td>${this._modeOf(p)}</td>
+                              <td>${this._teamOf(p)}</td>
+                              <td>${this._activeOf(p)}</td>
                               <td>${this._formatCreated(p.created_at)}</td>
                               <td>${p.email ?? ""}</td>
                               <td class="poster-cell">${this._posterCell(p)}</td>
                               <td class="actions-cell">
                                 <button
                                   class="edit-btn"
-                                  disabled
-                                  title=${EDIT_DELETE_HINT}
+                                  @click=${() => this._beginEdit(p)}
                                 >
                                   Edit
                                 </button>
                                 <button
                                   class="delete-btn"
-                                  disabled
-                                  title=${EDIT_DELETE_HINT}
+                                  title="Soft-deactivate (keeps roster row)"
+                                  ?disabled=${p.active === false}
+                                  @click=${() => this._deactivatePlayer(p)}
                                 >
-                                  Delete
+                                  Deactivate
                                 </button>
                               </td>
                             </tr>
