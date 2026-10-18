@@ -2,7 +2,7 @@
 """Net Time host clock agent — runs on the Proxmox HOST (not in the LXC).
 
 LXC guests share the host clock and usually cannot call settimeofday.
-Sync Now in the Net Time CT POSTs here; this process sets the host clock
+Offline Sync in the Net Time CT POSTs here; this process sets the host clock
 so chrony in the CT serves the new time to FDN/PDN clients.
 
 Bind: 0.0.0.0:8721 (override with NET_TIME_HOST_CLOCK_PORT)

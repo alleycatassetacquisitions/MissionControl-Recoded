@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Retrofit Sync Now support onto an existing Net Time install (CT + host agent).
+# Retrofit Offline Sync support onto an existing Net Time install (CT + host agent).
 #
 # Run on the Proxmox HOST after SCPing these files to /root/:
 #   host_clock_agent.py  chrony_ops.py  main.py  models.py
@@ -49,7 +49,7 @@ NET_TIME_HOST_CLOCK_PORT=${NET_TIME_HOST_CLOCK_PORT}
 EOF
 cat > /etc/systemd/system/net-time-host-clock.service <<'UNIT'
 [Unit]
-Description=Net Time host clock agent (Sync Now for LXC)
+Description=Net Time host clock agent (Offline Sync for LXC)
 After=network-online.target
 Wants=network-online.target
 
@@ -87,9 +87,9 @@ pct exec "$CTID" -- grep -n CAP_SYS_TIME /opt/net_time/chrony_ops.py | head -2
 
 cat <<EOF
 
-Done. Sync Now should work via the Proxmox host agent.
+Done. Offline Sync should work via the Proxmox host agent.
 
   Host agent: http://${HOST_IP}:${NET_TIME_HOST_CLOCK_PORT}/health
-  Also redeploy HA: net_time component + core_configurator www panel for timezone UI.
+  Also redeploy HA: core_configurator www panel for Attempt Online Sync / Offline Sync UI.
 
 EOF

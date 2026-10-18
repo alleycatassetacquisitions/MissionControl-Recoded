@@ -3,9 +3,9 @@
 LAN time authority for Mission Control venues. Runs on Proxmox as:
 
 1. A privileged **LXC** with **chrony** (NTP/SNTP UDP 123) and a FastAPI management API (TCP 8720)
-2. A **host clock agent** on the Proxmox node (TCP 8721) so **Sync Now** can set the shared host clock when the LXC cannot
+2. A **host clock agent** on the Proxmox node (TCP 8721) so **Offline Sync** can set the shared host clock when the LXC cannot
 
-Core Configurator holds the URL + token and exposes Confirm online, a **timezone dropdown**, and Sync Now (operator PC time). The status line shows wall time in the configured timezone (NTP itself remains UTC).
+Core Configurator holds the URL + token and exposes **Attempt Online Sync**, a **timezone dropdown**, and **Offline Sync** (manual date/time). The status line shows wall time in the configured timezone (NTP itself remains UTC).
 
 PDN/FDN client sync is owned by those firmware teams. This app ships the server and operator controls only.
 
@@ -45,9 +45,9 @@ Required because Proxmox LXCs share the host clock and usually cannot `date -s`.
 
 ## Core Configurator UI
 
-- **Confirm online** — reachability + public pool status + local wall time for the selected zone
+- **Attempt Online Sync** — succeeds when MC can reach Net Time and public NTP is reachable; otherwise prompts **Please set via Offline Sync**
 - **Timezone** — dropdown of common venue IANA zones → **Set timezone**
-- **Sync Now** — always available; may report sync **via Proxmox host**
+- **Offline Sync** — expands date/time fields; **Apply Offline Sync** pushes that wall time (may use host clock agent under the hood)
 
 ## Deploy
 

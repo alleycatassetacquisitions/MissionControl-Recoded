@@ -21,7 +21,7 @@ Each key maps to one external service. Other integrations call `get_url(hass, ke
 | `gbn` | Galactic Bounty Network | GBN, Registration poster column |
 | `proxmox` | Proxmox | Bug Buster (URL + `extra.node` / `token_id` / `token_secret`) |
 | `rtsp` | Live RTSP | AlleycatTV live interrupt (`extra.label` / `extra.enabled`) |
-| `net_time` | Net Time | Confirm online, timezone dropdown, Sync Now (`extra.token`); panel shows local wall time |
+| `net_time` | Net Time | Attempt Online Sync, timezone dropdown, Offline Sync (`extra.token`); panel shows local wall time |
 
 > **Credentials live here.** MCS Bearer (`extra.token` on `master_control_server`), Net Time Bearer (`extra.token` on `net_time`), and Proxmox API tokens (`extra.token_id` / `extra.token_secret` on `proxmox`) are Core Configurator fields. Paste the same Proxmox token into HA Core **Proxmox VE** for monitoring entities. Bug Buster is Proxmox console, MQTT spy, and companion health — it does not own tokens. RTSP camera/encoder URLs also live here (not in AlleycatTV Content Manager).
 

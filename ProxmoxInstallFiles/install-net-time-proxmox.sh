@@ -2,7 +2,7 @@
 # Create a Net Time LXC on this Proxmox node.
 #
 # Net Time is the Mission Control LAN NTP authority (chrony + management API).
-# The CT is privileged so Sync Now / chrony can set the system clock.
+# The CT is privileged; Offline Sync may still use the host clock agent.
 #
 # Run on the Proxmox HOST shell (the node, not a guest). Matches
 # Docs/Net Time Config Steps.md
@@ -240,7 +240,7 @@ EOF
 }
 
 install_host_clock_agent() {
-  # Sync Now cannot settimeofday inside a typical Proxmox LXC (shared host clock).
+  # Offline Sync cannot settimeofday inside a typical Proxmox LXC (shared host clock).
   # This tiny agent runs on the HOST and accepts the same Bearer token.
   local agent_src=""
   if [[ -n "$NET_TIME_SRC" && -f "$NET_TIME_SRC/host_clock_agent.py" ]]; then
@@ -251,7 +251,7 @@ install_host_clock_agent() {
     agent_src=/root/host_clock_agent.py
   fi
   if [[ -z "$agent_src" ]]; then
-    say "WARNING: host_clock_agent.py not found — Sync Now will fail until the host agent is installed"
+    say "WARNING: host_clock_agent.py not found — Offline Sync will fail until the host agent is installed"
     return 0
   fi
 
@@ -264,7 +264,7 @@ NET_TIME_HOST_CLOCK_PORT=${NET_TIME_HOST_CLOCK_PORT}
 EOF
   cat > /etc/systemd/system/net-time-host-clock.service <<'UNIT'
 [Unit]
-Description=Net Time host clock agent (Sync Now for LXC)
+Description=Net Time host clock agent (Offline Sync for LXC)
 After=network-online.target
 Wants=network-online.target
 
@@ -357,16 +357,15 @@ pct create "$CTID" "$TEMPLATE_REF" \
 
 pct set "$CTID" --hostname "$HOSTNAME" >/dev/null
 
-# Sync Now needs CAP_SYS_TIME. Proxmox forbids mixing lxc.cap.keep with lxc.cap.drop —
-# so if sys_time is in a drop list, remove it from that list (never add cap.keep).
+# Prefer not dropping sys_time if a drop list exists. Never add lxc.cap.keep
+# (conflicts with drop and can prevent the CT from starting). Offline Sync
+# primarily uses the host clock agent.
 CT_CONF="/etc/pve/lxc/${CTID}.conf"
 if [[ -f "$CT_CONF" ]]; then
   if grep -qE '^lxc\.cap\.drop:' "$CT_CONF"; then
-    say "Ensuring sys_time is not in lxc.cap.drop (required for Sync Now)"
-    # Drop "sys_time" token from the drop list; leave other drops intact.
+    say "Ensuring sys_time is not in lxc.cap.drop (best-effort)"
     sed -i -E 's/^(lxc\.cap\.drop:.*)(\s|^)sys_time(\s|$)/\1\3/g; s/  +/ /g; s/: /: /' "$CT_CONF" || true
   fi
-  # Clean up any mistaken keep lines from older install attempts.
   sed -i -E '/^lxc\.cap\.keep:.*sys_time/d' "$CT_CONF" || true
 fi
 
@@ -409,7 +408,7 @@ Put these values into Home Assistant Core Configurator / secrets.yaml:
   cc_net_time:       http://${CT_IP}:${NET_TIME_PORT}
   cc_net_time_token: ${NET_TIME_API_TOKEN}
 
-Host clock agent (Sync Now fallback):
+Host clock agent (Offline Sync fallback):
   http://${HOST_IP}:${NET_TIME_HOST_CLOCK_PORT}/health
   systemctl status net-time-host-clock
 
@@ -423,6 +422,6 @@ Quick checks:
 
 NTP clients (FDN / PDN team): point SNTP at ${CT_IP} (UDP 123).
 
-Next: Docs/Net Time Config Steps.md (paste into HA, Confirm online / Set timezone / Sync Now).
+Next: Docs/Net Time Config Steps.md (paste into HA, Attempt Online Sync / Set timezone / Offline Sync).
 
 EOF

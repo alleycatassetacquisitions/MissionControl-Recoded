@@ -82,7 +82,7 @@ The Mission Control app for creating and updating posters that players see on Al
 
 ### Net Time
 
-The Proxmox companion that is the LAN NTP authority for venues (chrony on UDP 123). Online it syncs to a public NTP pool; offline it keeps serving with a local stratum. A host clock agent on the Proxmox node (TCP 8721) backs **Sync Now** when the LXC cannot set the shared host clock. Core Configurator stores the management URL + token and exposes Confirm online, a timezone dropdown, and Sync Now (operator PC clock) via the `net_time` Home Assistant integration. NTP is UTC; the UI shows wall time in the configured timezone.
+The Proxmox companion that is the LAN NTP authority for venues (chrony on UDP 123). Online it syncs to a public NTP pool; offline it keeps serving with a local stratum. A host clock agent on the Proxmox node (TCP 8721) backs **Offline Sync** when the LXC cannot set the shared host clock. Core Configurator stores the management URL + token and exposes Attempt Online Sync, a timezone dropdown, and Offline Sync (manual date/time) via the `net_time` Home Assistant integration. NTP is UTC; the UI shows wall time in the configured timezone.
 
 - **Communication:** NTP/SNTP (UDP 123), HTTP management API (8720), host clock agent (8721)
 - **Code:** `net_time`
