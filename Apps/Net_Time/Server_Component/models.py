@@ -30,6 +30,7 @@ class StatusResponse(BaseModel):
     serving: bool = True
     stratum: int | None = None
     reference: str = ""
+    timezone: str = ""
     sources: list[SourceRow] = Field(default_factory=list)
 
 
@@ -40,3 +41,16 @@ class SyncRequest(BaseModel):
 class SyncResponse(BaseModel):
     status: StatusResponse
     applied_iso: str
+    via: str = "local"
+
+
+class TimezoneRequest(BaseModel):
+    timezone: str = Field(
+        ...,
+        description="IANA timezone, e.g. America/Chicago",
+    )
+
+
+class TimezoneResponse(BaseModel):
+    timezone: str
+    status: StatusResponse

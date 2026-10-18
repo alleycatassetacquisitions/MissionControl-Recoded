@@ -32,12 +32,14 @@ MEMORY_MB="${MEMORY_MB:-512}"
 DISK_SIZE="${DISK_SIZE:-4}"
 START_CT="${START_CT:-1}"
 NET_TIME_PORT="${NET_TIME_PORT:-8720}"
+NET_TIME_HOST_CLOCK_PORT="${NET_TIME_HOST_CLOCK_PORT:-8721}"
 TEMPLATE_PREFIX="${TEMPLATE:-ubuntu-24.04-standard}"
 NET_TIME_API_TOKEN="${NET_TIME_API_TOKEN:-}"
 NET_TIME_SRC="${NET_TIME_SRC:-}"
 REPO_URL="${REPO_URL:-https://github.com/alleycatassetacquisitions/MissionControl-Recoded.git}"
 ROOT_PASSWORD="${ROOT_PASSWORD:-alleycat}"
 SKIP_CONFIRM="${SKIP_CONFIRM:-0}"
+HOST_IP="${HOST_IP:-}"
 
 say() { printf '\n==> %s\n' "$*" >&2; }
 die() { printf '\nERROR: %s\n' "$*" >&2; exit 1; }
@@ -222,16 +224,76 @@ RestartSec=3
 WantedBy=multi-user.target
 UNIT"
 
+  local host_clock_url="${NET_TIME_HOST_CLOCK_URL:-}"
   pct exec "$CTID" -- bash -lc "
     set -euo pipefail
     umask 077
     cat > /etc/net-time.env <<EOF
 NET_TIME_API_TOKEN=${NET_TIME_API_TOKEN}
+NET_TIME_HOST_CLOCK_URL=${host_clock_url}
+NET_TIME_HOST_CLOCK_PORT=${NET_TIME_HOST_CLOCK_PORT}
 EOF
     systemctl daemon-reload
     systemctl enable net-time
     systemctl restart net-time
   "
+}
+
+install_host_clock_agent() {
+  # Sync Now cannot settimeofday inside a typical Proxmox LXC (shared host clock).
+  # This tiny agent runs on the HOST and accepts the same Bearer token.
+  local agent_src=""
+  if [[ -n "$NET_TIME_SRC" && -f "$NET_TIME_SRC/host_clock_agent.py" ]]; then
+    agent_src="$NET_TIME_SRC/host_clock_agent.py"
+  elif [[ -f /root/net-time-src/host_clock_agent.py ]]; then
+    agent_src=/root/net-time-src/host_clock_agent.py
+  elif [[ -f /root/host_clock_agent.py ]]; then
+    agent_src=/root/host_clock_agent.py
+  fi
+  if [[ -z "$agent_src" ]]; then
+    say "WARNING: host_clock_agent.py not found — Sync Now will fail until the host agent is installed"
+    return 0
+  fi
+
+  say "Installing Net Time host clock agent on Proxmox host (port ${NET_TIME_HOST_CLOCK_PORT})"
+  install -m 0755 "$agent_src" /usr/local/sbin/net-time-host-clock
+  umask 077
+  cat > /etc/net-time-host-clock.env <<EOF
+NET_TIME_API_TOKEN=${NET_TIME_API_TOKEN}
+NET_TIME_HOST_CLOCK_PORT=${NET_TIME_HOST_CLOCK_PORT}
+EOF
+  cat > /etc/systemd/system/net-time-host-clock.service <<'UNIT'
+[Unit]
+Description=Net Time host clock agent (Sync Now for LXC)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+EnvironmentFile=-/etc/net-time-host-clock.env
+ExecStart=/usr/bin/python3 /usr/local/sbin/net-time-host-clock
+Restart=on-failure
+RestartSec=3
+
+[Install]
+WantedBy=multi-user.target
+UNIT
+  systemctl daemon-reload
+  systemctl enable --now net-time-host-clock
+}
+
+resolve_host_ip() {
+  if [[ -n "$HOST_IP" ]]; then
+    printf '%s' "$HOST_IP"
+    return 0
+  fi
+  # Prefer an address on the same bridge the CT uses.
+  local ip=""
+  ip="$(ip -4 -o addr show dev "$BRIDGE" 2>/dev/null | awk '{print $4}' | head -1 | cut -d/ -f1 || true)"
+  if [[ -z "$ip" ]]; then
+    ip="$(hostname -I 2>/dev/null | awk '{print $1}' || true)"
+  fi
+  printf '%s' "$ip"
 }
 
 # ---------------------------------------------------------------------------
@@ -316,6 +378,11 @@ echo "root:${ROOT_PASSWORD}" | pct exec "$CTID" -- chpasswd
 say "Waiting for network"
 CT_IP="$(wait_for_network)" || die "CT started but no IP yet. Check DHCP on ${BRIDGE}, then: pct enter ${CTID}"
 
+HOST_IP="$(resolve_host_ip)"
+[[ -n "$HOST_IP" ]] || die "Could not determine Proxmox host IP for the clock agent. Set HOST_IP=…"
+NET_TIME_HOST_CLOCK_URL="http://${HOST_IP}:${NET_TIME_HOST_CLOCK_PORT}"
+
+install_host_clock_agent
 install_net_time_into_ct
 
 say "Checking /health"
@@ -342,6 +409,10 @@ Put these values into Home Assistant Core Configurator / secrets.yaml:
   cc_net_time:       http://${CT_IP}:${NET_TIME_PORT}
   cc_net_time_token: ${NET_TIME_API_TOKEN}
 
+Host clock agent (Sync Now fallback):
+  http://${HOST_IP}:${NET_TIME_HOST_CLOCK_PORT}/health
+  systemctl status net-time-host-clock
+
 Quick checks:
   curl http://${CT_IP}:${NET_TIME_PORT}/health
   curl -H "Authorization: Bearer ${NET_TIME_API_TOKEN}" http://${CT_IP}:${NET_TIME_PORT}/status
@@ -352,6 +423,6 @@ Quick checks:
 
 NTP clients (FDN / PDN team): point SNTP at ${CT_IP} (UDP 123).
 
-Next: Docs/Net Time Config Steps.md (paste into HA, Confirm online / Sync Now).
+Next: Docs/Net Time Config Steps.md (paste into HA, Confirm online / Set timezone / Sync Now).
 
 EOF

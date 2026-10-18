@@ -143,7 +143,8 @@ MissionControl\
 │   ├── install-mcs-proxmox.sh
 │   ├── install-alleycattv-proxmox.sh
 │   ├── install-gbn-proxmox.sh
-│   └── install-net-time-proxmox.sh
+│   ├── install-net-time-proxmox.sh
+│   └── upgrade-net-time-host-clock.sh
 └── Docs\
 ```
 
@@ -293,13 +294,14 @@ Proxmox companion FastAPI service. The only Central HTTP adapter. Players (JSON 
 
 ### Net Time
 
-LAN NTP authority (chrony) plus management API for Confirm online / Sync Now. Privileged Proxmox LXC. Core Configurator holds URL + token; the `net_time` HA integration proxies websocket commands used by the Core Configurator Net Time card.
+LAN NTP authority (chrony) plus management API for Confirm online, timezone, and Sync Now. Privileged Proxmox LXC plus a **host clock agent** on the Proxmox node (Sync Now fallback). Core Configurator holds URL + token; the `net_time` HA integration proxies websocket commands used by the Core Configurator Net Time card (timezone dropdown, local wall-time status).
 
 **Path:** `Apps\Net_Time\`  
 **On LXC:** `/opt/net_time/` (uvicorn via systemd `net-time`) + chrony  
+**On Proxmox host:** `/usr/local/sbin/net-time-host-clock` (systemd `net-time-host-clock`, port 8721)  
 **On HA:** `/config/custom_components/net_time/`  
 **App README:** [`Apps/Net_Time/README.md`](../Apps/Net_Time/README.md)  
-**Deploy:** [`Docs/Net Time Config Steps.md`](Net%20Time%20Config%20Steps.md) · [`ProxmoxInstallFiles/install-net-time-proxmox.sh`](../ProxmoxInstallFiles/install-net-time-proxmox.sh)
+**Deploy:** [`Docs/Net Time Config Steps.md`](Net%20Time%20Config%20Steps.md) · [`ProxmoxInstallFiles/install-net-time-proxmox.sh`](../ProxmoxInstallFiles/install-net-time-proxmox.sh) · [`upgrade-net-time-host-clock.sh`](../ProxmoxInstallFiles/upgrade-net-time-host-clock.sh)
 
 ### Meru
 
@@ -356,7 +358,7 @@ Standing law:
 - `Master Control Server Config Steps.md` — Proxmox LXC bootstrap for Master Control Server
 - `AlleycatTV Config Steps.md` — Proxmox content server + HA integration + Pi SD flash (Phase 6)
 - `GBN Config Steps.md` — Proxmox poster server + HA integration
-- `Net Time Config Steps.md` — Proxmox Net Time LXC + Core Configurator Confirm / Sync Now
+- `Net Time Config Steps.md` — Proxmox Net Time LXC + host clock agent + Core Configurator Confirm / timezone / Sync Now
 - `Bug Buster Config Steps.md` — Proxmox monitoring companion on HA
 - `Phase 10 Look At Decisions.md` — community/tools used vs rejected for Lit kit + Alleycat shell
 
@@ -370,7 +372,8 @@ One-shot scripts run on the **Proxmox node** shell (copy to `/root/` first). Con
 - `install-mcs-proxmox.sh` — Ubuntu 24.04 LXC for Master Control Server; prints URL + token for Core Configurator
 - `install-alleycattv-proxmox.sh` — AlleycatTV content LXC (no MQTT); prints the Core Configurator URL
 - `install-gbn-proxmox.sh` — Galactic Bounty Network poster-server LXC
-- `install-net-time-proxmox.sh` — Net Time LXC (chrony + API); prints URL + token for Core Configurator
+- `install-net-time-proxmox.sh` — Net Time LXC (chrony + API) + host clock agent; prints URL + token for Core Configurator
+- `upgrade-net-time-host-clock.sh` — retrofit host clock agent + updated API onto an existing Net Time CT
 
 Companion services on Proxmox follow the same pattern going forward: `install-<app>-proxmox.sh` in this folder plus a matching `* Config Steps.md` in `Docs\`. The MQTT broker is an exception — use the official **Mosquitto** Home Assistant add-on (see Phase 5a in `Home Assistant Config Steps.md`), not a Proxmox Mosquitto LXC.
 

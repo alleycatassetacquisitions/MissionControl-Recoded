@@ -18,6 +18,7 @@ def test_sync_applies_iso(client: TestClient, auth_headers: dict[str, str], rese
     assert resp.status_code == 200
     body = resp.json()
     assert body["applied_iso"] == "2026-10-18T20:15:30Z"
+    assert body["via"] == "local"
     assert body["status"]["public_ntp"] == "unavailable"
     assert reset_ops.last_applied == datetime(2026, 10, 18, 20, 15, 30, tzinfo=timezone.utc)
     # Clock advanced to requested time

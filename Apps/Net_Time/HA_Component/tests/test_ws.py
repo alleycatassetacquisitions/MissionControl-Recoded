@@ -5,7 +5,12 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from custom_components.net_time import handle_health, handle_status, handle_sync
+from custom_components.net_time import (
+    handle_health,
+    handle_set_timezone,
+    handle_status,
+    handle_sync,
+)
 from custom_components.net_time.const import KEY_NET_TIME
 
 
@@ -122,3 +127,26 @@ async def test_ws_sync_posts_iso(hass, connection):
         "iso8601": "2026-10-18T21:00:00.000Z"
     }
     connection.send_result.assert_called_once_with(5, body)
+
+
+@pytest.mark.asyncio
+async def test_ws_set_timezone(hass, connection):
+    body = {"timezone": "America/Chicago", "status": {"public_ntp": "reachable"}}
+    resp = _FakeResponse(200, body)
+    with patch(
+        "custom_components.net_time._net_time_token", return_value="tok"
+    ), patch(
+        "custom_components.net_time.async_request",
+        new=AsyncMock(return_value=resp),
+    ) as req:
+        await handle_set_timezone(
+            hass,
+            connection,
+            {
+                "id": 6,
+                "type": "net_time/set_timezone",
+                "timezone": "America/Chicago",
+            },
+        )
+    assert req.await_args.kwargs["json"] == {"timezone": "America/Chicago"}
+    connection.send_result.assert_called_once_with(6, body)

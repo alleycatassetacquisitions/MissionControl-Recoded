@@ -27,6 +27,7 @@ from .const import (
     EXTRA_TOKEN,
     KEY_NET_TIME,
     WS_HEALTH,
+    WS_SET_TIMEZONE,
     WS_STATUS,
     WS_SYNC,
 )
@@ -212,6 +213,56 @@ async def handle_sync(hass: HomeAssistant, connection, msg: dict[str, Any]) -> N
     connection.send_result(msg["id"], data if isinstance(data, dict) else {})
 
 
+async def handle_set_timezone(
+    hass: HomeAssistant, connection, msg: dict[str, Any]
+) -> None:
+    """Set IANA timezone on the Net Time LXC (POST /timezone)."""
+    if async_request is None:
+        connection.send_error(msg["id"], "shared_libraries", "not available")
+        return
+    token = _net_time_token(hass)
+    if not token:
+        connection.send_error(
+            msg["id"],
+            "net_time_token",
+            "Net Time token not set in Core Configurator",
+        )
+        return
+    tz = (msg.get("timezone") or "").strip()
+    if not tz:
+        connection.send_error(msg["id"], "bad_timezone", "timezone is required")
+        return
+    response = await async_request(
+        hass,
+        KEY_NET_TIME,
+        "POST",
+        "/timezone",
+        token=token,
+        json={"timezone": tz},
+    )
+    if response is None:
+        connection.send_error(
+            msg["id"],
+            "net_time_unreachable",
+            "Net Time URL not set in Core Configurator or unreachable",
+        )
+        return
+    if response.status >= 400:
+        detail = await _response_detail(response)
+        connection.send_error(
+            msg["id"],
+            "net_time_error",
+            detail or f"Net Time returned HTTP {response.status}",
+        )
+        return
+    try:
+        data = await response.json()
+    except Exception:  # noqa: BLE001
+        connection.send_error(msg["id"], "bad_json", "Invalid timezone JSON")
+        return
+    connection.send_result(msg["id"], data if isinstance(data, dict) else {})
+
+
 @websocket_api.websocket_command({vol.Required("type"): WS_HEALTH})
 @websocket_api.async_response
 async def ws_health(hass: HomeAssistant, connection, msg) -> None:
@@ -235,6 +286,17 @@ async def ws_sync(hass: HomeAssistant, connection, msg) -> None:
     await handle_sync(hass, connection, msg)
 
 
+@websocket_api.websocket_command(
+    {
+        vol.Required("type"): WS_SET_TIMEZONE,
+        vol.Required("timezone"): cv.string,
+    }
+)
+@websocket_api.async_response
+async def ws_set_timezone(hass: HomeAssistant, connection, msg) -> None:
+    await handle_set_timezone(hass, connection, msg)
+
+
 @callback
 def _register_ws(hass: HomeAssistant) -> None:
     store = hass.data.setdefault(DOMAIN, {})
@@ -243,4 +305,5 @@ def _register_ws(hass: HomeAssistant) -> None:
     websocket_api.async_register_command(hass, ws_health)
     websocket_api.async_register_command(hass, ws_status)
     websocket_api.async_register_command(hass, ws_sync)
+    websocket_api.async_register_command(hass, ws_set_timezone)
     store["ws_registered"] = True

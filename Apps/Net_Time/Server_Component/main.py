@@ -2,10 +2,10 @@
 
 Design contracts:
   - Net Time is a Proxmox companion. It is NOT a Home Assistant process.
-  - chrony serves NTP/SNTP on UDP 123; this API manages status and Sync Now.
-  - NET_TIME_API_TOKEN guards /status and /sync. /health is open for probes.
-  - When public NTP is unreachable, operators push wall time via POST /sync
-    (ISO-8601 from the browser / Core Configurator).
+  - chrony serves NTP/SNTP on UDP 123; this API manages status, timezone, Sync Now.
+  - NET_TIME_API_TOKEN guards /status, /sync, /timezone. /health is open.
+  - Sync Now may set the Proxmox host clock via NET_TIME_HOST_CLOCK_URL when the
+    LXC cannot call settimeofday (normal on Proxmox).
 """
 from __future__ import annotations
 
@@ -18,7 +18,14 @@ from fastapi import Depends, FastAPI, HTTPException, Security, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 
 from chrony_ops import ChronyOps, SystemChronyOps
-from models import HealthResponse, StatusResponse, SyncRequest, SyncResponse
+from models import (
+    HealthResponse,
+    StatusResponse,
+    SyncRequest,
+    SyncResponse,
+    TimezoneRequest,
+    TimezoneResponse,
+)
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -34,7 +41,6 @@ _bearer = HTTPBearer(auto_error=False)
 
 
 def set_ops(ops: ChronyOps) -> None:
-    """Replace chrony/system ops (tests)."""
     global _ops
     _ops = ops
 
@@ -66,10 +72,7 @@ def _verify_token(
 def _parse_iso8601(value: str) -> datetime:
     text = (value or "").strip()
     if not text:
-        raise HTTPException(
-            status_code=422,
-            detail="iso8601 is required.",
-        )
+        raise HTTPException(status_code=422, detail="iso8601 is required.")
     if text.endswith("Z"):
         text = text[:-1] + "+00:00"
     try:
@@ -90,7 +93,7 @@ def health() -> HealthResponse:
 def status_endpoint(_: Annotated[str, Depends(_verify_token)]) -> StatusResponse:
     try:
         return _ops.read_status()
-    except Exception as err:  # noqa: BLE001 — surface as 502 for operators
+    except Exception as err:  # noqa: BLE001
         _LOGGER.exception("status failed")
         raise HTTPException(
             status_code=status.HTTP_502_BAD_GATEWAY,
@@ -108,7 +111,7 @@ def sync_endpoint(
         when = when.replace(tzinfo=timezone.utc)
     when_utc = when.astimezone(timezone.utc)
     try:
-        _ops.apply_time(when_utc)
+        via = _ops.apply_time(when_utc)
     except Exception as err:  # noqa: BLE001
         _LOGGER.exception("sync failed")
         raise HTTPException(
@@ -116,4 +119,29 @@ def sync_endpoint(
             detail=f"Failed to apply time: {err}",
         ) from err
     applied = when_utc.isoformat().replace("+00:00", "Z")
-    return SyncResponse(status=_ops.read_status(), applied_iso=applied)
+    return SyncResponse(
+        status=_ops.read_status(),
+        applied_iso=applied,
+        via=via,
+    )
+
+
+@app.post("/timezone", response_model=TimezoneResponse, tags=["ops"])
+def timezone_endpoint(
+    body: TimezoneRequest,
+    _: Annotated[str, Depends(_verify_token)],
+) -> TimezoneResponse:
+    try:
+        _ops.set_timezone(body.timezone)
+    except ValueError as err:
+        raise HTTPException(status_code=422, detail=str(err)) from err
+    except Exception as err:  # noqa: BLE001
+        _LOGGER.exception("timezone failed")
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail=f"Failed to set timezone: {err}",
+        ) from err
+    return TimezoneResponse(
+        timezone=_ops.get_timezone(),
+        status=_ops.read_status(),
+    )
