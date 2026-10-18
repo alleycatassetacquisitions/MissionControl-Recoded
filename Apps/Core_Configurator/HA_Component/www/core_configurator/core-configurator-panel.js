@@ -51,6 +51,9 @@
       this._netTimePublic = null;
       this._netTimeDetail = "";
       this._netTimeTimezone = "";
+      this._netTimeOfflineOpen = false;
+      this._netTimeOfflineDate = "";
+      this._netTimeOfflineTime = "";
     }
     static get properties() {
       return {
@@ -61,7 +64,10 @@
         _netTimeOnline: { state: true },
         _netTimePublic: { state: true },
         _netTimeDetail: { state: true },
-        _netTimeTimezone: { state: true }
+        _netTimeTimezone: { state: true },
+        _netTimeOfflineOpen: { state: true },
+        _netTimeOfflineDate: { state: true },
+        _netTimeOfflineTime: { state: true }
       };
     }
     static get styles() {
@@ -175,6 +181,26 @@
         .net-time-status.err strong {
           color: #ff8a8a;
         }
+        .net-time-offline {
+          margin-top: 8px;
+          padding: 10px;
+          border: 1px solid
+            color-mix(in srgb, var(--primary-color, #00e5ff) 22%, transparent);
+          border-radius: 6px;
+          display: flex;
+          flex-direction: column;
+          gap: 8px;
+        }
+        .net-time-offline .offline-fields {
+          display: grid;
+          grid-template-columns: 1fr 1fr;
+          gap: 8px;
+        }
+        @media (max-width: 420px) {
+          .net-time-offline .offline-fields {
+            grid-template-columns: 1fr;
+          }
+        }
       `
       ];
     }
@@ -244,10 +270,84 @@
         this._feedback(`Save failed: ${e.message || err}`, "err");
       }
     }
-    async _netTimeConfirm() {
+    _offlineSyncHint() {
+      return "Please set via Offline Sync";
+    }
+    _seedOfflineDateTime(timeZone) {
+      const tz = (timeZone || this._netTimeTimezone || "").trim() || void 0;
+      const now = /* @__PURE__ */ new Date();
+      const opts = {
+        timeZone: tz,
+        year: "numeric",
+        month: "2-digit",
+        day: "2-digit",
+        hour: "2-digit",
+        minute: "2-digit",
+        hourCycle: "h23"
+      };
+      try {
+        const parts = new Intl.DateTimeFormat("en-CA", opts).formatToParts(now);
+        const get = (t) => parts.find((p) => p.type === t)?.value || "";
+        this._netTimeOfflineDate = `${get("year")}-${get("month")}-${get("day")}`;
+        this._netTimeOfflineTime = `${get("hour")}:${get("minute")}`;
+      } catch {
+        this._netTimeOfflineDate = now.toISOString().slice(0, 10);
+        this._netTimeOfflineTime = now.toISOString().slice(11, 16);
+      }
+    }
+    _toggleOfflineSync() {
+      this._netTimeOfflineOpen = !this._netTimeOfflineOpen;
+      if (this._netTimeOfflineOpen && !this._netTimeOfflineDate) {
+        this._seedOfflineDateTime();
+      }
+    }
+    /**
+     * Convert wall date+time in an IANA zone to UTC ISO-8601.
+     * Iteratively corrects for DST / offset using Intl.
+     */
+    _wallTimeToUtcIso(date, time, timeZone) {
+      const dateBits = date.split("-").map((x) => Number(x));
+      const timeBits = (time.length === 5 ? `${time}:00` : time).split(":").map((x) => Number(x));
+      const y = dateBits[0];
+      const mo = dateBits[1];
+      const d = dateBits[2];
+      const hh = timeBits[0] || 0;
+      const mm = timeBits[1] || 0;
+      const ss = timeBits[2] || 0;
+      if (!y || !mo || !d) {
+        throw new Error("Invalid date");
+      }
+      const wantUtc = Date.UTC(y, mo - 1, d, hh, mm, ss);
+      let guess = wantUtc;
+      const tz = timeZone.trim() || "UTC";
+      for (let i = 0; i < 4; i++) {
+        const parts = new Intl.DateTimeFormat("en-US", {
+          timeZone: tz,
+          year: "numeric",
+          month: "2-digit",
+          day: "2-digit",
+          hour: "2-digit",
+          minute: "2-digit",
+          second: "2-digit",
+          hourCycle: "h23"
+        }).formatToParts(new Date(guess));
+        const get = (t) => Number(parts.find((p) => p.type === t)?.value || "0");
+        const asUtc = Date.UTC(
+          get("year"),
+          get("month") - 1,
+          get("day"),
+          get("hour"),
+          get("minute"),
+          get("second")
+        );
+        guess += wantUtc - asUtc;
+      }
+      return new Date(guess).toISOString();
+    }
+    async _netTimeAttemptOnlineSync() {
       if (!this.hass || this._netTimeBusy) return;
       this._netTimeBusy = true;
-      this._netTimeDetail = "Checking\u2026";
+      this._netTimeDetail = "Attempting online sync\u2026";
       try {
         await this.hass.connection.sendMessagePromise({
           type: "net_time/health"
@@ -258,29 +358,56 @@
         });
         this._netTimePublic = status.public_ntp || "unavailable";
         if (status.timezone) this._netTimeTimezone = status.timezone;
-        const publicLabel = this._netTimePublic === "reachable" ? "able to connect to public NTP" : "no public NTP available";
         const whenLabel = this._formatNetTimeClock(
           status.iso,
           status.timezone || this._netTimeTimezone
         );
-        this._netTimeDetail = `Online with MC \xB7 ${publicLabel}${status.stratum != null ? ` \xB7 stratum ${status.stratum}` : ""}${whenLabel ? ` \xB7 ${whenLabel}` : ""}`;
-        this._feedback("Net Time reachable", "ok");
+        if (this._netTimePublic === "reachable") {
+          this._netTimeDetail = `Online sync OK \xB7 public NTP reachable${status.stratum != null ? ` \xB7 stratum ${status.stratum}` : ""}${whenLabel ? ` \xB7 ${whenLabel}` : ""}`;
+          this._feedback("Online sync OK", "ok");
+        } else {
+          this._netTimeDetail = this._offlineSyncHint();
+          this._netTimeOfflineOpen = true;
+          this._seedOfflineDateTime(status.timezone || this._netTimeTimezone);
+          this._feedback(this._offlineSyncHint(), "err");
+        }
       } catch (err) {
         this._netTimeOnline = false;
         this._netTimePublic = null;
+        this._netTimeDetail = this._offlineSyncHint();
+        this._netTimeOfflineOpen = true;
+        this._seedOfflineDateTime();
         const e = err;
-        this._netTimeDetail = e.message || String(err);
-        this._feedback(`Net Time offline: ${e.message || err}`, "err");
+        this._feedback(
+          `${this._offlineSyncHint()}${e.message ? ` (${e.message})` : ""}`,
+          "err"
+        );
       } finally {
         this._netTimeBusy = false;
       }
     }
-    async _netTimeSyncNow() {
+    async _netTimeApplyOfflineSync(card) {
       if (!this.hass || this._netTimeBusy) return;
+      const dateEl = card.querySelector(
+        "#net-time-offline-date"
+      );
+      const timeEl = card.querySelector(
+        "#net-time-offline-time"
+      );
+      const tzEl = card.querySelector(
+        "#net-time-timezone"
+      );
+      const date = (dateEl?.value || this._netTimeOfflineDate || "").trim();
+      const time = (timeEl?.value || this._netTimeOfflineTime || "").trim();
+      const timeZone = (tzEl?.value || this._netTimeTimezone || "UTC").trim();
+      if (!date || !time) {
+        this._feedback("Choose a date and time for Offline Sync", "err");
+        return;
+      }
       this._netTimeBusy = true;
-      this._netTimeDetail = "Syncing from this PC\u2026";
+      this._netTimeDetail = "Applying Offline Sync\u2026";
       try {
-        const iso8601 = (/* @__PURE__ */ new Date()).toISOString();
+        const iso8601 = this._wallTimeToUtcIso(date, time, timeZone);
         const result = await this.hass.connection.sendMessagePromise({
           type: "net_time/sync",
           iso8601
@@ -288,13 +415,18 @@
         this._netTimeOnline = true;
         this._netTimePublic = result.status?.public_ntp || this._netTimePublic;
         if (result.status?.timezone) this._netTimeTimezone = result.status.timezone;
-        const via = result.via === "host" ? "via Proxmox host" : "local";
-        this._netTimeDetail = `Synced to ${result.applied_iso || iso8601} (${via})`;
-        this._feedback("Net Time synced from this PC", "ok");
+        this._netTimeOfflineDate = date;
+        this._netTimeOfflineTime = time;
+        const whenLabel = this._formatNetTimeClock(
+          result.applied_iso || iso8601,
+          this._netTimeTimezone || timeZone
+        );
+        this._netTimeDetail = `Offline Sync applied \xB7 ${whenLabel || iso8601}`;
+        this._feedback("Offline Sync applied", "ok");
       } catch (err) {
         const e = err;
         this._netTimeDetail = e.message || String(err);
-        this._feedback(`Sync failed: ${e.message || err}`, "err");
+        this._feedback(`Offline Sync failed: ${e.message || err}`, "err");
       } finally {
         this._netTimeBusy = false;
       }
@@ -383,9 +515,9 @@
             type="button"
             class="ghost"
             ?disabled=${this._netTimeBusy}
-            @click=${() => void this._netTimeConfirm()}
+            @click=${() => void this._netTimeAttemptOnlineSync()}
           >
-            Confirm online
+            Attempt Online Sync
           </button>
           <button
             type="button"
@@ -404,13 +536,61 @@
             type="button"
             class="save"
             ?disabled=${this._netTimeBusy}
-            @click=${() => void this._netTimeSyncNow()}
+            @click=${() => this._toggleOfflineSync()}
           >
-            Sync Now
+            Offline Sync
           </button>
         </div>
+        ${this._netTimeOfflineOpen ? html`
+              <div class="net-time-offline">
+                <p class="hint">
+                  Set venue date and time in the timezone above, then apply.
+                  Use this when public NTP is unavailable.
+                </p>
+                <div class="offline-fields">
+                  <div>
+                    <label for="net-time-offline-date">Date</label>
+                    <input
+                      id="net-time-offline-date"
+                      type="date"
+                      .value=${this._netTimeOfflineDate}
+                      @input=${(e) => {
+        this._netTimeOfflineDate = e.target.value;
+      }}
+                    />
+                  </div>
+                  <div>
+                    <label for="net-time-offline-time">Time</label>
+                    <input
+                      id="net-time-offline-time"
+                      type="time"
+                      step="1"
+                      .value=${this._netTimeOfflineTime}
+                      @input=${(e) => {
+        this._netTimeOfflineTime = e.target.value;
+      }}
+                    />
+                  </div>
+                </div>
+                <div class="ops-row">
+                  <button
+                    type="button"
+                    class="save"
+                    ?disabled=${this._netTimeBusy}
+                    @click=${(e) => {
+        const card = e.target.closest(
+          ".card"
+        );
+        if (card) void this._netTimeApplyOfflineSync(card);
+      }}
+                  >
+                    Apply Offline Sync
+                  </button>
+                </div>
+              </div>
+            ` : window.McPanel.nothing}
         <p class="net-time-status ${cls}">
-          ${this._netTimeDetail ? html`<strong>${this._netTimeDetail}</strong>` : html`Save URL + token, then Confirm online. Sync Now sets venue time from this PC (uses Proxmox host when the LXC cannot).`}
+          ${this._netTimeDetail ? html`<strong>${this._netTimeDetail}</strong>` : html`Save URL + token, then Attempt Online Sync. If that fails, use Offline Sync to set date and time.`}
         </p>
       </div>
     `;
