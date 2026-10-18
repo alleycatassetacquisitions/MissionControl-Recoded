@@ -7,12 +7,20 @@
       this._unsub = null;
       this._services = [];
       this._loaded = false;
+      this._netTimeBusy = false;
+      this._netTimeOnline = null;
+      this._netTimePublic = null;
+      this._netTimeDetail = "";
     }
     static get properties() {
       return {
         ...super.properties,
         _services: { state: true },
-        _loaded: { state: true }
+        _loaded: { state: true },
+        _netTimeBusy: { state: true },
+        _netTimeOnline: { state: true },
+        _netTimePublic: { state: true },
+        _netTimeDetail: { state: true }
       };
     }
     static get styles() {
@@ -93,6 +101,39 @@
           letter-spacing: 0.05em;
           text-transform: uppercase;
         }
+        .net-time-ops {
+          margin-top: 12px;
+          padding-top: 12px;
+          border-top: 1px solid
+            color-mix(in srgb, var(--primary-color, #00e5ff) 18%, transparent);
+          display: flex;
+          flex-direction: column;
+          gap: 8px;
+        }
+        .net-time-ops .ops-row {
+          display: flex;
+          flex-wrap: wrap;
+          gap: 8px;
+          align-items: center;
+        }
+        .net-time-status {
+          font-size: 12px;
+          color: var(--secondary-text-color, #9aa8c7);
+          line-height: 1.4;
+        }
+        .net-time-status strong {
+          color: var(--primary-text-color, #e8eefc);
+          font-weight: 600;
+        }
+        .net-time-status.ok strong {
+          color: #7dffa3;
+        }
+        .net-time-status.warn strong {
+          color: #ffd27d;
+        }
+        .net-time-status.err strong {
+          color: #ff8a8a;
+        }
       `
       ];
     }
@@ -161,6 +202,88 @@
         const e = err;
         this._feedback(`Save failed: ${e.message || err}`, "err");
       }
+    }
+    async _netTimeConfirm() {
+      if (!this.hass || this._netTimeBusy) return;
+      this._netTimeBusy = true;
+      this._netTimeDetail = "Checking\u2026";
+      try {
+        await this.hass.connection.sendMessagePromise({
+          type: "net_time/health"
+        });
+        this._netTimeOnline = true;
+        const status = await this.hass.connection.sendMessagePromise({
+          type: "net_time/status"
+        });
+        this._netTimePublic = status.public_ntp || "unavailable";
+        const publicLabel = this._netTimePublic === "reachable" ? "able to connect to public NTP" : "no public NTP available";
+        this._netTimeDetail = `Online with MC \xB7 ${publicLabel}${status.stratum != null ? ` \xB7 stratum ${status.stratum}` : ""}${status.iso ? ` \xB7 ${status.iso}` : ""}`;
+        this._feedback("Net Time reachable", "ok");
+      } catch (err) {
+        this._netTimeOnline = false;
+        this._netTimePublic = null;
+        const e = err;
+        this._netTimeDetail = e.message || String(err);
+        this._feedback(`Net Time offline: ${e.message || err}`, "err");
+      } finally {
+        this._netTimeBusy = false;
+      }
+    }
+    async _netTimeSyncNow() {
+      if (!this.hass || this._netTimeBusy) return;
+      this._netTimeBusy = true;
+      this._netTimeDetail = "Syncing from this PC\u2026";
+      try {
+        const iso8601 = (/* @__PURE__ */ new Date()).toISOString();
+        const result = await this.hass.connection.sendMessagePromise({
+          type: "net_time/sync",
+          iso8601
+        });
+        this._netTimeOnline = true;
+        this._netTimePublic = result.status?.public_ntp || "unavailable";
+        this._netTimeDetail = `Synced to ${result.applied_iso || iso8601} \xB7 no public NTP available`;
+        this._feedback("Net Time synced from this PC", "ok");
+      } catch (err) {
+        const e = err;
+        this._netTimeDetail = e.message || String(err);
+        this._feedback(`Sync failed: ${e.message || err}`, "err");
+      } finally {
+        this._netTimeBusy = false;
+      }
+    }
+    _renderNetTimeOps() {
+      const html = window.McPanel.html;
+      const online = this._netTimeOnline;
+      const pub = this._netTimePublic;
+      const cls = online === false ? "err" : pub === "reachable" ? "ok" : online ? "warn" : "";
+      const showSync = online === true && pub === "unavailable";
+      return html`
+      <div class="net-time-ops">
+        <div class="ops-row">
+          <button
+            type="button"
+            class="ghost"
+            ?disabled=${this._netTimeBusy}
+            @click=${() => void this._netTimeConfirm()}
+          >
+            Confirm online
+          </button>
+          ${showSync ? html`
+                <button
+                  type="button"
+                  class="save"
+                  ?disabled=${this._netTimeBusy}
+                  @click=${() => void this._netTimeSyncNow()}
+                >
+                  Sync Now
+                </button>
+              ` : window.McPanel.nothing}
+        </div>
+        <p class="net-time-status ${cls}">
+          ${this._netTimeDetail ? html`<strong>${this._netTimeDetail}</strong>` : html`Save URL + token, then Confirm online.`}
+        </p>
+      </div>
+    `;
     }
     _renderExtras(svc) {
       const html = window.McPanel.html;
@@ -262,6 +385,7 @@
                       <span class="key">${svc.key}</span>
                       ${empty ? html`<span class="badge-empty">not set</span>` : window.McPanel.nothing}
                     </div>
+                    ${svc.key === "net_time" ? this._renderNetTimeOps() : window.McPanel.nothing}
                   </article>
                 `;
       })}
