@@ -14,6 +14,7 @@
 #   custom_components/broadcast_group_controller/ ← Apps/Broadcast_Group_Controller/HA_Component/custom_components/broadcast_group_controller/
 #   custom_components/gbn/                ← Apps/Galactic_Bounty_Network/HA_Component/custom_components/gbn/
 #   custom_components/bug_buster/         ← Apps/Bug_Buster/HA_Component/custom_components/bug_buster/
+#   custom_components/net_time/           ← Apps/Net_Time/HA_Component/custom_components/net_time/
 #   www/core_configurator/               ← Apps/Core_Configurator/HA_Component/www/core_configurator/
 #   www/shared_libraries/                ← Libraries/Shared_HA_Helpers/HA_Component/www/shared_libraries/
 #   www/registration/                    ← Apps/Registration/HA_Component/www/registration/
@@ -53,6 +54,9 @@ core_configurator:
   rtsp: !secret cc_rtsp
   rtsp_label: !secret cc_rtsp_label
   rtsp_enabled: !secret cc_rtsp_enabled
+  # Net Time (Proxmox companion — LAN NTP authority)
+  net_time: !secret cc_net_time
+  net_time_token: !secret cc_net_time_token
 
 # Loads AlleycatTV (proxy + WS). Must be `{}` — bare `alleycattv:` is YAML null.
 alleycattv: {}
@@ -69,6 +73,9 @@ bug_buster: {}
 
 # Loads Game Master (scoring / delayed-scores via MCS).
 game_master: {}
+
+# Loads Net Time (Confirm online / Sync Now via Core Configurator card).
+net_time: {}
 
 # Merge into the live /config/configuration.yaml as ONE frontend: block.
 # If frontend / extra_module_url already exists, prepend the shell URLs into that

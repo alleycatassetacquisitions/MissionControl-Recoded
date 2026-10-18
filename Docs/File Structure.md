@@ -107,6 +107,12 @@ MissionControl\
 │   │   │   ├── www\
 │   │   │   └── custom_components\
 │   │   └── Server_Component\
+│   ├── Net_Time\
+│   │   ├── README.md
+│   │   ├── Server_Component\          ← deploys to LXC /opt/net_time/
+│   │   └── HA_Component\
+│   │       ├── custom_components\net_time\
+│   │       └── tests\
 │   └── Broadcast_Group_Controller\
 │       └── HA_Component\
 │           ├── www\
@@ -136,7 +142,8 @@ MissionControl\
 │   ├── install-haos-proxmox.sh
 │   ├── install-mcs-proxmox.sh
 │   ├── install-alleycattv-proxmox.sh
-│   └── install-gbn-proxmox.sh
+│   ├── install-gbn-proxmox.sh
+│   └── install-net-time-proxmox.sh
 └── Docs\
 ```
 
@@ -152,6 +159,7 @@ After deploy, Mission Control lives under HAOS **`/config/`** (SSH as `root` to 
 | `Apps\Registration\HA_Component\www\registration\` | `/config/www/registration/` |
 | `Apps\Digital_Node_Nexus\HA_Component\custom_components\digital_node_nexus\` | `/config/custom_components/digital_node_nexus/` |
 | `Apps\Digital_Node_Nexus\HA_Component\www\digital_node_nexus\` | `/config/www/digital_node_nexus/` |
+| `Apps\Net_Time\HA_Component\custom_components\net_time\` | `/config/custom_components/net_time/` |
 | `Libraries\Shared_HA_Helpers\HA_Component\custom_components\shared_libraries\` | `/config/custom_components/shared_libraries/` |
 | `Libraries\Shared_HA_Helpers\HA_Component\www\shared_libraries\` | `/config/www/shared_libraries/` |
 | `HomeAssist\configuration.yaml` (merge sections) | `/config/configuration.yaml` |
@@ -237,7 +245,7 @@ Proxmox guest console (termproxy), MQTT spy, companion health, and Central devic
 
 ### Core Configurator
 
-Single source of truth for Alleycat service **URLs and API tokens** (MCS URL + Bearer, Central primary/secondary, AlleycatTV, GBN, Proxmox URL/node/token, Live RTSP). Other apps call `get_url` / `get_extra`. In code this is `core_configurator` — not Directory.
+Single source of truth for Alleycat service **URLs and API tokens** (MCS URL + Bearer, Central primary/secondary, AlleycatTV, GBN, Net Time URL + Bearer, Proxmox URL/node/token, Live RTSP). Other apps call `get_url` / `get_extra`. In code this is `core_configurator` — not Directory.
 
 **Path:** `Apps\Core_Configurator\`  
 **On HA:** `/config/custom_components/core_configurator/` + `/config/www/core_configurator/`
@@ -282,6 +290,16 @@ Proxmox companion FastAPI service. The only Central HTTP adapter. Players (JSON 
 **Path:** `Apps\Master_Control_Server\`  
 **On LXC:** `/opt/mcs/` (uvicorn via systemd `mcs`)  
 **App docs:** [`Apps/Master_Control_Server/docs/README.md`](../Apps/Master_Control_Server/docs/README.md)
+
+### Net Time
+
+LAN NTP authority (chrony) plus management API for Confirm online / Sync Now. Privileged Proxmox LXC. Core Configurator holds URL + token; the `net_time` HA integration proxies websocket commands used by the Core Configurator Net Time card.
+
+**Path:** `Apps\Net_Time\`  
+**On LXC:** `/opt/net_time/` (uvicorn via systemd `net-time`) + chrony  
+**On HA:** `/config/custom_components/net_time/`  
+**App README:** [`Apps/Net_Time/README.md`](../Apps/Net_Time/README.md)  
+**Deploy:** [`Docs/Net Time Config Steps.md`](Net%20Time%20Config%20Steps.md) · [`ProxmoxInstallFiles/install-net-time-proxmox.sh`](../ProxmoxInstallFiles/install-net-time-proxmox.sh)
 
 ### Meru
 
@@ -338,6 +356,7 @@ Standing law:
 - `Master Control Server Config Steps.md` — Proxmox LXC bootstrap for Master Control Server
 - `AlleycatTV Config Steps.md` — Proxmox content server + HA integration + Pi SD flash (Phase 6)
 - `GBN Config Steps.md` — Proxmox poster server + HA integration
+- `Net Time Config Steps.md` — Proxmox Net Time LXC + Core Configurator Confirm / Sync Now
 - `Bug Buster Config Steps.md` — Proxmox monitoring companion on HA
 - `Phase 10 Look At Decisions.md` — community/tools used vs rejected for Lit kit + Alleycat shell
 
@@ -351,6 +370,7 @@ One-shot scripts run on the **Proxmox node** shell (copy to `/root/` first). Con
 - `install-mcs-proxmox.sh` — Ubuntu 24.04 LXC for Master Control Server; prints URL + token for Core Configurator
 - `install-alleycattv-proxmox.sh` — AlleycatTV content LXC (no MQTT); prints the Core Configurator URL
 - `install-gbn-proxmox.sh` — Galactic Bounty Network poster-server LXC
+- `install-net-time-proxmox.sh` — Net Time LXC (chrony + API); prints URL + token for Core Configurator
 
 Companion services on Proxmox follow the same pattern going forward: `install-<app>-proxmox.sh` in this folder plus a matching `* Config Steps.md` in `Docs\`. The MQTT broker is an exception — use the official **Mosquitto** Home Assistant add-on (see Phase 5a in `Home Assistant Config Steps.md`), not a Proxmox Mosquitto LXC.
 

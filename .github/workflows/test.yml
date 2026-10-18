@@ -51,6 +51,27 @@ jobs:
             --cov=. \
             --cov-report=term-missing
 
+      - name: Install Net Time server test dependencies
+        run: pip install "Apps/Net_Time/Server_Component[test]"
+
+      - name: Run Net Time server tests
+        working-directory: Apps/Net_Time/Server_Component
+        run: |
+          pytest tests/ \
+            -v \
+            --tb=short \
+            --cov=. \
+            --cov-report=term-missing
+
+      - name: Run Net Time HA tests
+        working-directory: Apps/Net_Time/HA_Component
+        run: |
+          pytest tests/ \
+            -v \
+            --tb=short \
+            --cov=custom_components/net_time \
+            --cov-report=term-missing
+
       - name: Run Registration tests
         working-directory: Apps/Registration/HA_Component
         run: |

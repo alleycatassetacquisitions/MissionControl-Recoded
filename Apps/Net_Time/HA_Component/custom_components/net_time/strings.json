@@ -1,0 +1,13 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "Net Time",
+        "description": "Adds Confirm online / Sync Now for the Net Time LAN NTP companion. Set the Net Time URL and API token in Core Configurator first."
+      }
+    },
+    "abort": {
+      "single_instance_allowed": "Only one Net Time integration is allowed."
+    }
+  }
+}

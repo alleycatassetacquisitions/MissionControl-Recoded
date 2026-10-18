@@ -17,6 +17,7 @@ Write the product name in prose. In code, use the snake_case form in the table. 
 | Master Control Server | `master_control_server` | PPS, Player Proxy Service |
 | Registration | `registration` | — |
 | Bug Buster | `bug_buster` | ProjectBuggy, `bugbuster` |
+| Net Time | `net_time` | NTP Server (as product name) |
 | Broadcast Group | `broadcast_group` | Zone |
 | Broadcast Group Controller | `broadcast_group_controller` | Zone Controller, `zone_controller`, `alleycat_zone` |
 | Meru | `meru` | — |
@@ -78,6 +79,14 @@ The Mission Control app for creating and updating posters that players see on Al
 
 - **Communication:** HTTP
 - **Code:** `gbn`
+
+### Net Time
+
+The Proxmox companion that is the LAN NTP authority for venues (chrony on UDP 123). Online it syncs to a public NTP pool; offline it keeps serving with a local stratum. Core Configurator stores the management URL + token and exposes Confirm online / Sync Now (operator PC clock) via the `net_time` Home Assistant integration.
+
+- **Communication:** NTP/SNTP (UDP 123), HTTP management API
+- **Code:** `net_time`
+- **Deploy:** `Docs/Net Time Config Steps.md`
 
 ### MCS — Master Control Server
 

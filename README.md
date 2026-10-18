@@ -57,6 +57,7 @@ Panels talk to **Home Assistant** (services / websocket). They do not `fetch` LA
 | **Galactic Bounty Network** | [`Apps/Galactic_Bounty_Network/`](Apps/Galactic_Bounty_Network/) | Bounty posters, boards, and capture (`gbn` + Proxmox poster server). |
 | **Broadcast Group Controller** | [`Apps/Broadcast_Group_Controller/`](Apps/Broadcast_Group_Controller/) | Physical placement (HA Areas) and Broadcast Group membership for fabric devices. |
 | **Bug Buster** | [`Apps/Bug_Buster/`](Apps/Bug_Buster/) | Ops console: Proxmox guest console, MQTT spy, companion health, Central device logs via MCS. Does not own players, groups, or posters. |
+| **Net Time** | [`Apps/Net_Time/`](Apps/Net_Time/) | LAN NTP authority (chrony) + management API; Core Configurator Confirm online / Sync Now. |
 | **Meru** | [`Apps/Meru/`](Apps/Meru/) | Local LLM / story agent surface. |
 
 Code domains and forbidden aliases: [`Docs/Design Terms.md`](Docs/Design%20Terms.md).
@@ -86,6 +87,7 @@ One-shot scripts for the **Proxmox node** shell (Datacenter → host → **Shell
 | [`install-mcs-proxmox.sh`](ProxmoxInstallFiles/install-mcs-proxmox.sh) | Master Control Server Ubuntu LXC; prints URL + token for Core Configurator |
 | [`install-alleycattv-proxmox.sh`](ProxmoxInstallFiles/install-alleycattv-proxmox.sh) | AlleycatTV content LXC (no MQTT); prints Core Configurator URL |
 | [`install-gbn-proxmox.sh`](ProxmoxInstallFiles/install-gbn-proxmox.sh) | Galactic Bounty Network poster-server LXC |
+| [`install-net-time-proxmox.sh`](ProxmoxInstallFiles/install-net-time-proxmox.sh) | Net Time LXC (chrony + API); prints URL + token for Core Configurator |
 
 Do **not** install Mosquitto as a Proxmox LXC — use the official Mosquitto add-on on HAOS (see Phase 5a in Home Assistant Config Steps).
 
@@ -96,7 +98,7 @@ Do **not** install Mosquitto as a Proxmox LXC — use the official Mosquitto add
 ```text
 Operators  →  HA panels / services
                  ├─ MQTT  →  FDNs, AlleycatTV Pis   (fabric via Mosquitto add-on)
-                 └─ HTTP  →  MCS, AlleycatTV content, GBN, Proxmox APIs
+                 └─ HTTP  →  MCS, AlleycatTV content, GBN, Net Time, Proxmox APIs
 
 FDNs ↔ Central (HTTP)     MCS ↔ Central (HTTP)
 HA never talks to Central directly.
@@ -164,6 +166,7 @@ Same pattern for each companion — copy the script to Proxmox `/root/`, run it,
 | Master Control Server | [`install-mcs-proxmox.sh`](ProxmoxInstallFiles/install-mcs-proxmox.sh) | [`Docs/Master Control Server Config Steps.md`](Docs/Master%20Control%20Server%20Config%20Steps.md) |
 | AlleycatTV content | [`install-alleycattv-proxmox.sh`](ProxmoxInstallFiles/install-alleycattv-proxmox.sh) | [`Docs/AlleycatTV Config Steps.md`](Docs/AlleycatTV%20Config%20Steps.md) |
 | GBN posters | [`install-gbn-proxmox.sh`](ProxmoxInstallFiles/install-gbn-proxmox.sh) | [`Docs/GBN Config Steps.md`](Docs/GBN%20Config%20Steps.md) |
+| Net Time | [`install-net-time-proxmox.sh`](ProxmoxInstallFiles/install-net-time-proxmox.sh) | [`Docs/Net Time Config Steps.md`](Docs/Net%20Time%20Config%20Steps.md) |
 
 ### 4. Add the rest of the HA stack
 
@@ -196,6 +199,7 @@ App READMEs under `Apps/` and the matching `Docs/* Config Steps.md` cover each s
 | [`Docs/Master Control Server Config Steps.md`](Docs/Master%20Control%20Server%20Config%20Steps.md) | MCS LXC bootstrap |
 | [`Docs/AlleycatTV Config Steps.md`](Docs/AlleycatTV%20Config%20Steps.md) | Content server + HA integration + Pi SD |
 | [`Docs/GBN Config Steps.md`](Docs/GBN%20Config%20Steps.md) | Poster server + HA integration |
+| [`Docs/Net Time Config Steps.md`](Docs/Net%20Time%20Config%20Steps.md) | Net Time LXC + Core Configurator Confirm / Sync Now |
 | [`Docs/Bug Buster Config Steps.md`](Docs/Bug%20Buster%20Config%20Steps.md) | Proxmox monitoring companion on HA |
 | [`Docs/Look At Decisions.md`](Docs/Look%20At%20Decisions.md) | Tools used / skipped / deferred (Lit kit + Alleycat shell) |
 | [`Apps/Core_Configurator/README.md`](Apps/Core_Configurator/README.md) | First integration: URL/token catalog + panel |
