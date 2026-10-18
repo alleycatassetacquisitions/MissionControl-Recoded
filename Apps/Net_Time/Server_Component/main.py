@@ -2,9 +2,9 @@
 
 Design contracts:
   - Net Time is a Proxmox companion. It is NOT a Home Assistant process.
-  - chrony serves NTP/SNTP on UDP 123; this API manages status, timezone, Sync Now.
+  - chrony serves NTP/SNTP on UDP 123; this API manages status, timezone, Offline Sync.
   - NET_TIME_API_TOKEN guards /status, /sync, /timezone. /health is open.
-  - Sync Now may set the Proxmox host clock via NET_TIME_HOST_CLOCK_URL when the
+  - Offline Sync may set the Proxmox host clock via NET_TIME_HOST_CLOCK_URL when the
     LXC cannot call settimeofday (normal on Proxmox).
 """
 from __future__ import annotations

@@ -1,6 +1,6 @@
 # Net Time Config Steps
 
-Deploy **Net Time** as a Proxmox companion: a privileged Ubuntu LXC running **chrony** (NTP/SNTP on UDP **123**) plus a management API, and a small **host clock agent** on the Proxmox node so **Sync Now** works when the LXC cannot set the system clock.
+Deploy **Net Time** as a Proxmox companion: a privileged Ubuntu LXC running **chrony** (NTP/SNTP on UDP **123**) plus a management API, and a small **host clock agent** on the Proxmox node so **Offline Sync** works when the LXC cannot set the system clock.
 
 PDN and FDN client sync is owned by those firmware teams — point SNTP at the printed LXC IP.
 
@@ -11,16 +11,11 @@ On the **Net Time** card:
 | Control | Behavior |
 | --- | --- |
 | URL + API token → **Apply** | Stored in Core Configurator (`net_time` / `extra.token`) |
-| **Confirm online** | HA → `net_time/health` + `net_time/status`. Shows online/offline with Mission Control, public pool status, stratum, and **wall clock in the configured timezone** (not raw UTC `…Z`) |
 | **Timezone** dropdown | Common venue IANA zones (US/Canada first, then major world regions). **Set timezone** runs `timedatectl` inside the CT |
-| **Sync Now** | Always available. Pushes **this PC’s** time (browser ISO-8601) via `POST /sync`. Tries the LXC first; if `date -s` is denied (normal on Proxmox), falls back to the **host clock agent** on the Proxmox node |
+| **Attempt Online Sync** | HA → `net_time/health` + `net_time/status`. Succeeds when Mission Control can reach Net Time **and** public NTP is reachable. Shows stratum and **wall clock in the configured timezone**. If it fails (unreachable or no public NTP), status says **Please set via Offline Sync** and opens the Offline Sync section |
+| **Offline Sync** | Opens a date + time section. Operator sets venue wall time in the selected timezone → **Apply Offline Sync** (`POST /sync`). Tries the LXC first; if `date -s` is denied (normal on Proxmox), falls back to the **host clock agent** on the Proxmox node |
 
-Status phrases:
-
-- **able to connect to public NTP** — chrony has a usable public/pool source (or non-local tracking with stratum under 10)
-- **no public NTP available** — offline / orphan (`local stratum 10`) mode
-
-NTP itself is always UTC. The timezone setting affects operator display and the CT’s local clock presentation; SNTP clients still receive UTC.
+NTP itself is always UTC. The timezone setting affects operator display / Offline Sync interpretation; SNTP clients still receive UTC.
 
 ## Install (new Proxmox CT)
 
@@ -70,13 +65,13 @@ The CT env file `/etc/net-time.env` includes `NET_TIME_API_TOKEN` and `NET_TIME_
 | `ROOT_PASSWORD` | `alleycat` | LXC root password |
 | `SKIP_CONFIRM` | `0` | Set `1` to skip the 5-second cancel window |
 
-## Why Sync Now uses a host agent
+## Why Offline Sync may use a host agent
 
 Proxmox LXC guests **share the host system clock**. Inside the CT, `date -s` / `chronyc settime` usually fail with `Operation not permitted`.
 
 Do **not** add `lxc.cap.keep: sys_time` — it conflicts with Proxmox `lxc.cap.drop` and can prevent the CT from starting.
 
-Instead, Sync Now:
+Instead, **Apply Offline Sync**:
 
 1. Tries chronyc / `date` inside the LXC
 2. If that fails, `POST`s to the host agent at `NET_TIME_HOST_CLOCK_URL` with the same Bearer token
@@ -106,7 +101,7 @@ HOST_IP=<PROXMOX-IP> CTID=<CTID> bash /root/upgrade-net-time-host-clock.sh
 1. Deploy:
    - `Apps/Net_Time/HA_Component/custom_components/net_time/` → `/config/custom_components/net_time/`
    - `Apps/Core_Configurator/HA_Component/custom_components/core_configurator/` → `/config/custom_components/core_configurator/` (catalog key `net_time`)
-   - `Apps/Core_Configurator/HA_Component/www/core_configurator/` → `/config/www/core_configurator/` (dropdown, Confirm, Sync Now, local time display)
+   - `Apps/Core_Configurator/HA_Component/www/core_configurator/` → `/config/www/core_configurator/` (timezone dropdown, Attempt Online Sync, Offline Sync, local time display)
 2. Secrets (or set in the Core Configurator sidebar after first seed):
 
 ```yaml
@@ -124,9 +119,9 @@ Websocket types (panel → HA → LXC API): `net_time/health`, `net_time/status`
 ## Operator checklist
 
 1. Core Configurator → **Net Time** → paste URL + token → **Apply**
-2. **Confirm online** — expect public NTP reachable when the venue has internet; status shows local wall time for the selected zone
-3. Pick a timezone from the dropdown → **Set timezone**
-4. At an offline venue (or to force PC time) → **Sync Now** — success may say **via Proxmox host**
+2. Pick a timezone from the dropdown → **Set timezone**
+3. **Attempt Online Sync** — when the venue has internet, expect success and local wall time in the status line
+4. If that fails → status says **Please set via Offline Sync**; open **Offline Sync**, set date/time, **Apply Offline Sync**
 
 ## Smoke checks
 

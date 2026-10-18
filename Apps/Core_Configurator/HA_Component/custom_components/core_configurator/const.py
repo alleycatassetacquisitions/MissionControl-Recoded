@@ -119,7 +119,7 @@ SERVICE_CATALOG = (
     {
         "key": KEY_NET_TIME,
         "label": "Net Time",
-        "hint": "LAN NTP authority — Confirm online, public pool status, Sync Now from this PC",
+        "hint": "LAN NTP authority — Attempt Online Sync, timezone, Offline Sync (manual date/time)",
         "apps": ["Net Time", "FDN / PDN SNTP"],
         "placeholder": "http://192.168.1.203:8720",
         "extra_fields": (

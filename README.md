@@ -57,7 +57,7 @@ Panels talk to **Home Assistant** (services / websocket). They do not `fetch` LA
 | **Galactic Bounty Network** | [`Apps/Galactic_Bounty_Network/`](Apps/Galactic_Bounty_Network/) | Bounty posters, boards, and capture (`gbn` + Proxmox poster server). |
 | **Broadcast Group Controller** | [`Apps/Broadcast_Group_Controller/`](Apps/Broadcast_Group_Controller/) | Physical placement (HA Areas) and Broadcast Group membership for fabric devices. |
 | **Bug Buster** | [`Apps/Bug_Buster/`](Apps/Bug_Buster/) | Ops console: Proxmox guest console, MQTT spy, companion health, Central device logs via MCS. Does not own players, groups, or posters. |
-| **Net Time** | [`Apps/Net_Time/`](Apps/Net_Time/) | LAN NTP authority (chrony) + management API + host clock agent; Core Configurator Confirm online / timezone / Sync Now. |
+| **Net Time** | [`Apps/Net_Time/`](Apps/Net_Time/) | LAN NTP authority (chrony) + management API + host clock agent; Core Configurator Attempt Online Sync / timezone / Offline Sync. |
 | **Meru** | [`Apps/Meru/`](Apps/Meru/) | Local LLM / story agent surface. |
 
 Code domains and forbidden aliases: [`Docs/Design Terms.md`](Docs/Design%20Terms.md).
@@ -88,7 +88,7 @@ One-shot scripts for the **Proxmox node** shell (Datacenter → host → **Shell
 | [`install-alleycattv-proxmox.sh`](ProxmoxInstallFiles/install-alleycattv-proxmox.sh) | AlleycatTV content LXC (no MQTT); prints Core Configurator URL |
 | [`install-gbn-proxmox.sh`](ProxmoxInstallFiles/install-gbn-proxmox.sh) | Galactic Bounty Network poster-server LXC |
 | [`install-net-time-proxmox.sh`](ProxmoxInstallFiles/install-net-time-proxmox.sh) | Net Time LXC (chrony + API) + host clock agent; prints URL + token for Core Configurator |
-| [`upgrade-net-time-host-clock.sh`](ProxmoxInstallFiles/upgrade-net-time-host-clock.sh) | Retrofit Sync Now host agent onto an existing Net Time CT |
+| [`upgrade-net-time-host-clock.sh`](ProxmoxInstallFiles/upgrade-net-time-host-clock.sh) | Retrofit Offline Sync host agent onto an existing Net Time CT |
 
 Do **not** install Mosquitto as a Proxmox LXC — use the official Mosquitto add-on on HAOS (see Phase 5a in Home Assistant Config Steps).
 
@@ -200,7 +200,7 @@ App READMEs under `Apps/` and the matching `Docs/* Config Steps.md` cover each s
 | [`Docs/Master Control Server Config Steps.md`](Docs/Master%20Control%20Server%20Config%20Steps.md) | MCS LXC bootstrap |
 | [`Docs/AlleycatTV Config Steps.md`](Docs/AlleycatTV%20Config%20Steps.md) | Content server + HA integration + Pi SD |
 | [`Docs/GBN Config Steps.md`](Docs/GBN%20Config%20Steps.md) | Poster server + HA integration |
-| [`Docs/Net Time Config Steps.md`](Docs/Net%20Time%20Config%20Steps.md) | Net Time LXC + host clock agent + Core Configurator Confirm / timezone / Sync Now |
+| [`Docs/Net Time Config Steps.md`](Docs/Net%20Time%20Config%20Steps.md) | Net Time LXC + host clock agent + Core Configurator Attempt Online Sync / timezone / Offline Sync |
 | [`Docs/Bug Buster Config Steps.md`](Docs/Bug%20Buster%20Config%20Steps.md) | Proxmox monitoring companion on HA |
 | [`Docs/Look At Decisions.md`](Docs/Look%20At%20Decisions.md) | Tools used / skipped / deferred (Lit kit + Alleycat shell) |
 | [`Apps/Core_Configurator/README.md`](Apps/Core_Configurator/README.md) | First integration: URL/token catalog + panel |

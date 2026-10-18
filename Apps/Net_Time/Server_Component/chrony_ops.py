@@ -1,7 +1,7 @@
 """chrony, timezone, and system-clock helpers for Net Time.
 
 Real implementations shell out to ``chronyc`` / ``date`` / ``timedatectl``.
-When the LXC cannot set the clock (typical on Proxmox), Sync Now falls back
+When the LXC cannot set the clock (typical on Proxmox), Offline Sync falls back
 to the host clock agent (``NET_TIME_HOST_CLOCK_URL``).
 
 Tests inject fakes via ``main.set_ops(...)``.
