@@ -9,7 +9,6 @@ from __future__ import annotations
 
 import logging
 from typing import Any
-from urllib.parse import urlencode
 
 import httpx
 
@@ -19,16 +18,16 @@ _LOGGER = logging.getLogger(__name__)
 
 _TIMEOUT = httpx.Timeout(10.0)
 
-# Stable readiness signals for stubbed Central routes
+# Legacy readiness strings (kept for tests / docs that may still reference them)
 EVENTS_LIST_NOT_READY = "Event list not available; waiting on Central GET /events"
 EVENTS_ACTIVE_NOT_READY = (
-    "Active event lookup not available; waiting on Central GET /events/active"
+    "Active event lookup not available; waiting on Central GET /game-state"
 )
 PLAYER_UPDATE_NOT_READY = (
-    "Player update not available; waiting on Central PATCH/PUT /players/{id}"
+    "Player update not available; waiting on Central PATCH /players/{id}"
 )
 PLAYER_DELETE_NOT_READY = (
-    "Player delete not available; waiting on Central DELETE /players/{id}"
+    "Player delete not available; use soft-deactivate via PATCH active=false"
 )
 
 
@@ -64,6 +63,26 @@ def _event_url(base_or_full: str, event_id: str) -> str:
 
 def _event_active_url(base_or_full: str, event_id: str) -> str:
     return f"{_event_url(base_or_full, event_id)}/active"
+
+
+def _event_scoring_url(base_or_full: str, event_id: str) -> str:
+    return f"{_event_url(base_or_full, event_id)}/scoring"
+
+
+def _event_delayed_scores_url(base_or_full: str, event_id: str) -> str:
+    return f"{_event_url(base_or_full, event_id)}/delayed-scores"
+
+
+def _event_teams_url(base_or_full: str, event_id: str) -> str:
+    return f"{_event_url(base_or_full, event_id)}/teams"
+
+
+def _event_team_url(base_or_full: str, event_id: str, team_id: str) -> str:
+    return f"{_event_teams_url(base_or_full, event_id).rstrip('/')}/{team_id}"
+
+
+def _game_state_url(base_or_full: str) -> str:
+    return _service_base(base_or_full) + "/game-state"
 
 
 def _device_logs_url(base_or_full: str) -> str:
@@ -110,28 +129,18 @@ async def _request(
     url: str,
     *,
     json_body: dict[str, Any] | None = None,
-    form_body: dict[str, str] | None = None,
     params: dict[str, Any] | None = None,
 ) -> tuple[int, Any | None]:
     """Perform a request against Central. Returns (status, body or None).
 
     ``status`` is 0 when the transport fails entirely.
     """
-    headers: dict[str, str] = {}
-    content: bytes | None = None
-    json_payload = json_body
-    if form_body is not None:
-        content = urlencode(form_body).encode("utf-8")
-        headers["Content-Type"] = "application/x-www-form-urlencoded"
-        json_payload = None
     try:
         async with httpx.AsyncClient(timeout=_TIMEOUT) as client:
             resp = await client.request(
                 method.upper(),
                 url,
-                json=json_payload,
-                content=content,
-                headers=headers or None,
+                json=json_body,
                 params=params,
             )
             return resp.status_code, _parse_body(resp)
@@ -229,7 +238,6 @@ async def fetch_all_players(
             primary_url, secondary_url, page=page, per_page=per_page
         )
         if pagination is None and page == 1 and not batch:
-            # Transport failure or empty with no meta
             if page == 1:
                 return [], None
         last_pagination = pagination
@@ -283,17 +291,16 @@ async def fetch_normalized_players(
 async def create_player(
     primary_url: str,
     secondary_url: str,
-    form: dict[str, str],
+    body: dict[str, Any],
 ) -> tuple[int, Any | None]:
-    """POST a new player to Central as form-urlencoded. Tries primary then secondary."""
+    """POST a new player to Central as application/json."""
     last_status = 0
     last_body: Any | None = None
     for base in _iter_central_bases(primary_url, secondary_url):
         status, resp_body = await _request(
-            "POST", _players_url(base), form_body=form
+            "POST", _players_url(base), json_body=body
         )
         last_status, last_body = status, resp_body
-        # Retry only on transport failure / 5xx
         if status and status < 500:
             return status, resp_body
     return last_status, last_body
@@ -305,12 +312,12 @@ async def update_player(
     player_id: str,
     body: dict[str, Any],
 ) -> tuple[int, Any | None]:
-    """PUT player update to Central (unused while MCS returns 501)."""
+    """PATCH player update to Central."""
     last_status = 0
     last_body: Any | None = None
     for base in _iter_central_bases(primary_url, secondary_url):
-        status, resp_body = await _request_json(
-            "PUT", _player_url(base, player_id), json_body=body
+        status, resp_body = await _request(
+            "PATCH", _player_url(base, player_id), json_body=body
         )
         last_status, last_body = status, resp_body
         if status and status < 500:
@@ -318,20 +325,15 @@ async def update_player(
     return last_status, last_body
 
 
-async def delete_player(
+async def deactivate_player(
     primary_url: str,
     secondary_url: str,
     player_id: str,
 ) -> tuple[int, Any | None]:
-    """DELETE player on Central (unused while MCS returns 501)."""
-    last_status = 0
-    last_body: Any | None = None
-    for base in _iter_central_bases(primary_url, secondary_url):
-        status, resp_body = await _request("DELETE", _player_url(base, player_id))
-        last_status, last_body = status, resp_body
-        if status and status < 500:
-            return status, resp_body
-    return last_status, last_body
+    """Soft-deactivate a player via PATCH {active: false}."""
+    return await update_player(
+        primary_url, secondary_url, player_id, {"active": False}
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -398,10 +400,7 @@ async def list_events(
     primary_url: str,
     secondary_url: str,
 ) -> tuple[int, Any | None]:
-    """GET /events — not live on Central yet; callers should stub with 501.
-
-    Implemented so wiring is ready when Central notifies.
-    """
+    """GET /events → Central (JSON array)."""
     last_status = 0
     last_body: Any | None = None
     for base in _iter_central_bases(primary_url, secondary_url):
@@ -412,16 +411,126 @@ async def list_events(
     return last_status, last_body
 
 
+async def fetch_game_state(
+    primary_url: str,
+    secondary_url: str,
+) -> tuple[int, Any | None]:
+    """GET /game-state → Central."""
+    last_status = 0
+    last_body: Any | None = None
+    for base in _iter_central_bases(primary_url, secondary_url):
+        status, resp_body = await _request("GET", _game_state_url(base))
+        last_status, last_body = status, resp_body
+        if status and status < 500:
+            return status, resp_body
+    return last_status, last_body
+
+
 async def get_active_event(
     primary_url: str,
     secondary_url: str,
 ) -> tuple[int, Any | None]:
-    """GET /events/active — not live on Central yet."""
+    """Resolve active event via GET /game-state (returns game-state body)."""
+    return await fetch_game_state(primary_url, secondary_url)
+
+
+async def set_scoring(
+    primary_url: str,
+    secondary_url: str,
+    event_id: str,
+    enabled: bool,
+) -> tuple[int, Any | None]:
+    """PUT /events/{id}/scoring → Central."""
+    last_status = 0
+    last_body: Any | None = None
+    body = {"enabled": enabled}
+    for base in _iter_central_bases(primary_url, secondary_url):
+        status, resp_body = await _request(
+            "PUT", _event_scoring_url(base, event_id), json_body=body
+        )
+        last_status, last_body = status, resp_body
+        if status and status < 500:
+            return status, resp_body
+    return last_status, last_body
+
+
+async def set_delayed_scores(
+    primary_url: str,
+    secondary_url: str,
+    event_id: str,
+    enabled: bool,
+) -> tuple[int, Any | None]:
+    """PUT /events/{id}/delayed-scores → Central."""
+    last_status = 0
+    last_body: Any | None = None
+    body = {"enabled": enabled}
+    for base in _iter_central_bases(primary_url, secondary_url):
+        status, resp_body = await _request(
+            "PUT", _event_delayed_scores_url(base, event_id), json_body=body
+        )
+        last_status, last_body = status, resp_body
+        if status and status < 500:
+            return status, resp_body
+    return last_status, last_body
+
+
+# ---------------------------------------------------------------------------
+# Teams
+# ---------------------------------------------------------------------------
+
+
+async def list_teams(
+    primary_url: str,
+    secondary_url: str,
+    event_id: str,
+) -> tuple[int, Any | None]:
+    """GET /events/{id}/teams → Central (JSON array)."""
     last_status = 0
     last_body: Any | None = None
     for base in _iter_central_bases(primary_url, secondary_url):
         status, resp_body = await _request(
-            "GET", _events_url(base) + "/active"
+            "GET", _event_teams_url(base, event_id)
+        )
+        last_status, last_body = status, resp_body
+        if status and status < 500:
+            return status, resp_body
+    return last_status, last_body
+
+
+async def create_team(
+    primary_url: str,
+    secondary_url: str,
+    event_id: str,
+    body: dict[str, Any],
+) -> tuple[int, Any | None]:
+    """POST /events/{id}/teams → Central."""
+    last_status = 0
+    last_body: Any | None = None
+    for base in _iter_central_bases(primary_url, secondary_url):
+        status, resp_body = await _request(
+            "POST", _event_teams_url(base, event_id), json_body=body
+        )
+        last_status, last_body = status, resp_body
+        if status and status < 500:
+            return status, resp_body
+    return last_status, last_body
+
+
+async def update_team(
+    primary_url: str,
+    secondary_url: str,
+    event_id: str,
+    team_id: str,
+    body: dict[str, Any],
+) -> tuple[int, Any | None]:
+    """PATCH /events/{event_id}/teams/{id} → Central."""
+    last_status = 0
+    last_body: Any | None = None
+    for base in _iter_central_bases(primary_url, secondary_url):
+        status, resp_body = await _request(
+            "PATCH",
+            _event_team_url(base, event_id, team_id),
+            json_body=body,
         )
         last_status, last_body = status, resp_body
         if status and status < 500:

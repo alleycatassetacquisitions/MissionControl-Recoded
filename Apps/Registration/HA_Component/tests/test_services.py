@@ -169,7 +169,14 @@ async def test_register_player_surfaces_409(hass: HomeAssistant, loaded_entry):
 
 
 @pytest.mark.asyncio
-async def test_update_player_surfaces_501(hass: HomeAssistant, loaded_entry):
+async def test_update_player_calls_mcs(hass: HomeAssistant, loaded_entry):
+    updated = {
+        "id": "p1",
+        "name": "Alice",
+        "pdn_code": "1234",
+        "email": "a@example.com",
+        "active": True,
+    }
     with (
         patch(
             "custom_components.registration._mcs_token",
@@ -177,22 +184,25 @@ async def test_update_player_surfaces_501(hass: HomeAssistant, loaded_entry):
         ),
         patch(
             "custom_components.registration.async_request",
-            new=AsyncMock(
-                return_value=_mock_response(
-                    None,
-                    501,
-                    text='{"detail":"Player update not available; waiting on Central PATCH/PUT /players/{id}"}',
-                )
-            ),
+            new=AsyncMock(return_value=_mock_response(updated, 200)),
+        ) as mock_req,
+        patch(
+            "custom_components.registration.coordinator.async_request",
+            new=AsyncMock(return_value=_mock_response(MOCK_ROSTER)),
+        ),
+        patch(
+            "custom_components.registration.coordinator._mcs_token",
+            return_value=TOKEN,
         ),
     ):
-        with pytest.raises(HomeAssistantError, match="waiting on Central"):
-            await hass.services.async_call(
-                DOMAIN,
-                "update_player",
-                {"player_id": "p1", "name": "Alice"},
-                blocking=True,
-            )
+        await hass.services.async_call(
+            DOMAIN,
+            "update_player",
+            {"player_id": "p1", "name": "Alice", "email": "a@example.com"},
+            blocking=True,
+        )
+    assert mock_req.await_args.args[2] == "PUT"
+    assert mock_req.await_args.args[3] == "/players/p1"
 
 
 @pytest.mark.asyncio

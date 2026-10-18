@@ -92,6 +92,13 @@ const panels = [
       "Apps/Bug_Buster/HA_Component/www/bug_buster/bug-buster-panel.js"
     ),
   },
+  {
+    in: "src/panels/game-master-panel.ts",
+    out: path.resolve(
+      repo,
+      "Apps/Game_Master/HA_Component/www/game_master/game-master-panel.js"
+    ),
+  },
 ];
 
 for (const p of panels) {

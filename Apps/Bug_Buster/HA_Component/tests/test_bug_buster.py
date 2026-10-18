@@ -71,6 +71,7 @@ class TestMqttPreview:
 @pytest.mark.asyncio
 async def test_health_probe_uses_async_request(hass: HomeAssistant):
     from custom_components.bug_buster import health as health_mod
+    from custom_components.bug_buster.const import HEALTH_KEYS
 
     mock_resp = MagicMock()
     mock_resp.status = 200
@@ -83,9 +84,9 @@ async def test_health_probe_uses_async_request(hass: HomeAssistant):
     ):
         rows = await health_mod.probe_companions(hass)
 
-    assert len(rows) == 3
+    assert len(rows) == len(HEALTH_KEYS)
     assert all(r["ok"] for r in rows)
-    assert req.await_count == 3
+    assert req.await_count == len(HEALTH_KEYS)
 
 
 @pytest.mark.asyncio

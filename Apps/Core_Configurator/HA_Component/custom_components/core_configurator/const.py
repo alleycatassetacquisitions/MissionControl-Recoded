@@ -11,6 +11,7 @@ KEY_ALLEYCATTV = "alleycattv"
 KEY_GBN = "gbn"
 KEY_PROXMOX = "proxmox"
 KEY_RTSP = "rtsp"
+KEY_NET_TIME = "net_time"
 
 # Extra field keys stored under a service entry's ``extra`` dict.
 EXTRA_TOKEN = "token"
@@ -22,6 +23,7 @@ EXTRA_ENABLED = "enabled"
 
 # YAML / config-flow fields that seed extras.
 YAML_MCS_TOKEN = "master_control_server_token"
+YAML_NET_TIME_TOKEN = "net_time_token"
 YAML_PROXMOX_TOKEN_ID = "proxmox_token_id"
 YAML_PROXMOX_TOKEN_SECRET = "proxmox_token_secret"
 YAML_RTSP_LABEL = "rtsp_label"
@@ -114,6 +116,21 @@ SERVICE_CATALOG = (
             },
         ),
     },
+    {
+        "key": KEY_NET_TIME,
+        "label": "Net Time",
+        "hint": "LAN NTP authority — Confirm online, public pool status, Sync Now from this PC",
+        "apps": ["Net Time", "FDN / PDN SNTP"],
+        "placeholder": "http://192.168.1.203:8720",
+        "extra_fields": (
+            {
+                "key": EXTRA_TOKEN,
+                "label": "API token",
+                "placeholder": "same value as NET_TIME_API_TOKEN on the LXC",
+                "sensitive": True,
+            },
+        ),
+    },
 )
 
 # Keys accepted from YAML import. URLs and tokens both seed here once.
@@ -131,4 +148,6 @@ YAML_KEYS = (
     KEY_RTSP,
     YAML_RTSP_LABEL,
     YAML_RTSP_ENABLED,
+    KEY_NET_TIME,
+    YAML_NET_TIME_TOKEN,
 )

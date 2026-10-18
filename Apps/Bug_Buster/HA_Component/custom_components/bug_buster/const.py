@@ -30,4 +30,5 @@ HEALTH_KEYS = (
     KEY_MCS,
     "alleycattv",
     "gbn",
+    "net_time",
 )

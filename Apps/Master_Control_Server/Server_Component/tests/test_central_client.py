@@ -1,4 +1,4 @@
-"""Tests for central_client — players, events, device-logs.
+"""Tests for central_client — players, events, game-state, device-logs.
 
 All HTTP calls are mocked — no live network access in CI.
 """
@@ -11,9 +11,13 @@ import pytest
 from central_client import (
     create_player,
     fetch_device_logs,
+    fetch_game_state,
     fetch_players,
     fetch_players_page,
+    list_teams,
     set_active_event,
+    set_scoring,
+    update_player,
 )
 
 
@@ -80,7 +84,9 @@ async def test_falls_back_to_secondary_when_primary_fails():
         call_count += 1
         if call_count == 1:
             raise Exception("primary down")
-        return _mock_response({"players": SAMPLE_PLAYERS, "pagination": {"page": 1, "per_page": 100}})
+        return _mock_response(
+            {"players": SAMPLE_PLAYERS, "pagination": {"page": 1, "per_page": 100}}
+        )
 
     mock_client = MagicMock()
     mock_client.get = side_effect
@@ -135,9 +141,20 @@ async def test_handles_wrapped_response_with_pagination():
 
 
 @pytest.mark.asyncio
-async def test_create_player_sends_form_urlencoded():
+async def test_create_player_sends_json():
+    created = {
+        "id": "new1",
+        "name": "Alex",
+        "pdn_code": "0001",
+        "email": "a@ex.com",
+        "created_at": "2026-01-01T00:00:00Z",
+        "event_id": "e1",
+        "team_id": None,
+        "team_name": None,
+        "active": True,
+    }
     patcher, mock_client = _patch_client(
-        request=_mock_response(None, status_code=200, text="")
+        request=_mock_response(created, status_code=200)
     )
     with patcher:
         status, body = await create_player(
@@ -146,11 +163,10 @@ async def test_create_player_sends_form_urlencoded():
             {"name": "Alex", "email": "a@ex.com"},
         )
     assert status == 200
-    assert body is None
+    assert body["pdn_code"] == "0001"
     kwargs = mock_client.request.await_args.kwargs
-    assert kwargs["headers"]["Content-Type"] == "application/x-www-form-urlencoded"
-    assert b"name=Alex" in kwargs["content"]
-    assert b"email=a%40ex.com" in kwargs["content"]
+    assert kwargs["json"] == {"name": "Alex", "email": "a@ex.com"}
+    assert kwargs.get("content") is None
 
 
 @pytest.mark.asyncio
@@ -167,6 +183,35 @@ async def test_create_player_409_text_body():
 
 
 @pytest.mark.asyncio
+async def test_update_player_sends_patch():
+    updated = {
+        "id": "p1",
+        "name": "Alice",
+        "pdn_code": "1234",
+        "email": None,
+        "created_at": "2026-01-01T00:00:00Z",
+        "event_id": "e1",
+        "team_id": None,
+        "team_name": None,
+        "active": True,
+    }
+    patcher, mock_client = _patch_client(
+        request=_mock_response(updated, status_code=200)
+    )
+    with patcher:
+        status, body = await update_player(
+            "http://primary.example.com",
+            "",
+            "p1",
+            {"name": "Alice", "email": None},
+        )
+    assert status == 200
+    assert body["id"] == "p1"
+    assert mock_client.request.await_args.args[0] == "PATCH"
+    assert mock_client.request.await_args.args[1].endswith("/players/p1")
+
+
+@pytest.mark.asyncio
 async def test_set_active_event():
     patcher, mock_client = _patch_client(
         request=_mock_response(None, status_code=204, text="")
@@ -178,6 +223,60 @@ async def test_set_active_event():
     assert status == 204
     assert mock_client.request.await_args.args[0] == "PUT"
     assert mock_client.request.await_args.args[1].endswith("/events/e1/active")
+
+
+@pytest.mark.asyncio
+async def test_fetch_game_state():
+    payload = {
+        "active_event": {
+            "id": "e1",
+            "name": "Night Run",
+            "venue_name": None,
+            "created_at": "2026-01-01T00:00:00Z",
+        },
+        "scoring": {"enabled": True, "started_at": "2026-01-01T01:00:00Z"},
+        "accepting_delayed_scores": True,
+        "server_time_utc": "2026-01-01T02:00:00Z",
+    }
+    patcher, mock_client = _patch_client(
+        request=_mock_response(payload, status_code=200)
+    )
+    with patcher:
+        status, body = await fetch_game_state("http://primary.example.com", "")
+    assert status == 200
+    assert body["active_event"]["id"] == "e1"
+    assert mock_client.request.await_args.args[1].endswith("/game-state")
+
+
+@pytest.mark.asyncio
+async def test_set_scoring():
+    patcher, mock_client = _patch_client(
+        request=_mock_response(
+            {"enabled": True, "started_at": "2026-01-01T01:00:00Z"},
+            status_code=200,
+        )
+    )
+    with patcher:
+        status, body = await set_scoring(
+            "http://primary.example.com", "", "e1", True
+        )
+    assert status == 200
+    assert body["enabled"] is True
+    assert mock_client.request.await_args.args[1].endswith("/events/e1/scoring")
+    assert mock_client.request.await_args.kwargs["json"] == {"enabled": True}
+
+
+@pytest.mark.asyncio
+async def test_list_teams():
+    teams = [{"id": "t1", "event_id": "e1", "name": "Hunter"}]
+    patcher, mock_client = _patch_client(
+        request=_mock_response(teams, status_code=200)
+    )
+    with patcher:
+        status, body = await list_teams("http://primary.example.com", "", "e1")
+    assert status == 200
+    assert body[0]["name"] == "Hunter"
+    assert mock_client.request.await_args.args[1].endswith("/events/e1/teams")
 
 
 @pytest.mark.asyncio

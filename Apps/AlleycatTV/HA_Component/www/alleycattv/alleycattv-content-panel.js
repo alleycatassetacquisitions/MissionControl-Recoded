@@ -724,9 +724,9 @@ Delete anyway?`;
         return;
       }
       el.innerHTML = this._devices.map((dev) => {
-        const piId = this._esc(dev.pi_id || dev.pi_id || "unknown");
-        const maxB = dev.cache_max_bytes || 0;
-        const usedB = (dev.disk_used || 0) - Math.max(dev.disk_free || 0, 0);
+        const piId = this._esc(dev.pi_id || "unknown");
+        const freeB = Number(dev.free_bytes ?? dev.disk_free ?? 0) || 0;
+        const maxB = Number(dev.cache_max_bytes ?? 0) || 0;
         const cacheB = (dev.files || []).reduce((s, f) => s + (f.size_bytes || 0), 0);
         const pct = maxB > 0 ? Math.min(100, Math.round(cacheB / maxB * 100)) : 0;
         const barCls = pct > 85 ? "dev-bar-warn" : "dev-bar";
@@ -744,7 +744,7 @@ Delete anyway?`;
         <div class="dev-card">
           <div class="dev-head">
             <span class="dev-id">${piId}</span>
-            <span class="muted">${this._fmtBytes(dev.disk_free || 0)} free</span>
+            <span class="muted">${this._fmtBytes(freeB)} free</span>
           </div>
           <div class="dev-bar-wrap">
             <div class="${barCls}" style="width:${pct}%"></div>

@@ -1,8 +1,9 @@
 """Pydantic models for Master Control Server.
 
-Player fields follow Central's current shape (pdn_code, mode, email) with
-``role`` as the HA-facing alias of ``mode``. NeoCorp/faction/neo_id remain
-optional empty fields for older HA consumers until Registration Phase 2.
+Player fields follow Central's PlayerResponse (pdn_code, email, team_id,
+team_name, active) with ``role`` / ``mode`` as HA-facing aliases derived from
+team_name. NeoCorp/faction/neo_id remain optional empty fields for older HA
+consumers until affiliation APIs land.
 """
 from __future__ import annotations
 
@@ -28,22 +29,30 @@ class Player(BaseModel):
     role: str = "unassigned"  # HA alias of mode
     created_at: str = ""
     email: str = ""
-    # Legacy optional fields — empty until Central restores or MC drops them
+    event_id: str | None = None
+    team_id: str | None = None
+    team_name: str = ""
+    active: bool = True
+    # Legacy optional fields — empty until Central affiliations API ships
     neocorp: str = ""
     faction: str = ""
     neo_id: str = ""
-    team_id: str | None = None
 
 
 class PlayerWrite(BaseModel):
-    """Create payload from Registration (HA → MCS).
+    """Create / update payload from Registration (HA → MCS).
 
-    Central accepts form ``name`` + optional ``email`` only. Legacy role /
-    neocorp / faction / neo_id fields are accepted but ignored on write.
+    Central create accepts JSON ``name`` + optional ``email``. Update also
+    accepts ``team_id`` and ``active``. Legacy role / neocorp / faction /
+    neo_id fields are accepted but ignored on write.
     """
 
-    name: str
-    email: str = ""
+    name: str = ""
+    email: str | None = None
+    team_id: str | None = None
+    active: bool | None = None
+    clear_email: bool = False
+    clear_team: bool = False
     role: str = ""
     neocorp: str = ""
     faction: str = ""
@@ -79,8 +88,7 @@ class EventUpdate(BaseModel):
 class ActiveEventMemory(BaseModel):
     """Optional MCS-only hints on PUT /events/{id}/active (not sent to Central).
 
-    Lets Registration keep the Active label as a name after set-active by id,
-    until Central GET /events/active ships.
+    Lets Registration keep the Active label as a name after set-active by id.
     """
 
     name: str | None = None
@@ -97,12 +105,42 @@ class Event(BaseModel):
 
 
 class ActiveEventState(BaseModel):
-    """GET /events/active — MCS memory until Central get-active ships."""
+    """GET /events/active — derived from Central GET /game-state."""
 
-    ready: bool = False
+    ready: bool = True
     active_event_id: str | None = None
     event: Event | None = None
-    source: str = "mcs_memory"
+    source: str = "central"
+
+
+class ScoringState(BaseModel):
+    enabled: bool
+    started_at: str | None = None
+
+
+class GameState(BaseModel):
+    """Central GET /game-state snapshot."""
+
+    active_event: Event | None = None
+    scoring: ScoringState | None = None
+    accepting_delayed_scores: bool | None = None
+    server_time_utc: str = ""
+
+
+class EnabledBody(BaseModel):
+    """PUT scoring / delayed-scores body."""
+
+    enabled: bool
+
+
+class Team(BaseModel):
+    id: str
+    event_id: str
+    name: str
+
+
+class TeamWrite(BaseModel):
+    name: str
 
 
 class DeviceLog(BaseModel):

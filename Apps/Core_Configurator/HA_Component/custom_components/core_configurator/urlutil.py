@@ -11,10 +11,12 @@ from .const import (
     EXTRA_TOKEN_ID,
     EXTRA_TOKEN_SECRET,
     KEY_MASTER_CONTROL_SERVER,
+    KEY_NET_TIME,
     KEY_PROXMOX,
     KEY_RTSP,
     SERVICE_CATALOG,
     YAML_MCS_TOKEN,
+    YAML_NET_TIME_TOKEN,
     YAML_PROXMOX_TOKEN_ID,
     YAML_PROXMOX_TOKEN_SECRET,
     YAML_RTSP_ENABLED,
@@ -83,6 +85,9 @@ def services_from_mapping(data: dict) -> dict:
     if data.get(YAML_MCS_TOKEN) is not None:
         token = str(data.get(YAML_MCS_TOKEN) or "").strip()
         services[KEY_MASTER_CONTROL_SERVER].setdefault("extra", {})[EXTRA_TOKEN] = token
+    if data.get(YAML_NET_TIME_TOKEN) is not None:
+        token = str(data.get(YAML_NET_TIME_TOKEN) or "").strip()
+        services[KEY_NET_TIME].setdefault("extra", {})[EXTRA_TOKEN] = token
     if data.get(YAML_PROXMOX_TOKEN_ID) is not None:
         services[KEY_PROXMOX].setdefault("extra", {})[EXTRA_TOKEN_ID] = str(
             data.get(YAML_PROXMOX_TOKEN_ID) or ""

@@ -44,6 +44,7 @@ from .const import (
     WS_GET_ACTIVE_EVENT,
     WS_GET_EVENTS,
     WS_GET_ROSTER,
+    WS_GET_TEAMS,
 )
 from .coordinator import McsDataUpdateCoordinator, _mcs_token
 
@@ -58,8 +59,16 @@ _PLAYER_WRITE_SCHEMA = vol.Schema(
     }
 )
 
-_PLAYER_UPDATE_SCHEMA = _PLAYER_WRITE_SCHEMA.extend(
-    {vol.Required("player_id"): cv.string}
+_PLAYER_UPDATE_SCHEMA = vol.Schema(
+    {
+        vol.Required("player_id"): cv.string,
+        vol.Optional("name"): cv.string,
+        vol.Optional("email"): vol.Any(cv.string, None),
+        vol.Optional("team_id"): vol.Any(cv.string, None),
+        vol.Optional("active"): cv.boolean,
+        vol.Optional("clear_email", default=False): cv.boolean,
+        vol.Optional("clear_team", default=False): cv.boolean,
+    }
 )
 
 _PLAYER_DELETE_SCHEMA = vol.Schema({vol.Required("player_id"): cv.string})
@@ -275,11 +284,35 @@ async def _push_central_config(hass: HomeAssistant) -> None:
         )
 
 
-def _player_payload(service_call: ServiceCall) -> dict[str, str]:
-    payload: dict[str, str] = {"name": service_call.data.get("name", "")}
-    email = (service_call.data.get("email") or "").strip()
-    if email:
-        payload["email"] = email
+def _player_payload(service_call: ServiceCall) -> dict[str, Any]:
+    """Build MCS player create/update JSON body."""
+    payload: dict[str, Any] = {}
+    if "name" in service_call.data and service_call.data.get("name") is not None:
+        name = str(service_call.data.get("name") or "").strip()
+        if name:
+            payload["name"] = name
+    if service_call.data.get("clear_email"):
+        payload["clear_email"] = True
+    elif "email" in service_call.data:
+        email = service_call.data.get("email")
+        if email is None:
+            payload["clear_email"] = True
+        else:
+            email_s = str(email).strip()
+            if email_s:
+                payload["email"] = email_s
+            else:
+                payload["clear_email"] = True
+    if service_call.data.get("clear_team"):
+        payload["clear_team"] = True
+    elif "team_id" in service_call.data:
+        team_id = service_call.data.get("team_id")
+        if team_id is None or str(team_id).strip() == "":
+            payload["clear_team"] = True
+        else:
+            payload["team_id"] = str(team_id).strip()
+    if "active" in service_call.data and service_call.data.get("active") is not None:
+        payload["active"] = bool(service_call.data["active"])
     return payload
 
 
@@ -373,27 +406,34 @@ def _register_services(hass: HomeAssistant, entry: ConfigEntry) -> None:
         await coordinator.async_refresh()
 
     async def _handle_register_player(service_call: ServiceCall) -> None:
+        body = _player_payload(service_call)
+        if not body.get("name"):
+            raise HomeAssistantError("name is required")
         await _mcs_request(
             hass,
             "POST",
             "/players",
-            json_body=_player_payload(service_call),
+            json_body=body,
             action="register_player",
         )
         await hass.data[DOMAIN][entry.entry_id].async_refresh()
 
     async def _handle_update_player(service_call: ServiceCall) -> None:
         player_id = service_call.data["player_id"]
+        body = _player_payload(service_call)
+        if not body:
+            raise HomeAssistantError("Supply name, email, team_id, or active")
         await _mcs_request(
             hass,
             "PUT",
             f"/players/{player_id}",
-            json_body=_player_payload(service_call),
+            json_body=body,
             action="update_player",
         )
         await hass.data[DOMAIN][entry.entry_id].async_refresh()
 
     async def _handle_delete_player(service_call: ServiceCall) -> None:
+        """Soft-deactivate player (MCS maps DELETE → PATCH active=false)."""
         player_id = service_call.data["player_id"]
         await _mcs_request(
             hass,
@@ -609,7 +649,7 @@ async def ws_get_events(hass: HomeAssistant, connection, msg) -> None:
 @websocket_api.websocket_command({vol.Required("type"): WS_GET_ACTIVE_EVENT})
 @websocket_api.async_response
 async def ws_get_active_event(hass: HomeAssistant, connection, msg) -> None:
-    """Return MCS last-known / future Central active event."""
+    """Return active event from MCS (Central game-state backed)."""
     empty = {
         "ready": False,
         "active_event_id": None,
@@ -643,6 +683,60 @@ async def ws_get_active_event(hass: HomeAssistant, connection, msg) -> None:
     connection.send_result(msg["id"], data)
 
 
+@websocket_api.websocket_command(
+    {
+        vol.Required("type"): WS_GET_TEAMS,
+        vol.Optional("event_id"): cv.string,
+    }
+)
+@websocket_api.async_response
+async def ws_get_teams(hass: HomeAssistant, connection, msg) -> None:
+    """List teams for an event (defaults to active event)."""
+    event_id = (msg.get("event_id") or "").strip()
+    if not event_id:
+        # Prefer MCS active, then HA-persisted
+        active_resp = None
+        token = _mcs_token(hass)
+        if async_request is not None and token:
+            active_resp = await async_request(
+                hass, KEY_MCS, "GET", "/events/active", token=token
+            )
+        if active_resp is not None and active_resp.status < 400:
+            try:
+                active_data = await active_resp.json()
+                if isinstance(active_data, dict):
+                    event_id = str(active_data.get("active_event_id") or "")
+            except Exception:  # noqa: BLE001
+                event_id = ""
+        if not event_id:
+            event_id = str(
+                hass.data.get(DOMAIN, {}).get(ACTIVE_EVENT_ID_KEY) or ""
+            )
+    if not event_id:
+        connection.send_result(msg["id"], {"teams": [], "event_id": None})
+        return
+    if async_request is None:
+        connection.send_result(msg["id"], {"teams": [], "event_id": event_id})
+        return
+    token = _mcs_token(hass)
+    if not token:
+        connection.send_result(msg["id"], {"teams": [], "event_id": event_id})
+        return
+    response = await async_request(
+        hass, KEY_MCS, "GET", f"/events/{event_id}/teams", token=token
+    )
+    if response is None or response.status >= 400:
+        connection.send_result(msg["id"], {"teams": [], "event_id": event_id})
+        return
+    try:
+        data = await response.json()
+    except Exception:  # noqa: BLE001
+        connection.send_result(msg["id"], {"teams": [], "event_id": event_id})
+        return
+    teams = data if isinstance(data, list) else []
+    connection.send_result(msg["id"], {"teams": teams, "event_id": event_id})
+
+
 @callback
 def _register_ws(hass: HomeAssistant) -> None:
     store = hass.data.setdefault(DOMAIN, {})
@@ -651,6 +745,7 @@ def _register_ws(hass: HomeAssistant) -> None:
     websocket_api.async_register_command(hass, ws_get_roster)
     websocket_api.async_register_command(hass, ws_get_events)
     websocket_api.async_register_command(hass, ws_get_active_event)
+    websocket_api.async_register_command(hass, ws_get_teams)
     store["ws_registered"] = True
 
 

@@ -22,6 +22,7 @@ UPDATE_INTERVAL = timedelta(seconds=60)
 WS_GET_ROSTER = f"{DOMAIN}/get_roster"
 WS_GET_EVENTS = f"{DOMAIN}/get_events"
 WS_GET_ACTIVE_EVENT = f"{DOMAIN}/get_active_event"
+WS_GET_TEAMS = f"{DOMAIN}/get_teams"
 
 # hass.data keys (under DOMAIN)
 EVENT_CACHE_KEY = "event_cache"
