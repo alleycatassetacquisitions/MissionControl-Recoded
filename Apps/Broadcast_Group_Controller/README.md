@@ -40,8 +40,28 @@ retain or still have a stale env bootstrap).
 | `set_area` | Write HA Area on a fabric device |
 | `set_broadcast_group` | Assign membership + MQTT notify |
 | `clear_broadcast_group` | Clear membership + MQTT notify |
+| `remove_device` | Delete an **offline** fabric device (HA device + retained MQTT status/membership) so the id can be reused or retired |
+
+Online devices cannot be removed — stop the Pi/FDN (or wait for LWT) first.
 
 ## Panel
 
 Sidebar **Broadcast Groups** — pick a device, set Area and Broadcast Group.
+Broadcast Group ID is a dropdown of AlleycatTV Content playlist buckets
+(plus any ids already assigned in BGC). Create buckets in **AlleycatTV Content**,
+then Refresh this panel.
+Use **Remove from fabric** on offline chips to drop unused names.
 AlleycatTV Player panel does not own placement/membership.
+
+## Websocket commands
+
+| Type | Returns |
+|---|---|
+| `broadcast_group_controller/list_devices` | Fabric devices + presence + membership |
+| `broadcast_group_controller/list_areas` | HA areas |
+| `broadcast_group_controller/list_broadcast_groups` | Content-server buckets + assigned ids (for the dropdown) |
+| `broadcast_group_controller/get_membership` | Raw BGC Store map |
+
+## Deploy note
+
+Copy **both** `custom_components/broadcast_group_controller` and `www/broadcast_group_controller`, then `ha core restart`. A www-only refresh leaves the new websocket unregistered (`Unknown command` / empty group dropdown). When `fabric.py` changed for forget/remove, also redeploy Shared HA Helpers.

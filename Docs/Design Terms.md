@@ -120,7 +120,7 @@ The Mission Control ops tools for Proxmox console (termproxy), companion `/healt
 
 ### Broadcast Group Controller
 
-Controls Broadcast Group membership for devices across apps, including AlleycatTV endpoints, FDNs, and lighting. It also writes the Home Assistant Area for physical placement.
+Controls Broadcast Group membership for devices across apps, including AlleycatTV endpoints, FDNs, and lighting. It also writes the Home Assistant Area for physical placement, and can remove inactive fabric devices so a device id can be reused or retired.
 
 - **Code:** `broadcast_group_controller`
 
@@ -136,13 +136,13 @@ Area is **not** a playlist, interrupt, or command-membership group.
 
 ### Broadcast Group
 
-Which endpoints, FDNs, and other devices share the same interrupt, playlist, or command. Broadcast Group Controller owns that list and writes it onto Home Assistant devices (`area_id` plus a `broadcast_group_id` attribute).
+Which endpoints, FDNs, and other devices share the same interrupt, playlist, or command. Playlist *buckets* (the operator-facing ids) live on the AlleycatTV content server; Broadcast Group Controller assigns devices to those ids (panel dropdown) and writes membership onto Home Assistant devices (`area_id` plus a `broadcast_group_id` attribute).
 
 Do not call this a Zone. Do not store membership as a Home Assistant Area.
 
 ### MQTT fabric
 
-Shared presence and command routing for FDNs and AlleycatTV endpoints, using Home Assistant’s `mqtt` integration against the official **Mosquitto** broker add-on. Status and LWT become presence entities. Commands target this device, `all`, or a Broadcast Group.
+Shared presence and command routing for FDNs and AlleycatTV endpoints, using Home Assistant’s `mqtt` integration against the official **Mosquitto** broker add-on. Status and LWT become presence entities. Commands target this device, `all`, or a Broadcast Group. Operators remove unused offline devices via Broadcast Group Controller so retained status does not keep a retired id alive.
 
 Digital Node Nexus and AlleycatTV own payloads (LED, haptic, playback). They do not each open a private MQTT client.
 

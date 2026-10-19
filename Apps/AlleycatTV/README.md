@@ -47,7 +47,7 @@ Home Assistant is the **only** MQTT command publisher.
 
 **Webpage items:** Content can add scoreboard URLs or **+ Poster cycle** (needs Core Configurator `gbn`). Poster cycle upserts a long-lived `webpage` item pointing at GBN `/poster-cycle`, which rotates every made poster every 30s inside Chromium on the Pi.
 
-**Membership:** Pis learn `broadcast_group_id` from `mc/tv/cmd/device/{id}/membership` (Phase 7). Env `ALLEYCATV_BROADCAST_GROUP_ID` is lab bootstrap only.
+**Membership:** Create playlist buckets in **AlleycatTV Content**; assign them in **Broadcast Groups** (dropdown). Pis learn `broadcast_group_id` from `mc/tv/cmd/device/{id}/membership` (Phase 7). Env `ALLEYCATV_BROADCAST_GROUP_ID` is lab bootstrap only. Retire or reuse a Pi ID via Broadcast Groups → **Remove from fabric** (offline only).
 
 ---
 

@@ -312,7 +312,7 @@ Talks to Meru, our local LLM agent. Meru is a story component in the overall eve
 
 ### Broadcast Group Controller
 
-Controls Broadcast Group membership and writes Home Assistant Areas for physical placement. In code this is `broadcast_group_controller`. Membership SoR is BGC Store (not HA Labels); devices learn group over MQTT.
+Controls Broadcast Group membership and writes Home Assistant Areas for physical placement. In code this is `broadcast_group_controller`. Membership SoR is BGC Store (not HA Labels); devices learn group over MQTT. Panel dropdown lists AlleycatTV Content playlist buckets via `list_broadcast_groups`. Offline fabric devices can be removed (`remove_device`) so an id can be reused or retired.
 
 **Path:** `Apps\Broadcast_Group_Controller\`
 **On HA:** `/config/custom_components/broadcast_group_controller/` + `/config/www/broadcast_group_controller/`
@@ -331,7 +331,7 @@ The same `HA_Component\` layout applies. Tests live in `HA_Component\tests\`.
 
 #### Shared HA Helpers
 
-Bearer-auth HTTP helper, MQTT fabric helpers (topic builder, subscribe/publish/presence wrappers, status/# → device + presence entity), and a panel CSS/JS kit loaded via `extra_module_url`. Other integrations import helpers directly after declaring `"shared_libraries"` as a manifest dependency.
+Bearer-auth HTTP helper, MQTT fabric helpers (topic builder, subscribe/publish/presence wrappers, status/# → device + presence entity, `async_forget_device` to clear retained status), and a panel CSS/JS kit loaded via `extra_module_url`. Other integrations import helpers directly after declaring `"shared_libraries"` as a manifest dependency.
 
 - **Code:** `shared_libraries`
 - **Path:** `Libraries\Shared_HA_Helpers\`

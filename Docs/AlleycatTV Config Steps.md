@@ -248,6 +248,8 @@ Empty playlist / “Zone playlist has no playable items” is normal until Part 
 | `MQTT connect failed rc=5` | Mosquitto rejected auth | Save `logins` in Mosquitto add-on, then put the same user/pass in `/etc/alleycattv.env` and `sudo systemctl restart alleycattv-player` |
 | Inject to Temp / “no boot mount” | Windows slow to remount `bootfs` | Wait for `bootfs` in Explorer; enter `D:\` at prompt; tool now polls up to 90s |
 | Panel “No devices yet” | No presence publish | Fix MQTT `rc=5` first; confirm `alleycattv-player` is `active` |
+| Stale Pi chip / want to reuse a Pi ID | Device still in fabric after flash rename or retirement | Broadcast Groups panel → select offline chip → **Remove from fabric** (must not be online) |
+| BGC dropdown empty / “Unknown command” | Panel www newer than BGC Python, or no Content buckets | Redeploy `custom_components/broadcast_group_controller` **and** `www/…`, then `ha core restart`; create buckets in AlleycatTV Content and Refresh |
 | Imager: destination not removable | USB reader looks like fixed disk | Tool passes `--enable-writing-system-drives`; own picker still blocks system disks |
 
 ### Notes
@@ -261,8 +263,8 @@ Empty playlist / “Zone playlist has no playable items” is normal until Part 
 ## E. Smoke test
 
 1. Confirm the Pi chip is online in the **AlleycatTV** panel (Part D). Playlist warnings alone are OK at this stage.
-2. Content: upload a short video via **AlleycatTV Content**; create a broadcast group playlist id (e.g. `lobby`).
-3. In the **Broadcast Groups** panel (Broadcast Group Controller): set the Pi’s Area, then assign Broadcast Group `lobby`. The Pi learns membership over MQTT (`mc/tv/cmd/device/{pi_id}/membership`) and resubscribes — do **not** flash membership on the SD card.
+2. Content: upload a short video via **AlleycatTV Content**; create a broadcast group playlist bucket (e.g. `lobby`) — this is what fills the BGC dropdown.
+3. In the **Broadcast Groups** panel (Broadcast Group Controller): set the Pi’s Area, then pick `lobby` from the **Broadcast Group ID** dropdown and **Set broadcast group**. The Pi learns membership over MQTT (`mc/tv/cmd/device/{pi_id}/membership`) and resubscribes — do **not** flash membership on the SD card. If the dropdown is empty after Content create, redeploy BGC Python + www and `ha core restart`.
 4. From HA / AlleycatTV Player panel: Play group `lobby` (or call `alleycattv.play_broadcast_group`).
 5. Pi plays; `media_player` / status JSON shows `broadcast_group_id: lobby`.
 6. Call `stop_broadcast_group` — playback stops; retained desired topic updates.
@@ -279,7 +281,7 @@ Lab-only override (optional): set `ALLEYCATV_BROADCAST_GROUP_ID` in `/etc/alleyc
 | HA `alleycattv` | MQTT commands, presence via fabric, Content Manager proxy |
 | Proxmox content server | Files + playlists only |
 | Pi client | mpv + subscribe `mc/tv/cmd/…` |
-| Broadcast Group Controller | Membership + area placement |
+| Broadcast Group Controller | Membership + area placement (dropdown of Content buckets); remove offline fabric devices |
 
 App overview: [`Apps/AlleycatTV/README.md`](../Apps/AlleycatTV/README.md)  
 HA phase slice: [`Home Assistant Config Steps.md` — Phase 6](Home%20Assistant%20Config%20Steps.md#phase-6--alleycattv-on-the-fabric)

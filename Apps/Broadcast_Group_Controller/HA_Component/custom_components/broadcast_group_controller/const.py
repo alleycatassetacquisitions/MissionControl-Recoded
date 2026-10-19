@@ -19,7 +19,9 @@ KIND_DOMAIN = {
 SERVICE_SET_AREA = "set_area"
 SERVICE_SET_BROADCAST_GROUP = "set_broadcast_group"
 SERVICE_CLEAR_BROADCAST_GROUP = "clear_broadcast_group"
+SERVICE_REMOVE_DEVICE = "remove_device"
 
 WS_LIST_DEVICES = f"{DOMAIN}/list_devices"
 WS_LIST_AREAS = f"{DOMAIN}/list_areas"
+WS_LIST_BROADCAST_GROUPS = f"{DOMAIN}/list_broadcast_groups"
 WS_GET_MEMBERSHIP = f"{DOMAIN}/get_membership"

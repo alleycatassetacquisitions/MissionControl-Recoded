@@ -311,19 +311,24 @@ Full procedure + troubleshooting: [`AlleycatTV Config Steps.md` § D](AlleycatTV
 
 ### Phase 7 — Broadcast Group Controller
 
-One placement service for the venue. Physical = HA Area. Membership = Broadcast Group (not Labels — see app README).
+One placement service for the venue. Physical = HA Area. Membership = Broadcast Group (not Labels — see app README). Also retires inactive fabric device ids so a name can be reused.
+
+Redeploy Shared HA Helpers first when `fabric.py` changed (required for `remove_device`):
 
 ```powershell
+scp -r "z:\CodingProjects\Alleycat\MissionControl\Libraries\Shared_HA_Helpers\HA_Component\custom_components\shared_libraries" root@<HA-IP>:/config/custom_components/
 scp -r "z:\CodingProjects\Alleycat\MissionControl\Apps\Broadcast_Group_Controller\HA_Component\custom_components\broadcast_group_controller" root@<HA-IP>:/config/custom_components/
 scp -r "z:\CodingProjects\Alleycat\MissionControl\Apps\Broadcast_Group_Controller\HA_Component\www\broadcast_group_controller" root@<HA-IP>:/config/www/
 ```
 
-Merge from [`HomeAssist/configuration.yaml`](../HomeAssist/configuration.yaml): `broadcast_group_controller: {}` and the Broadcast Groups `panel_custom` entry. Redeploy AlleycatTV panels/www if you have not already (full Content + Player panels). Restart HA.
+Merge from [`HomeAssist/configuration.yaml`](../HomeAssist/configuration.yaml): `broadcast_group_controller: {}` and the Broadcast Groups `panel_custom` entry. Redeploy AlleycatTV panels/www if you have not already (full Content + Player panels). **Always** copy both BGC `custom_components/` and `www/`, then `ha core restart` — a www-only refresh leaves `list_broadcast_groups` unregistered (`Unknown command` / empty dropdown).
 
 1. Settings → Devices & services → Add **Broadcast Group Controller**.
-2. Sidebar **Broadcast Groups**: select a TV Pi or FDN → Set area → Set broadcast group (e.g. `lobby`).
-3. Pi receives `mc/tv/cmd/device/{id}/membership` and resubscribes to `cmd/broadcast/lobby/#`.
-4. AlleycatTV Content owns playlist buckets for that id; Player panel owns play/stop/interrupt.
+2. In **AlleycatTV Content**, create the playlist bucket(s) you need (e.g. `lobby`) if they do not exist yet.
+3. Sidebar **Broadcast Groups**: select a TV Pi or FDN → Set area → pick a Broadcast Group from the dropdown → **Set broadcast group**.
+4. Pi receives `mc/tv/cmd/device/{id}/membership` and resubscribes to `cmd/broadcast/{id}/#`.
+5. AlleycatTV Content owns playlist buckets for that id; Player panel owns play/stop/interrupt.
+6. To drop an unused device id: power it off (or wait until presence is not online) → **Remove from fabric** (or service `broadcast_group_controller.remove_device`). That clears the HA device and retained MQTT status/membership so the name can be reused or retired.
 
 App README: [`Apps/Broadcast_Group_Controller/README.md`](../Apps/Broadcast_Group_Controller/README.md)
 
