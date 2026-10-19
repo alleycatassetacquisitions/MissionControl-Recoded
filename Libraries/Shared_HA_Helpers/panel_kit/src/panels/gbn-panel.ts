@@ -29,6 +29,10 @@ class GbnPanel extends window.McPanel.Base {
     this._comboOpen = false;
     this._templates = [];
     this._activeTemplateId = "";
+    this._activeEventId = null;
+    this._activeEventName = "";
+    this._eventMedia = [];
+    this._lookManuallyToggled = false;
   }
 
   set panel(p) {
@@ -55,8 +59,10 @@ class GbnPanel extends window.McPanel.Base {
 
   async _boot() {
     await this._loadDirectoryUrl();
+    await this._loadActiveEvent();
     await this._loadTemplates();
     await this._loadPlayers();
+    await this._loadEventMedia();
     await this._refreshCameras();
   }
 
@@ -305,6 +311,31 @@ class GbnPanel extends window.McPanel.Base {
     }
   }
 
+  _updateLookSummary() {
+    const root = this.shadowRoot;
+    const summary = root?.getElementById("look-summary");
+    if (!summary) return;
+    const chrome = this._readChromeFromForm();
+    const tmpl = this._templateById(chrome.template_id);
+    const name = tmpl?.name || chrome.template_id || "none";
+    const headline = chrome.headline || "—";
+    summary.textContent = `Using: ${name} · ${headline}`;
+  }
+
+  _syncLookDisclosure() {
+    const root = this.shadowRoot;
+    const details = root?.getElementById("look-details");
+    if (!details) return;
+    const role = this._getRole();
+    // Neither starts expanded; hunter/bounty stay collapsed unless operator opened it.
+    if (role === "neither") {
+      details.open = true;
+    } else if (!this._lookManuallyToggled) {
+      details.open = false;
+    }
+    this._updateLookSummary();
+  }
+
   _updateRoleUi() {
     const root = this.shadowRoot;
     const chrome = this._readChromeFromForm();
@@ -314,7 +345,6 @@ class GbnPanel extends window.McPanel.Base {
     const lbl = root.getElementById("lbl-list-field");
     const lblAmount = root.getElementById("lbl-amount-field");
     const crimes = root.getElementById("fld-crimes");
-    const cardTitle = root.getElementById("flavor-card-title");
     if (lbl) {
       lbl.textContent = `${listLabel} (one per line)`;
     }
@@ -327,22 +357,16 @@ class GbnPanel extends window.McPanel.Base {
           ? "What is your EIS?\nWhat do you want bounties to know about you?\nReviews from past clients."
           : "What are you wanted for?\nWhat are you known for?\nWhy are you dangerous?";
     }
-    if (cardTitle) {
-      cardTitle.textContent =
-        role === "hunter"
-          ? "Flavor / reasons to hire"
-          : role === "bounty"
-            ? "Flavor / crimes"
-            : "Flavor / custom template";
-    }
     const hint = root.getElementById("template-hint");
     if (hint) {
       if (role === "neither") {
-        hint.textContent = "Neither Hunter nor Bounty — select or create a template.";
+        hint.textContent =
+          "Neither Hunter nor Bounty — select a template or edit chrome and Save as new.";
       } else {
         hint.textContent = `Auto-selected ${role} template — edit chrome and Save as new to fork.`;
       }
     }
+    this._syncLookDisclosure();
   }
 
   _posterUrlForPlayer(playerId) {
@@ -409,6 +433,7 @@ class GbnPanel extends window.McPanel.Base {
   async _selectPlayerById(id) {
     const player = this._players.find((p) => String(p.id) === id) || null;
     this._selected = player;
+    this._lookManuallyToggled = false;
     this._setComboOpen(false);
     const root = this.shadowRoot;
     const input = root.getElementById("player-combo-input");
@@ -532,35 +557,161 @@ class GbnPanel extends window.McPanel.Base {
     }
   }
 
-  async _simulateIntake() {
-    const mac = this.shadowRoot.getElementById("fld-mac").value.trim();
-    if (!mac) return this._feedback("Enter a MAC to simulate", "warn");
+  async _loadActiveEvent() {
+    // Prefer Registration WS (same source as roster); fall back to GBN proxy.
+    if (this.hass) {
+      try {
+        const result = await this.hass.connection.sendMessagePromise({
+          type: "registration/get_active_event",
+        });
+        this._activeEventId = result?.active_event_id || null;
+        this._activeEventName = result?.event?.name || "";
+        this._paintActiveEvent();
+        return;
+      } catch (_) {
+        /* fall through */
+      }
+    }
     try {
-      const { status, body } = await this._api("/api/intake", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ mac }),
-      });
-      if (status === 501) {
-        this._feedback(
-          `MAC ${mac}: lookup not wired yet (${body?.reason || "stub"}). Select player manually.`,
-          "warn"
-        );
-        return;
+      const { ok, body } = await this._api("/api/events/active");
+      if (ok && body) {
+        this._activeEventId = body.active_event_id || null;
+        this._activeEventName = body.event_name || "";
+      } else {
+        this._activeEventId = null;
+        this._activeEventName = "";
       }
-      if (status === 200 && body?.player) {
-        const p = body.player;
-        this.shadowRoot.getElementById("fld-name").value = p.name || "";
-        this.shadowRoot.getElementById("fld-neocorp").value = this._normNeocorp(
-          p.neocorp || p.allegiance
-        );
-        this.shadowRoot.getElementById("fld-faction").value = p.faction || "";
-        this._feedback(`Resolved ${p.name} from MAC`, "ok");
-        return;
+    } catch (_) {
+      this._activeEventId = null;
+      this._activeEventName = "";
+    }
+    this._paintActiveEvent();
+  }
+
+  _paintActiveEvent() {
+    const el = this.shadowRoot?.getElementById("active-event-chip");
+    if (!el) return;
+    if (this._activeEventId) {
+      const label = this._activeEventName
+        ? `${this._activeEventName} (${this._activeEventId})`
+        : this._activeEventId;
+      el.textContent = `Active event: ${label}`;
+      el.className = "event-chip ok";
+    } else {
+      el.textContent = "No active event — set one in Registration before capture";
+      el.className = "event-chip warn";
+    }
+  }
+
+  _formatBytes(n) {
+    const bytes = Number(n) || 0;
+    if (bytes < 1024) return `${bytes} B`;
+    if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+    if (bytes < 1024 * 1024 * 1024) return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+    return `${(bytes / (1024 * 1024 * 1024)).toFixed(2)} GB`;
+  }
+
+  async _loadEventMedia() {
+    try {
+      const { ok, body } = await this._api("/api/events/media");
+      this._eventMedia = ok && Array.isArray(body) ? body : [];
+    } catch (_) {
+      this._eventMedia = [];
+    }
+    this._paintEventMedia();
+  }
+
+  _paintEventMedia() {
+    const body = this.shadowRoot?.getElementById("event-media-body");
+    if (!body) return;
+    if (!this._eventMedia.length) {
+      body.innerHTML = `<tr><td colspan="4" class="muted">No event media folders yet</td></tr>`;
+      return;
+    }
+    body.innerHTML = "";
+    for (const row of this._eventMedia) {
+      const tr = document.createElement("tr");
+      if (row.is_active) tr.className = "is-active";
+      const name = row.event_name
+        ? `${row.event_name}`
+        : row.is_active
+          ? "(active)"
+          : "";
+      tr.innerHTML = `
+        <td><code>${row.event_id}</code>${name ? `<div class="muted">${name}</div>` : ""}${
+          row.is_active ? `<div class="badge">active</div>` : ""
+        }</td>
+        <td>${row.clip_count}</td>
+        <td>${this._formatBytes(row.bytes_total)}</td>
+        <td class="actions-cell"></td>
+      `;
+      const actions = tr.querySelector(".actions-cell");
+      const btnExport = document.createElement("button");
+      btnExport.type = "button";
+      btnExport.textContent = "Export clips";
+      btnExport.onclick = () => this._exportEventClips(row.event_id);
+      const btnDel = document.createElement("button");
+      btnDel.type = "button";
+      btnDel.className = "danger";
+      btnDel.textContent = "Delete";
+      btnDel.onclick = () => this._deleteEventMedia(row.event_id);
+      actions.appendChild(btnExport);
+      actions.appendChild(btnDel);
+      body.appendChild(tr);
+    }
+  }
+
+  async _exportEventClips(eventId) {
+    if (!eventId) return;
+    try {
+      this._feedback(`Exporting clips for ${eventId}…`, "ok");
+      const headers = {};
+      if (this._token()) headers.Authorization = `Bearer ${this._token()}`;
+      const resp = await fetch(
+        `/api/gbn/proxy/api/events/${encodeURIComponent(eventId)}/clips/export`,
+        { headers, credentials: "same-origin", cache: "no-store" }
+      );
+      if (!resp.ok) {
+        const text = await resp.text();
+        return this._feedback(`Export failed (${resp.status}): ${text}`, "err");
       }
-      this._feedback(`Intake ${status}: ${JSON.stringify(body)}`, "err");
+      const blob = await resp.blob();
+      const cd = resp.headers.get("Content-Disposition") || "";
+      const match = /filename="?([^";]+)"?/i.exec(cd);
+      const filename = match?.[1] || `gbn-clips-${eventId}.zip`;
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = filename;
+      a.click();
+      URL.revokeObjectURL(url);
+      this._feedback(`Downloaded ${filename}`, "ok");
     } catch (err) {
-      this._feedback(`Intake failed: ${this._errText(err)}`, "err");
+      this._feedback(`Export failed: ${this._errText(err)}`, "err");
+    }
+  }
+
+  async _deleteEventMedia(eventId) {
+    if (!eventId) return;
+    const ok = window.confirm(
+      `Delete all clips and posters for event “${eventId}”? This cannot be undone.`
+    );
+    if (!ok) return;
+    try {
+      const { ok: success, status, body } = await this._api(
+        `/api/events/${encodeURIComponent(eventId)}/media`,
+        { method: "DELETE" }
+      );
+      if (!success) {
+        return this._feedback(
+          `Delete failed (${status}): ${JSON.stringify(body)}`,
+          "err"
+        );
+      }
+      this._feedback(`Deleted media for ${eventId}`, "ok");
+      await this._loadEventMedia();
+    } catch (err) {
+      this._feedback(`Delete failed: ${this._errText(err)}`, "err");
     }
   }
 
@@ -870,46 +1021,27 @@ class GbnPanel extends window.McPanel.Base {
     const flavor = root.getElementById("fld-flavor").value.trim();
     const playerId = this._selected?.id != null ? String(this._selected.id) : "";
     if (!playerId) return this._feedback("Select a player from the roster first", "warn");
-    const role = this._apiRole();
-    let chrome = this._readChromeFromForm();
-    if (!chrome.template_id && !chrome.headline) {
-      return this._feedback("Select a poster template (or set a headline) first", "warn");
-    }
-
-    // Custom chrome for "neither" (or any edit without a custom template selected)
-    // must land in the dropdown — Create poster used to snapshot only, so the
-    // new labels never became a selectable template.
-    let templateNote = "";
-    const selectedTmpl = this._templateById(chrome.template_id);
-    const needsCustomTemplate =
-      !!chrome.headline &&
-      (!chrome.template_id || !selectedTmpl || selectedTmpl.builtin) &&
-      this._getRole() === "neither";
-    if (needsCustomTemplate) {
-      try {
-        const created = await this._createTemplateFromChrome(
-          chrome,
-          chrome.headline.slice(0, 40)
-        );
-        if (created) {
-          chrome = this._readChromeFromForm();
-          templateNote = ` · template “${created.name}” added`;
-        } else {
-          // Templates API missing (404) or failed — still create the poster
-          // with chrome snapshot; operator should deploy updated GBN server.
-          templateNote = " · template not saved (update GBN server for /api/poster-templates)";
-          this._feedback(
-            "Poster templates API not found on GBN — creating poster with chrome only. Deploy updated Server_Component to CT 101.",
-            "warn"
-          );
-        }
-      } catch (err) {
-        templateNote = " · template not saved";
-        this._feedback(
-          `Template save skipped: ${this._errText(err)} — creating poster anyway`,
+    if (!this._activeEventId) {
+      await this._loadActiveEvent();
+      if (!this._activeEventId) {
+        return this._feedback(
+          "No active event — set one in Registration before creating a poster",
           "warn"
         );
       }
+    }
+    const role = this._apiRole();
+    const chrome = this._readChromeFromForm();
+    const selectedTmpl = this._templateById(chrome.template_id);
+    if (this._getRole() === "neither") {
+      if (!chrome.template_id || !selectedTmpl) {
+        return this._feedback(
+          "Select a poster template, or Save as new template before Create",
+          "warn"
+        );
+      }
+    } else if (!chrome.template_id && !chrome.headline) {
+      return this._feedback("Select a poster template (or set a headline) first", "warn");
     }
 
     const form = new FormData();
@@ -957,7 +1089,8 @@ class GbnPanel extends window.McPanel.Base {
       link.href = url;
       link.textContent = url;
       root.getElementById("success-box").hidden = false;
-      this._feedback(`Poster saved for player ${playerId}${templateNote}`, "ok");
+      this._feedback(`Poster saved for player ${playerId}`, "ok");
+      await this._loadEventMedia();
     } catch (err) {
       this._feedback(`Upload failed: ${this._errText(err)}`, "err");
     }
@@ -1056,9 +1189,38 @@ class GbnPanel extends window.McPanel.Base {
           width: min(420px, 90vw); border: 1px solid var(--divider-color);
         }
         .hint { font-size: 0.7rem; opacity: 0.65; margin-top: 0.35rem; }
-        .mac-row { display: flex; gap: 0.5rem; align-items: center; }
-        .mac-row input { flex: 1; }
-        .mac-row button { width: auto; }
+        .event-chip {
+          font-size: 0.8rem; margin: 0 0 0.75rem; padding: 0.4rem 0.6rem;
+          border: 1px solid var(--divider-color, #1f3a44); border-radius: 3px;
+        }
+        .event-chip.ok { border-color: #6dffb0; color: #6dffb0; }
+        .event-chip.warn { border-color: #ffd166; color: #ffd166; }
+        details.look {
+          margin-bottom: 0.75rem;
+          border: 1px solid var(--divider-color, #1f3a44);
+          border-radius: 3px; padding: 0.35rem 0.55rem 0.55rem;
+        }
+        details.look > summary {
+          cursor: pointer; list-style: none;
+          font-size: 0.8rem; letter-spacing: 0.08em; text-transform: uppercase;
+          color: var(--ac-cyan, #00e5ff); padding: 0.35rem 0;
+        }
+        details.look > summary::-webkit-details-marker { display: none; }
+        #look-summary { font-size: 0.75rem; opacity: 0.75; margin: 0 0 0.35rem; }
+        .media-table { width: 100%; border-collapse: collapse; font-size: 0.85rem; }
+        .media-table th, .media-table td {
+          text-align: left; padding: 0.4rem 0.35rem;
+          border-bottom: 1px solid var(--divider-color, #1f3a44);
+          vertical-align: top;
+        }
+        .media-table tr.is-active { background: rgba(0, 229, 255, 0.06); }
+        .media-table .actions-cell { display: flex; flex-wrap: wrap; gap: 0.35rem; }
+        .media-table .actions-cell button { width: auto; }
+        .media-table .muted { opacity: 0.65; font-size: 0.75rem; }
+        .media-table .badge {
+          display: inline-block; margin-top: 0.2rem; font-size: 0.65rem;
+          letter-spacing: 0.08em; text-transform: uppercase; color: var(--ac-cyan, #00e5ff);
+        }
         .cam-row {
           display: grid;
           grid-template-columns: 2fr 1fr auto auto;
@@ -1093,6 +1255,7 @@ class GbnPanel extends window.McPanel.Base {
             <button type="button" id="btn-server">Server URL</button>
           </div>
         </header>
+        <div id="active-event-chip" class="event-chip warn">Loading active event…</div>
 
         <div class="grid">
           <section class="card">
@@ -1113,47 +1276,45 @@ class GbnPanel extends window.McPanel.Base {
             </select>
             <label for="fld-faction">Faction</label>
             <input id="fld-faction" autocomplete="off" />
-            <label for="fld-mac">Simulate MAC intake (FDN later)</label>
-            <div class="mac-row">
-              <input id="fld-mac" placeholder="aa:bb:cc:dd:ee:ff" />
-              <button type="button" id="btn-intake">Simulate</button>
-            </div>
-            <p class="hint">MAC → player lookup is stubbed (501) until Central supports it.</p>
           </section>
 
           <section class="card">
-            <h2 id="flavor-card-title">Flavor / crimes</h2>
-            <label for="fld-template">Poster template</label>
-            <select id="fld-template">
-              <option value="">— Select template —</option>
-            </select>
-            <p class="hint" id="template-hint">Hunter/Bounty auto-select; other roles pick a template.</p>
-            <div class="row">
-              <div>
-                <label for="fld-headline">Headline title</label>
-                <input id="fld-headline" placeholder="WANTED / GUN FOR HIRE / …" />
+            <h2>Poster copy</h2>
+            <p id="look-summary">Using: —</p>
+            <details class="look" id="look-details">
+              <summary>Customize poster look</summary>
+              <label for="fld-template">Poster template</label>
+              <select id="fld-template">
+                <option value="">— Select template —</option>
+              </select>
+              <p class="hint" id="template-hint">Hunter/Bounty auto-select; other roles pick a template.</p>
+              <div class="row">
+                <div>
+                  <label for="fld-headline">Headline title</label>
+                  <input id="fld-headline" placeholder="WANTED / GUN FOR HIRE / …" />
+                </div>
+                <div>
+                  <label for="fld-subtitle">Subtitle (optional)</label>
+                  <input id="fld-subtitle" placeholder="DEAD OR ALIVE" />
+                </div>
               </div>
-              <div>
-                <label for="fld-subtitle">Subtitle (optional)</label>
-                <input id="fld-subtitle" placeholder="DEAD OR ALIVE" />
+              <div class="row">
+                <div>
+                  <label for="fld-amount-label">Amount label</label>
+                  <input id="fld-amount-label" placeholder="REWARD / RATE" />
+                </div>
+                <div>
+                  <label for="fld-list-label">List label</label>
+                  <input id="fld-list-label" placeholder="WANTED FOR / REASONS TO HIRE" />
+                </div>
               </div>
-            </div>
-            <div class="row">
-              <div>
-                <label for="fld-amount-label">Amount label</label>
-                <input id="fld-amount-label" placeholder="REWARD / RATE" />
+              <label for="fld-list-empty">Empty-list placeholder</label>
+              <input id="fld-list-empty" placeholder="Charges pending" />
+              <div class="actions" style="margin-top:0.5rem">
+                <button type="button" id="btn-template-save">Save as new template</button>
               </div>
-              <div>
-                <label for="fld-list-label">List label</label>
-                <input id="fld-list-label" placeholder="WANTED FOR / REASONS TO HIRE" />
-              </div>
-            </div>
-            <label for="fld-list-empty">Empty-list placeholder</label>
-            <input id="fld-list-empty" placeholder="Charges pending" />
-            <div class="actions" style="margin-top:0.5rem">
-              <button type="button" id="btn-template-save">Save as new template</button>
-            </div>
-            <p class="hint">Custom titles for non-Hunter/Bounty players are also saved into this list when you Create poster.</p>
+              <p class="hint">Required before Create if you changed chrome for a non-Hunter/Bounty player.</p>
+            </details>
             <label id="lbl-amount-field" for="fld-bounty">REWARD (₩)</label>
             <input id="fld-bounty" type="number" min="0" step="10000" value="1000000" />
             <label id="lbl-list-field" for="fld-crimes">WANTED FOR (one per line)</label>
@@ -1213,6 +1374,27 @@ class GbnPanel extends window.McPanel.Base {
               <div><a id="poster-link" href="#" target="_blank" rel="noopener"></a></div>
             </div>
           </section>
+
+          <section class="card" style="grid-column: 1 / -1">
+            <h2>Event media</h2>
+            <div class="actions" style="margin-top:0">
+              <button type="button" id="btn-media-refresh">Refresh</button>
+            </div>
+            <p class="hint">Clips are stored per event as {player_id}.ext. Export downloads a zip of videos only.</p>
+            <table class="media-table">
+              <thead>
+                <tr>
+                  <th>Event</th>
+                  <th>Clips</th>
+                  <th>Size</th>
+                  <th>Actions</th>
+                </tr>
+              </thead>
+              <tbody id="event-media-body">
+                <tr><td colspan="4" class="muted">Loading…</td></tr>
+              </tbody>
+            </table>
+          </section>
         </div>
 
         <div class="feedback" id="feedback"></div>
@@ -1231,17 +1413,33 @@ class GbnPanel extends window.McPanel.Base {
     `;
 
     const root = this.shadowRoot;
-    root.getElementById("btn-reload").onclick = () => this._loadPlayers();
+    root.getElementById("btn-reload").onclick = async () => {
+      await this._loadActiveEvent();
+      await this._loadPlayers();
+      await this._loadEventMedia();
+    };
     root.getElementById("btn-generate").onclick = () => this._generateFlavor();
-    root.getElementById("btn-intake").onclick = () => this._simulateIntake();
     root.getElementById("btn-cam-refresh").onclick = () => this._refreshCameras();
     root.getElementById("btn-cam-start").onclick = () => this._startCamera();
     root.getElementById("btn-record").onclick = () => this._recordClip();
     root.getElementById("btn-retake").onclick = () => this._retake();
     root.getElementById("btn-submit").onclick = () => this._submit();
+    root.getElementById("btn-media-refresh").onclick = async () => {
+      await this._loadActiveEvent();
+      await this._loadEventMedia();
+    };
     root.getElementById("fld-upload").onchange = (ev) => this._onUpload(ev);
-    root.getElementById("fld-template").onchange = () => this._onTemplateSelected();
+    root.getElementById("fld-template").onchange = () => {
+      this._onTemplateSelected();
+      this._updateLookSummary();
+    };
     root.getElementById("btn-template-save").onclick = () => this._saveTemplateAsNew();
+    const lookDetails = root.getElementById("look-details");
+    if (lookDetails) {
+      lookDetails.addEventListener("toggle", () => {
+        this._lookManuallyToggled = true;
+      });
+    }
     for (const id of [
       "fld-headline",
       "fld-subtitle",
@@ -1252,6 +1450,8 @@ class GbnPanel extends window.McPanel.Base {
       root.getElementById(id).oninput = () => this._updateRoleUi();
     }
     this._fillTemplateSelect();
+    this._paintActiveEvent();
+    this._paintEventMedia();
 
     const combo = root.getElementById("player-combo-input");
     combo.onfocus = () => {

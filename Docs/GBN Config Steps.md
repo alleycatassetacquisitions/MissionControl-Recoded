@@ -43,8 +43,10 @@ Data on the guest:
 
 | Path | Purpose |
 | --- | --- |
-| `/opt/gbn/data/posters.json` | Poster store |
+| `/opt/gbn/data/events/{event_id}/posters.json` | Poster metadata per Event |
+| `/opt/gbn/media/events/{event_id}/videos/{player_id}.*` | Capture clips per Event |
 | `/opt/gbn/data/poster_templates.json` | Chrome templates (auto-seeded hunter/bounty) |
+| `/opt/gbn/data/posters.json` | Legacy global poster store (read fallback) |
 | `/opt/gbn/app/` | Python package (`uvicorn app.main:app`) |
 
 ### Upgrade app on an existing CT
@@ -92,18 +94,21 @@ Merge from [`HomeAssist/configuration.yaml`](../HomeAssist/configuration.yaml):
 Restart HA. Hard-refresh the browser after updating `www/gbn/`.
 
 1. Settings → Devices & services → Add **Galactic Bounty Network** (install-only).
-2. Sidebar **Galactic Bounty Network**: pick a Registration roster player → Generate → record/upload → create poster.
-3. **Subject:** affiliation control is labeled **Allegiance/NeoCorp** (same values as before).
-4. **Poster template:**
-   - Hunter / Bounty players auto-select the matching built-in chrome.
-   - Other roles: pick a template, or edit headline / subtitle / amount label / list label and **Save as new template** (Create poster also adds a custom template when chrome is filled).
+2. In **Registration**, set an **active Event** before capture (roster + clip folders follow that event).
+3. Sidebar **Galactic Bounty Network**: confirm the active-event chip → pick a Registration roster player → Generate → record/upload → create poster.
+4. **Subject:** affiliation control is labeled **Allegiance/NeoCorp** (same values as before).
+5. **Poster copy** + **Customize poster look:**
+   - Hunter / Bounty: look section starts collapsed (auto-selected built-in).
+   - Other roles: look section starts open — pick a template, or edit chrome and **Save as new template** before Create (Create does **not** auto-save templates).
    - Chrome is snapshotted onto the poster at create time.
-5. Open `/poster/player/{id}` on the GBN public URL (or via the success link).
-6. Registration table **Poster** column shows thumb + open link (via HA proxy).
+6. **Event media** card: see clip counts / sizes, **Export clips** (zip of `{player_id}.*` only), or **Delete** an event’s media + posters.
+7. Open `/poster/player/{id}` on the GBN public URL (or via the success link).
+8. Registration table **Poster** column shows thumb + open link (via HA proxy).
 
 Panel API traffic goes through `/api/gbn/proxy/...` only — no browser LAN fetch.
 
-Templates API (proxied): `GET/POST /api/gbn/proxy/api/poster-templates`.
+Templates API (proxied): `GET/POST /api/gbn/proxy/api/poster-templates`.  
+Event media (proxied): `GET /api/gbn/proxy/api/events/media`, export/delete under `/api/events/{id}/…`.
 
 ---
 
@@ -140,9 +145,11 @@ Display machine: open `http://<gbn-ip>:8100/active-players` (iframe paths are sa
 
 - [ ] `/health` returns `service: gbn`
 - [ ] `GET /api/poster-templates` returns hunter + bounty built-ins (not 404)
-- [ ] Create poster in HA panel for a known MCS player
-- [ ] Hunter / Bounty auto-select built-in templates; neither-role player can Save as new / Create poster and see the custom template in the dropdown
+- [ ] Active event set in Registration; GBN panel shows active-event chip
+- [ ] Create poster in HA panel for a known MCS player (clips land under `media/events/{id}/videos/`)
+- [ ] Hunter / Bounty auto-select built-in templates; neither-role player Save as new before Create, then see the custom template in the dropdown
 - [ ] Custom headline / amount / list labels appear on `/poster/player/{id}`
+- [ ] Event media: sizes refresh, Export clips downloads a zip, Delete removes that event folder
 - [ ] Change player name in Registration → reload poster page → name updates (MCS overlay)
 - [ ] `GET /api/players/{id}` on GBN returns **404** (removed)
 - [ ] Registration Poster column shows thumb after create

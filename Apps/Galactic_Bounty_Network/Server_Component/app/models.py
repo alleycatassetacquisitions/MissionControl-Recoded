@@ -88,6 +88,7 @@ class PosterPublic(BaseModel):
 
     id: str
     player_id: str = ""
+    event_id: str = ""
     name: str
     role: Role = "bounty"
     neocorp: NeoCorp = "freelancer"
@@ -108,6 +109,23 @@ class PosterPublic(BaseModel):
     list_empty: str = ""
     created_at: str = ""
     updated_at: str = ""
+
+
+class EventMediaRow(BaseModel):
+    event_id: str
+    event_name: str = ""
+    clip_count: int = 0
+    bytes_total: int = 0
+    has_media: bool = False
+    has_posters: bool = False
+    is_active: bool = False
+
+
+class ActiveEventInfo(BaseModel):
+    ready: bool = True
+    active_event_id: str | None = None
+    event_name: str = ""
+    source: str = ""
 
 
 class FlavorRequest(BaseModel):

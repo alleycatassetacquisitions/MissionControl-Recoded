@@ -79,6 +79,8 @@ The Mission Control app for creating and updating posters that players see on Al
 
 Poster **chrome** (headline, optional subtitle, amount label, list label) comes from **poster templates**: built-in Hunter / Bounty seeds auto-apply from roster role; other players pick or save a custom template at intake. Chrome is snapshotted onto each poster. The capture panel labels affiliation **Allegiance/NeoCorp** (code field remains `neocorp`).
 
+Capture **clips** and poster metadata are stored **per Event** (active Event from Registration / MCS): `media/events/{event_id}/videos/{player_id}.*` and `data/events/{event_id}/posters.json`. Operators can export a zip of clips (player-id filenames) or delete an event’s media from the GBN panel.
+
 Display URLs: single poster `/poster/player/{id}`; **poster-cycle** `/poster-cycle` rotates every made poster every 30s (AlleycatTV Content **+ Poster cycle**); **active-players** is a separate game-server curated list.
 
 - **Communication:** HTTP

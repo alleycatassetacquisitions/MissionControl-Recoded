@@ -18,10 +18,10 @@ from fastapi.templating import Jinja2Templates
 from app.config import (
     ALLOWED_VIDEO_EXT,
     MAX_UPLOAD_MB,
-    MEDIA_BASE,
     TEMPLATES_DIR,
     public_base_for,
 )
+from app.event_stores import EventPosterStores
 from app.models import (
     NeoCorp,
     PosterPublic,
@@ -31,8 +31,13 @@ from app.models import (
     PosterTemplate,
     Role,
 )
-from app.services.mcs_client import lookup_by_id
-from app.services.video_paths import find_video_filename, video_filename_for_player
+from app.services.event_paths import ensure_event_dirs, video_url_path
+from app.services.mcs_client import lookup_by_id, resolve_active_event_id
+from app.services.video_paths import (
+    find_video_filename,
+    video_filename_for_player,
+    video_filesystem_path,
+)
 from app.store import PosterStore
 from app.template_store import TemplateStore
 
@@ -42,12 +47,27 @@ router = APIRouter(tags=["posters"])
 templates = Jinja2Templates(directory=str(TEMPLATES_DIR))
 
 
-def _store(request: Request) -> PosterStore:
-    return request.app.state.poster_store
+def _event_stores(request: Request) -> EventPosterStores:
+    return request.app.state.event_stores
 
 
 def _templates(request: Request) -> TemplateStore:
     return request.app.state.template_store
+
+
+async def _require_active_event_id() -> str:
+    eid = await resolve_active_event_id()
+    if not eid:
+        raise HTTPException(
+            status_code=409,
+            detail="No active event — set one in Registration before creating posters",
+        )
+    return eid
+
+
+async def _active_store(request: Request) -> tuple[str, PosterStore]:
+    eid = await _require_active_event_id()
+    return eid, _event_stores(request).for_event(eid)
 
 
 def _now() -> str:
@@ -175,19 +195,31 @@ def _poster_url_for(poster: PosterRecord, request: Request | None = None) -> str
     return f"{base}/poster/{poster.id}"
 
 
-def _video_url_for(poster: PosterRecord, request: Request | None = None) -> str:
-    filename = find_video_filename(poster.player_id, poster.video_filename)
-    if filename:
-        return f"{public_base_for(request)}/media/videos/{filename}"
-    return ""
+def _video_url_for(
+    poster: PosterRecord,
+    request: Request | None = None,
+    event_id: str | None = None,
+) -> str:
+    filename, resolved_eid = find_video_filename(
+        poster.player_id, poster.video_filename, event_id=event_id
+    )
+    if not filename:
+        return ""
+    rel = video_url_path(resolved_eid, filename)
+    return f"{public_base_for(request)}/media/{rel}"
 
 
-def _to_public(poster: PosterRecord, request: Request | None = None) -> PosterPublic:
-    video_url = _video_url_for(poster, request)
+def _to_public(
+    poster: PosterRecord,
+    request: Request | None = None,
+    event_id: str | None = None,
+) -> PosterPublic:
+    video_url = _video_url_for(poster, request, event_id=event_id)
     chrome = _effective_chrome(poster)
     return PosterPublic(
         id=poster.id,
         player_id=poster.player_id,
+        event_id=event_id or "",
         name=poster.name,
         role=poster.role,
         neocorp=poster.neocorp,
@@ -236,10 +268,10 @@ def _parse_stats(raw: str) -> PosterStats:
     return PosterStats()
 
 
-def _delete_video(filename: str) -> None:
+def _delete_video(filename: str, event_id: str | None = None) -> None:
     if not filename:
         return
-    path = Path(MEDIA_BASE) / "videos" / filename
+    path = video_filesystem_path(filename, event_id=event_id)
     try:
         if path.is_file():
             path.unlink()
@@ -247,14 +279,16 @@ def _delete_video(filename: str) -> None:
         _LOGGER.warning("Could not delete old video %s: %s", path, exc)
 
 
-def _delete_legacy_player_videos(player_id: str, keep_filename: str) -> None:
+def _delete_other_player_videos(
+    player_id: str, keep_filename: str, event_id: str | None = None
+) -> None:
     pid = (player_id or "").strip()
     if not pid:
         return
     for ext in ALLOWED_VIDEO_EXT:
         name = f"{pid}{ext}"
         if name != keep_filename:
-            _delete_video(name)
+            _delete_video(name, event_id=event_id)
 
 
 async def _apply_live_overlay(display: PosterRecord) -> PosterRecord:
@@ -301,9 +335,11 @@ def _poster_context(public: PosterPublic) -> dict:
     }
 
 
-async def _render_poster(request: Request, poster: PosterRecord):
+async def _render_poster(
+    request: Request, poster: PosterRecord, event_id: str | None = None
+):
     display = await _apply_live_overlay(poster.model_copy(deep=True))
-    public = _to_public(display, request)
+    public = _to_public(display, request, event_id=event_id)
     return templates.TemplateResponse(
         request,
         "poster.html",
@@ -311,33 +347,59 @@ async def _render_poster(request: Request, poster: PosterRecord):
     )
 
 
+async def _resolve_poster_for_player(
+    request: Request, player_id: str
+) -> tuple[PosterRecord, str | None]:
+    stores = _event_stores(request)
+    active = await resolve_active_event_id()
+    poster, eid = stores.get_poster_for_player(player_id, event_id=active)
+    if not poster:
+        raise HTTPException(status_code=404, detail="No poster for player")
+    return poster, eid
+
+
 @router.get("/api/posters", response_model=List[PosterPublic])
 async def list_posters(request: Request) -> List[PosterPublic]:
     out: List[PosterPublic] = []
-    for poster in _store(request).list():
+    active = await resolve_active_event_id()
+    stores = _event_stores(request)
+    if active:
+        for poster in stores.for_event(active).list():
+            display = await _apply_live_overlay(poster.model_copy(deep=True))
+            out.append(_to_public(display, request, event_id=active))
+        return out
+    # No active event — expose legacy global store only
+    for poster in stores.legacy.list():
         display = await _apply_live_overlay(poster.model_copy(deep=True))
-        out.append(_to_public(display, request))
+        out.append(_to_public(display, request, event_id=None))
     return out
 
 
 @router.get("/api/posters/by-player/{player_id}", response_model=PosterPublic)
 async def get_poster_by_player(player_id: str, request: Request) -> PosterPublic:
-    poster = _store(request).get_by_player(player_id)
-    if not poster:
-        raise HTTPException(status_code=404, detail="No poster for player")
+    poster, eid = await _resolve_poster_for_player(request, player_id)
     display = await _apply_live_overlay(poster.model_copy(deep=True))
-    return _to_public(display, request)
+    return _to_public(display, request, event_id=eid)
 
 
 @router.get("/api/posters/{poster_id}", response_model=PosterPublic)
 async def get_poster(poster_id: str, request: Request) -> PosterPublic:
     if poster_id == "by-player":
         raise HTTPException(status_code=404, detail="Poster not found")
-    poster = _store(request).get(poster_id)
+    stores = _event_stores(request)
+    active = await resolve_active_event_id()
+    poster = None
+    eid: str | None = None
+    if active:
+        poster = stores.for_event(active).get(poster_id)
+        eid = active if poster else None
+    if not poster:
+        poster = stores.legacy.get(poster_id)
+        eid = None
     if not poster:
         raise HTTPException(status_code=404, detail="Poster not found")
     display = await _apply_live_overlay(poster.model_copy(deep=True))
-    return _to_public(display, request)
+    return _to_public(display, request, event_id=eid)
 
 
 @router.post("/api/posters", response_model=PosterPublic)
@@ -383,7 +445,8 @@ async def create_poster(
     if not data:
         raise HTTPException(status_code=400, detail="Empty video upload")
 
-    store = _store(request)
+    event_id, store = await _active_store(request)
+    ensure_event_dirs(event_id)
     existing = store.get_by_player(pid)
 
     stamp = _now()
@@ -397,13 +460,13 @@ async def create_poster(
         old_video = ""
 
     video_name = video_filename_for_player(pid, ext)
-    dest = Path(MEDIA_BASE) / "videos" / video_name
+    dest = video_filesystem_path(video_name, event_id=event_id)
     dest.parent.mkdir(parents=True, exist_ok=True)
     dest.write_bytes(data)
 
     if old_video and old_video != video_name:
-        _delete_video(old_video)
-    _delete_legacy_player_videos(pid, video_name)
+        _delete_video(old_video, event_id=event_id)
+    _delete_other_player_videos(pid, video_name, event_id=event_id)
 
     normalized_role = _normalize_role(role)
     chrome = _resolve_chrome(
@@ -442,14 +505,15 @@ async def create_poster(
     store.save(record)
     action = "Updated" if existing else "Created"
     _LOGGER.info(
-        "%s poster %s for %s (%s/%s)",
+        "%s poster %s for %s event=%s (%s/%s)",
         action,
         poster_id,
         clean_name,
+        event_id,
         record.role,
         record.neocorp,
     )
-    return _to_public(record, request)
+    return _to_public(record, request, event_id=event_id)
 
 
 @router.get("/poster-cycle")
@@ -470,20 +534,32 @@ async def poster_cycle_page(
 
 @router.get("/poster/player/{player_id}")
 async def poster_page_by_player(player_id: str, request: Request):
-    poster = _store(request).get_by_player(player_id)
-    if not poster:
-        raise HTTPException(status_code=404, detail="No poster for player")
-    return await _render_poster(request, poster)
+    poster, eid = await _resolve_poster_for_player(request, player_id)
+    return await _render_poster(request, poster, event_id=eid)
 
 
 @router.get("/poster/{poster_id}")
 async def poster_page(poster_id: str, request: Request):
-    store = _store(request)
-    by_player = store.get_by_player(poster_id)
+    stores = _event_stores(request)
+    active = await resolve_active_event_id()
+    by_player = None
+    eid: str | None = None
+    if active:
+        by_player = stores.for_event(active).get_by_player(poster_id)
+        eid = active if by_player else None
+    if not by_player:
+        by_player = stores.legacy.get_by_player(poster_id)
+        eid = None
     if by_player:
-        return await _render_poster(request, by_player)
+        return await _render_poster(request, by_player, event_id=eid)
 
-    poster = store.get(poster_id)
+    poster = None
+    if active:
+        poster = stores.for_event(active).get(poster_id)
+        eid = active if poster else None
+    if not poster:
+        poster = stores.legacy.get(poster_id)
+        eid = None
     if not poster:
         raise HTTPException(status_code=404, detail="Poster not found")
 
@@ -493,4 +569,4 @@ async def poster_page(poster_id: str, request: Request):
             status_code=302,
         )
 
-    return await _render_poster(request, poster)
+    return await _render_poster(request, poster, event_id=eid)

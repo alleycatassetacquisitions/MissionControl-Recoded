@@ -15,13 +15,31 @@ if str(_SERVER) not in sys.path:
     sys.path.insert(0, str(_SERVER))
 
 
+ACTIVE_EVENT_ID = "evt-test"
+
+
+async def _fake_active_event():
+    return {
+        "ready": True,
+        "active_event_id": ACTIVE_EVENT_ID,
+        "event": {"id": ACTIVE_EVENT_ID, "name": "Test Event"},
+        "source": "test",
+    }
+
+
+async def _fake_active_event_id():
+    return ACTIVE_EVENT_ID
+
+
 @pytest.fixture()
 def client(tmp_path, monkeypatch):
     media = tmp_path / "media"
     media.mkdir()
     (media / "videos").mkdir()
+    (media / "events").mkdir()
     data = tmp_path / "data"
     data.mkdir()
+    (data / "events").mkdir()
     posters = data / "posters.json"
     posters.write_text("[]", encoding="utf-8")
     templates = data / "poster_templates.json"
@@ -40,6 +58,15 @@ def client(tmp_path, monkeypatch):
             del sys.modules[mod]
 
     from app.main import app
+    import app.routers.posters as posters_mod
+    import app.routers.events_media as events_mod
+    import app.services.mcs_client as mcs_mod
+
+    monkeypatch.setattr(mcs_mod, "get_active_event", _fake_active_event)
+    monkeypatch.setattr(mcs_mod, "resolve_active_event_id", _fake_active_event_id)
+    monkeypatch.setattr(posters_mod, "resolve_active_event_id", _fake_active_event_id)
+    monkeypatch.setattr(events_mod, "get_active_event", _fake_active_event)
+    monkeypatch.setattr(events_mod, "resolve_active_event_id", _fake_active_event_id)
 
     with TestClient(app) as c:
         yield c
@@ -173,7 +200,8 @@ def test_poster_urls_follow_request_host(client):
     """New LAN IP / Host header must appear in poster_url and video_url."""
     created = _create_poster(client, player_id="host-check")
     assert created["poster_url"] == "http://testserver/poster/player/host-check"
-    assert created["video_url"].startswith("http://testserver/media/videos/")
+    assert created["event_id"] == ACTIVE_EVENT_ID
+    assert f"/media/events/{ACTIVE_EVENT_ID}/videos/" in created["video_url"]
 
     # Simulate HA proxy (or venue client) hitting the CT at a new DHCP IP.
     resp = client.get(
@@ -183,7 +211,61 @@ def test_poster_urls_follow_request_host(client):
     assert resp.status_code == 200
     data = resp.json()
     assert data["poster_url"] == "http://10.10.50.187:8100/poster/player/host-check"
-    assert data["video_url"].startswith("http://10.10.50.187:8100/media/videos/")
+    assert f"/media/events/{ACTIVE_EVENT_ID}/videos/" in data["video_url"]
+
+
+def test_create_poster_requires_active_event(client, monkeypatch):
+    import app.routers.posters as posters_mod
+
+    async def _none():
+        return None
+
+    monkeypatch.setattr(posters_mod, "resolve_active_event_id", _none)
+    fields = {
+        "name": "No Event",
+        "neocorp": "freelancer",
+        "role": "bounty",
+        "player_id": "p-noevt",
+        "bounty_amount": "1000000",
+        "crimes": "[]",
+        "stats": "{}",
+        "flavor_text": "",
+    }
+    files = {"video": ("capture.webm", _tiny_webm(), "video/webm")}
+    resp = client.post("/api/posters", data=fields, files=files)
+    assert resp.status_code == 409
+
+
+def test_event_media_list_export_delete(client, tmp_path):
+    created = _create_poster(client, player_id="clip-1")
+    assert created["has_video"] is True
+
+    listed = client.get("/api/events/media")
+    assert listed.status_code == 200
+    rows = listed.json()
+    assert any(r["event_id"] == ACTIVE_EVENT_ID for r in rows)
+    row = next(r for r in rows if r["event_id"] == ACTIVE_EVENT_ID)
+    assert row["clip_count"] >= 1
+    assert row["bytes_total"] > 0
+    assert row["is_active"] is True
+
+    active = client.get("/api/events/active")
+    assert active.status_code == 200
+    assert active.json()["active_event_id"] == ACTIVE_EVENT_ID
+
+    export = client.get(f"/api/events/{ACTIVE_EVENT_ID}/clips/export")
+    assert export.status_code == 200
+    assert export.headers["content-type"].startswith("application/zip")
+    assert "attachment" in export.headers.get("content-disposition", "")
+    assert export.content[:2] == b"PK"
+
+    deleted = client.delete(f"/api/events/{ACTIVE_EVENT_ID}/media")
+    assert deleted.status_code == 200
+    assert deleted.json()["ok"] is True
+
+    # After delete, clips gone; active event folder may be recreated empty
+    export2 = client.get(f"/api/events/{ACTIVE_EVENT_ID}/clips/export")
+    assert export2.status_code == 404
 
 
 def test_mcs_overlay_on_poster_read(client):

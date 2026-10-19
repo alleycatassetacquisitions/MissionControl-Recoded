@@ -39,11 +39,24 @@ Chrome (headline, optional subtitle, amount label, list label) is selected at in
 |---|---|
 | Hunter | Auto-select built-in `hunter` (`GUN FOR HIRE` / `RATE` / `REASONS TO HIRE`) |
 | Bounty | Auto-select built-in `bounty` (`WANTED` / `DEAD OR ALIVE` / `REWARD` / `WANTED FOR`) |
-| Neither | Operator picks a template or edits chrome and **Save as new** (Create poster also persists a custom template) |
+| Neither | Operator picks a template or edits chrome and **Save as new** before Create |
 
-Built-ins cannot be overwritten; **Save as new** always forks. Chrome is **snapshotted** onto each poster at create time. Custom templates keep that snapshot; built-in hunter/bounty chrome follows live MCS role overlays on read.
+Built-ins cannot be overwritten; **Save as new** always forks (Create poster does **not** auto-save templates). Chrome is **snapshotted** onto each poster at create time. Custom templates keep that snapshot; built-in hunter/bounty chrome follows live MCS role overlays on read.
 
-Panel field **Allegiance/NeoCorp** is the affiliation dropdown (values still `reboot` / `helix` / `endline` / `freelancer`).
+Panel field **Allegiance/NeoCorp** is the affiliation dropdown (values still `reboot` / `helix` / `endline` / `freelancer`). Capture chrome lives under **Customize poster look** (collapsed for Hunter/Bounty).
+
+### Event-scoped storage
+
+Clips and poster metadata are stored **per active Event** (from MCS / Registration):
+
+| Path | Purpose |
+|---|---|
+| `data/events/{event_id}/posters.json` | Poster metadata for that event |
+| `media/events/{event_id}/videos/{player_id}.ext` | Capture clips (filename = player id) |
+| `data/poster_templates.json` | Chrome templates (global) |
+| `data/posters.json` + `media/videos/` | Legacy pre-event store (read fallback only) |
+
+Create poster requires an active event (`409` if none). The panel **Event media** card lists folder sizes, exports a zip of clips only, and can delete an event’s media + posters.
 
 API:
 
@@ -52,7 +65,11 @@ API:
 | `GET` | `/api/poster-templates` | List built-ins + customs |
 | `POST` | `/api/poster-templates` | Create custom |
 | `PUT` / `DELETE` | `/api/poster-templates/{id}` | Non-builtin only |
-| `POST` | `/api/posters` | Accepts `template_id` + chrome fields; stores snapshot |
+| `POST` | `/api/posters` | Requires active event; accepts `template_id` + chrome; stores snapshot under that event |
+| `GET` | `/api/events/active` | Active event id/name (via MCS) |
+| `GET` | `/api/events/media` | Event folders: clip count + bytes |
+| `GET` | `/api/events/{id}/clips/export` | Zip of videos only (`{player_id}.ext`) |
+| `DELETE` | `/api/events/{id}/media` | Delete that event’s media + posters |
 
 ---
 
@@ -63,11 +80,11 @@ API:
 | `GBN_HOST` | `0.0.0.0` | Bind address |
 | `GBN_PORT` | `8100` | Bind port |
 | `GBN_PUBLIC_BASE` | `http://127.0.0.1:8100` | Fallback public URL only — live poster/media links use the request Host (so a new CT IP via Core Configurator is picked up without rewriting this env) |
-| `GBN_MEDIA` | `./media` | Videos + NeoCorp SVG assets |
-| `GBN_DATA` | `./data` | Data directory |
-| `GBN_POSTERS` | `./data/posters.json` | Poster store |
+| `GBN_MEDIA` | `./media` | Videos + NeoCorp SVG assets (`events/{id}/videos/` for new captures) |
+| `GBN_DATA` | `./data` | Data directory (`events/{id}/posters.json` per event) |
+| `GBN_POSTERS` | `./data/posters.json` | Legacy global poster store (read fallback) |
 | `GBN_TEMPLATES` | `./data/poster_templates.json` | Poster chrome templates (hunter/bounty built-ins + customs) |
-| `GBN_MCS_BASE` | _(empty)_ | MCS base URL for overlay |
+| `GBN_MCS_BASE` | _(empty)_ | MCS base URL for overlay + active event |
 | `GBN_MCS_TOKEN` | _(empty)_ | Bearer token for MCS |
 | `GBN_ACTIVE_PLAYERS_SECRET` | _(empty)_ | Optional auth for POST active-players |
 | `GBN_MAX_UPLOAD_MB` | `100` | Video upload cap |
