@@ -3,6 +3,7 @@
 Serves:
   /api/*       — posters, flavor, intake, active-players
   /poster/*    — animated 16:9 bounty poster page
+  /poster-cycle — kiosk that rotates all made posters
   /media/*     — uploaded capture videos + NeoCorp assets
   /health      — liveness probe
 
@@ -26,10 +27,19 @@ from app.config import (
     MEDIA_SUBDIRS,
     POSTERS_FILE,
     STATIC_DIR,
+    TEMPLATES_FILE,
 )
+from app.event_stores import EventPosterStores
 from app.models import ActivePlayersState
-from app.routers import active_players, flavor, intake, posters
-from app.store import PosterStore
+from app.routers import (
+    active_players,
+    events_media,
+    flavor,
+    intake,
+    posters,
+    templates as template_routes,
+)
+from app.template_store import TemplateStore
 
 logging.basicConfig(
     level=logging.INFO,
@@ -67,6 +77,8 @@ async def log_requests(request: Request, call_next):
 
 
 app.include_router(posters.router)
+app.include_router(events_media.router)
+app.include_router(template_routes.router)
 app.include_router(active_players.router)
 app.include_router(flavor.router)
 app.include_router(intake.router)
@@ -75,12 +87,22 @@ app.include_router(intake.router)
 @app.on_event("startup")
 async def startup() -> None:
     DATA_DIR.mkdir(parents=True, exist_ok=True)
+    Path(DATA_DIR, "events").mkdir(parents=True, exist_ok=True)
     for sub in MEDIA_SUBDIRS:
         Path(MEDIA_BASE, sub).mkdir(parents=True, exist_ok=True)
+    Path(MEDIA_BASE, "events").mkdir(parents=True, exist_ok=True)
     STATIC_DIR.mkdir(parents=True, exist_ok=True)
-    app.state.poster_store = PosterStore(POSTERS_FILE)
+    app.state.event_stores = EventPosterStores(POSTERS_FILE)
+    # Back-compat alias for any code still expecting poster_store
+    app.state.poster_store = app.state.event_stores.legacy
+    app.state.template_store = TemplateStore(TEMPLATES_FILE)
     app.state.active_playlist = ActivePlayersState()
-    _LOGGER.info("GBN started. Media: %s Posters: %s", MEDIA_BASE, POSTERS_FILE)
+    _LOGGER.info(
+        "GBN started. Media: %s Legacy posters: %s Templates: %s",
+        MEDIA_BASE,
+        POSTERS_FILE,
+        TEMPLATES_FILE,
+    )
 
 
 @app.get("/health")

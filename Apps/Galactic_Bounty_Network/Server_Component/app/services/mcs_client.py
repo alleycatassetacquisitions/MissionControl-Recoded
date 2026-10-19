@@ -124,3 +124,39 @@ async def lookup_by_mac(mac: str) -> Optional[IntakePlayer]:
         return None
     _LOGGER.info("MAC lookup not implemented yet (mcs=%s mac=%s)", MCS_BASE, normalized)
     return None
+
+
+async def get_active_event() -> Optional[dict[str, Any]]:
+    """Fetch MCS ``GET /events/active``.
+
+    Returns a dict with ``active_event_id``, optional ``event`` (id/name), and
+    ``source``, or ``None`` when MCS is unreachable / unset.
+    """
+    if not MCS_BASE:
+        return None
+
+    url = f"{MCS_BASE.rstrip('/')}/events/active"
+    try:
+        async with httpx.AsyncClient(timeout=8.0) as client:
+            resp = await client.get(url, headers=_auth_headers())
+            if resp.status_code != 200:
+                _LOGGER.warning("MCS GET %s -> %s", url, resp.status_code)
+                return None
+            data = resp.json()
+            if isinstance(data, dict):
+                return data
+    except Exception as exc:  # noqa: BLE001
+        _LOGGER.warning("MCS active event fetch failed (%s): %s", url, exc)
+    return None
+
+
+async def resolve_active_event_id() -> Optional[str]:
+    """Return the active event id string, or None."""
+    state = await get_active_event()
+    if not state:
+        return None
+    eid = state.get("active_event_id")
+    if eid is None and isinstance(state.get("event"), dict):
+        eid = state["event"].get("id")
+    eid = str(eid).strip() if eid is not None else ""
+    return eid or None

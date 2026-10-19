@@ -15,9 +15,16 @@
       this._blob = null;
       this._recordTimer = null;
       this._countdownTimer = null;
+      this._captureBusy = false;
       this._cameraPermitted = false;
       this._existingPoster = null;
       this._comboOpen = false;
+      this._templates = [];
+      this._activeTemplateId = "";
+      this._activeEventId = null;
+      this._activeEventName = "";
+      this._eventMedia = [];
+      this._lookManuallyToggled = false;
     }
     set panel(p) {
       this._panel = p;
@@ -39,7 +46,10 @@
     }
     async _boot() {
       await this._loadDirectoryUrl();
+      await this._loadActiveEvent();
+      await this._loadTemplates();
       await this._loadPlayers();
+      await this._loadEventMedia();
       await this._refreshCameras();
     }
     _feedback(msg, kind = "ok") {
@@ -58,35 +68,273 @@
       return ["reboot", "helix", "endline", "freelancer"].includes(s) ? s : "freelancer";
     }
     _playerRole(player) {
-      if (!player) return "gbn";
+      if (!player) return "neither";
       const r = String(player.mode || player.role || "").toLowerCase();
-      if (r === "hunter" || r === "gbn") return r;
+      if (r === "hunter") return "hunter";
+      if (r === "bounty") return "bounty";
+      if (r === "gbn" || r === "neither" || r === "other" || r === "custom") return "neither";
       if (player.hunter === 1) return "hunter";
-      if (player.hunter === 2) return "gbn";
-      return "gbn";
+      if (player.hunter === 2) return "neither";
+      if (player.hunter === 0) return "bounty";
+      return "neither";
     }
     _getRole() {
-      return this._selected ? this._playerRole(this._selected) : "gbn";
+      return this._selected ? this._playerRole(this._selected) : "neither";
+    }
+    /** Role value sent to GBN API (hunter|bounty only). */
+    _apiRole() {
+      return this._getRole() === "hunter" ? "hunter" : "bounty";
+    }
+    async _loadTemplates() {
+      try {
+        const { ok, body } = await this._api("/api/poster-templates");
+        this._templates = ok && Array.isArray(body) ? body : [];
+      } catch (_) {
+        this._templates = [];
+      }
+      this._fillTemplateSelect();
+    }
+    _fillTemplateSelect() {
+      const sel = this.shadowRoot?.getElementById("fld-template");
+      if (!sel) return;
+      const prev = this._activeTemplateId || sel.value;
+      sel.innerHTML = `<option value="">\u2014 Select template \u2014</option>`;
+      for (const t of this._templates) {
+        const opt = document.createElement("option");
+        opt.value = t.id;
+        opt.textContent = t.builtin ? `${t.name} (built-in)` : t.name;
+        sel.appendChild(opt);
+      }
+      if (prev && [...sel.options].some((o) => o.value === prev)) {
+        sel.value = prev;
+      }
+    }
+    _templateById(id) {
+      return this._templates.find((t) => t.id === id) || null;
+    }
+    _readChromeFromForm() {
+      const root = this.shadowRoot;
+      return {
+        template_id: root.getElementById("fld-template")?.value || "",
+        headline: (root.getElementById("fld-headline")?.value || "").trim(),
+        subtitle: (root.getElementById("fld-subtitle")?.value || "").trim(),
+        amount_label: (root.getElementById("fld-amount-label")?.value || "").trim(),
+        list_label: (root.getElementById("fld-list-label")?.value || "").trim(),
+        list_empty: (root.getElementById("fld-list-empty")?.value || "").trim()
+      };
+    }
+    _applyChromeToForm(chrome) {
+      const root = this.shadowRoot;
+      if (!chrome) return;
+      const set = (id, val) => {
+        const el = root.getElementById(id);
+        if (el) el.value = val ?? "";
+      };
+      if (chrome.template_id != null) {
+        const sel = root.getElementById("fld-template");
+        if (sel) sel.value = chrome.template_id;
+        this._activeTemplateId = chrome.template_id || "";
+      }
+      set("fld-headline", chrome.headline);
+      set("fld-subtitle", chrome.subtitle);
+      set("fld-amount-label", chrome.amount_label);
+      set("fld-list-label", chrome.list_label);
+      set("fld-list-empty", chrome.list_empty);
+      this._updateRoleUi();
+    }
+    _onTemplateSelected() {
+      const id = this.shadowRoot.getElementById("fld-template")?.value || "";
+      this._activeTemplateId = id;
+      const tmpl = this._templateById(id);
+      if (!tmpl) {
+        this._updateRoleUi();
+        return;
+      }
+      this._applyChromeToForm({
+        template_id: tmpl.id,
+        headline: tmpl.headline,
+        subtitle: tmpl.subtitle,
+        amount_label: tmpl.amount_label,
+        list_label: tmpl.list_label,
+        list_empty: tmpl.list_empty
+      });
+    }
+    _autoSelectTemplateForPlayer() {
+      const role = this._getRole();
+      if (role === "hunter" || role === "bounty") {
+        const tmpl = this._templateById(role);
+        if (tmpl) {
+          this._applyChromeToForm({
+            template_id: tmpl.id,
+            headline: tmpl.headline,
+            subtitle: tmpl.subtitle,
+            amount_label: tmpl.amount_label,
+            list_label: tmpl.list_label,
+            list_empty: tmpl.list_empty
+          });
+        } else if (role === "hunter") {
+          this._applyChromeToForm({
+            template_id: "hunter",
+            headline: "GUN FOR HIRE",
+            subtitle: "",
+            amount_label: "RATE",
+            list_label: "REASONS TO HIRE",
+            list_empty: "Details pending"
+          });
+        } else {
+          this._applyChromeToForm({
+            template_id: "bounty",
+            headline: "WANTED",
+            subtitle: "DEAD OR ALIVE",
+            amount_label: "REWARD",
+            list_label: "WANTED FOR",
+            list_empty: "Charges pending"
+          });
+        }
+        return;
+      }
+      this._activeTemplateId = "";
+      const sel = this.shadowRoot.getElementById("fld-template");
+      if (sel) sel.value = "";
+      this._applyChromeToForm({
+        template_id: "",
+        headline: "",
+        subtitle: "",
+        amount_label: "",
+        list_label: "",
+        list_empty: ""
+      });
+      this._feedback("Player is neither Hunter nor Bounty \u2014 pick a poster template", "warn");
+    }
+    _mergeTemplateIntoList(tmpl) {
+      if (!tmpl || !tmpl.id) return;
+      const rest = this._templates.filter((t) => t.id !== tmpl.id);
+      this._templates = [...rest, tmpl].sort((a, b) => {
+        if (a.builtin !== b.builtin) return a.builtin ? -1 : 1;
+        return String(a.name || "").localeCompare(String(b.name || ""));
+      });
+      this._activeTemplateId = tmpl.id;
+      this._fillTemplateSelect();
+    }
+    /**
+     * POST chrome as a new custom template and select it in the dropdown.
+     * @returns {Promise<object|null>} created template or null
+     */
+    async _createTemplateFromChrome(chrome, name) {
+      const headline = (chrome?.headline || "").trim();
+      if (!headline) {
+        this._feedback("Headline required to save a template", "warn");
+        return null;
+      }
+      const { ok, status, body } = await this._api("/api/poster-templates", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          name: (name || headline).trim().slice(0, 80) || "Custom poster",
+          headline,
+          subtitle: (chrome.subtitle || "").trim(),
+          amount_label: (chrome.amount_label || "").trim() || "REWARD",
+          list_label: (chrome.list_label || "").trim() || "WANTED FOR",
+          list_empty: (chrome.list_empty || "").trim() || "Charges pending"
+        })
+      });
+      if (!ok || !body || typeof body !== "object" || !body.id) {
+        const hint = status === 404 ? " \u2014 GBN server is missing /api/poster-templates (deploy updated app/ to CT 101 and restart gbn)" : "";
+        this._feedback(
+          `Save template failed (${status}): ${JSON.stringify(body)}${hint}`,
+          "err"
+        );
+        return null;
+      }
+      this._mergeTemplateIntoList(body);
+      this._activeTemplateId = body.id;
+      await this._loadTemplates();
+      this._applyChromeToForm({
+        template_id: body.id,
+        headline: body.headline,
+        subtitle: body.subtitle,
+        amount_label: body.amount_label,
+        list_label: body.list_label,
+        list_empty: body.list_empty
+      });
+      return body;
+    }
+    async _saveTemplateAsNew() {
+      const chrome = this._readChromeFromForm();
+      if (!chrome.headline) {
+        return this._feedback("Headline required to save a template", "warn");
+      }
+      const name = window.prompt(
+        "Name for the new template:",
+        chrome.headline.slice(0, 40) || "Custom poster"
+      );
+      if (!name || !name.trim()) return;
+      try {
+        const body = await this._createTemplateFromChrome(chrome, name.trim());
+        if (body) this._feedback(`Template saved: ${body.name}`, "ok");
+      } catch (err) {
+        this._feedback(`Save template failed: ${this._errText(err)}`, "err");
+      }
+    }
+    _updateLookSummary() {
+      const root = this.shadowRoot;
+      const summary = root?.getElementById("look-summary");
+      if (!summary) return;
+      const chrome = this._readChromeFromForm();
+      const tmpl = this._templateById(chrome.template_id);
+      const name = tmpl?.name || chrome.template_id || "none";
+      const headline = chrome.headline || "\u2014";
+      summary.textContent = `Using: ${name} \xB7 ${headline}`;
+    }
+    _syncLookDisclosure() {
+      const root = this.shadowRoot;
+      const details = root?.getElementById("look-details");
+      if (!details) return;
+      const role = this._getRole();
+      if (role === "neither") {
+        details.open = true;
+      } else if (!this._lookManuallyToggled) {
+        details.open = false;
+      }
+      this._updateLookSummary();
     }
     _updateRoleUi() {
       const root = this.shadowRoot;
+      const chrome = this._readChromeFromForm();
       const role = this._getRole();
-      const isHunter = role === "hunter";
+      const listLabel = chrome.list_label || (role === "hunter" ? "REASONS TO HIRE" : "WANTED FOR");
+      const amountLabel = chrome.amount_label || (role === "hunter" ? "RATE" : "REWARD");
       const lbl = root.getElementById("lbl-list-field");
+      const lblAmount = root.getElementById("lbl-amount-field");
       const crimes = root.getElementById("fld-crimes");
-      const cardTitle = root.getElementById("flavor-card-title");
       if (lbl) {
-        lbl.textContent = isHunter ? "Reasons to Hire (one per line)" : "Crimes / Wanted for (one per line)";
+        lbl.textContent = `${listLabel} (one per line)`;
+      }
+      if (lblAmount) {
+        lblAmount.textContent = `${amountLabel} (\u20A9)`;
       }
       if (crimes) {
-        crimes.placeholder = isHunter ? "What is your EIS?\nWhat do you want bounties to know about you?\nReviews from past clients." : "What are you wanted for?\nWhat are you known for?\nWhy are you dangerous?";
+        crimes.placeholder = role === "hunter" ? "What is your EIS?\nWhat do you want bounties to know about you?\nReviews from past clients." : "What are you wanted for?\nWhat are you known for?\nWhy are you dangerous?";
       }
-      if (cardTitle) {
-        cardTitle.textContent = isHunter ? "Flavor / reasons to hire" : "Flavor / crimes";
+      const hint = root.getElementById("template-hint");
+      if (hint) {
+        if (role === "neither") {
+          hint.textContent = "Neither Hunter nor Bounty \u2014 select a template or edit chrome and Save as new.";
+        } else {
+          hint.textContent = `Auto-selected ${role} template \u2014 edit chrome and Save as new to fork.`;
+        }
       }
+      this._syncLookDisclosure();
     }
     _posterUrlForPlayer(playerId) {
-      return `${this._serverUrl}/poster/player/${encodeURIComponent(playerId)}`;
+      const base = this._resolveServerUrl();
+      if (!base) return "";
+      return `${base}/poster/player/${encodeURIComponent(playerId)}`;
+    }
+    /** Operator-facing poster link: Core Configurator URL wins over server body. */
+    async _livePosterUrl(playerId, fallbackUrl = "") {
+      await this._loadDirectoryUrl();
+      return this._posterUrlForPlayer(playerId) || fallbackUrl || "";
     }
     async _loadPlayers() {
       if (!this.hass) return;
@@ -135,6 +383,7 @@
     async _selectPlayerById(id) {
       const player = this._players.find((p) => String(p.id) === id) || null;
       this._selected = player;
+      this._lookManuallyToggled = false;
       this._setComboOpen(false);
       const root = this.shadowRoot;
       const input = root.getElementById("player-combo-input");
@@ -146,7 +395,7 @@
       root.getElementById("fld-name").value = player.name || "";
       root.getElementById("fld-neocorp").value = this._normNeocorp(player.neocorp || player.allegiance);
       root.getElementById("fld-faction").value = player.faction || "";
-      this._updateRoleUi();
+      this._autoSelectTemplateForPlayer();
       await this._loadExistingPoster(String(player.id));
     }
     async _loadExistingPoster(playerId) {
@@ -167,6 +416,16 @@
         root.getElementById("fld-age").value = body.stats?.age || "";
         root.getElementById("fld-flavor").value = body.flavor_text || "";
         if (body.faction) root.getElementById("fld-faction").value = body.faction;
+        if (body.template_id || body.headline) {
+          this._applyChromeToForm({
+            template_id: body.template_id || "",
+            headline: body.headline || "",
+            subtitle: body.subtitle || "",
+            amount_label: body.amount_label || "",
+            list_label: body.list_label || "",
+            list_empty: body.list_empty || ""
+          });
+        }
         if (this._selected) {
           root.getElementById("fld-name").value = this._selected.name || body.name || "";
           root.getElementById("fld-neocorp").value = this._normNeocorp(
@@ -175,7 +434,7 @@
           root.getElementById("fld-faction").value = this._selected.faction || body.faction || "";
         }
         const link = root.getElementById("poster-link");
-        const url = body.poster_url || this._posterUrlForPlayer(playerId);
+        const url = await this._livePosterUrl(playerId, body.poster_url);
         link.href = url;
         link.textContent = url;
         root.getElementById("success-box").hidden = false;
@@ -218,7 +477,7 @@
       const root = this.shadowRoot;
       const name = root.getElementById("fld-name").value.trim();
       const allegiance = root.getElementById("fld-neocorp").value;
-      const role = this._getRole();
+      const role = this._apiRole();
       if (!name) return this._feedback("Enter a name first", "warn");
       try {
         const { ok, status, body } = await this._api("/api/flavor/generate", {
@@ -240,42 +499,152 @@
         this._feedback(`Generate failed: ${this._errText(err)}`, "err");
       }
     }
-    async _simulateIntake() {
-      const mac = this.shadowRoot.getElementById("fld-mac").value.trim();
-      if (!mac) return this._feedback("Enter a MAC to simulate", "warn");
+    async _loadActiveEvent() {
+      if (this.hass) {
+        try {
+          const result = await this.hass.connection.sendMessagePromise({
+            type: "registration/get_active_event"
+          });
+          this._activeEventId = result?.active_event_id || null;
+          this._activeEventName = result?.event?.name || "";
+          this._paintActiveEvent();
+          return;
+        } catch (_) {
+        }
+      }
       try {
-        const { status, body } = await this._api("/api/intake", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ mac })
-        });
-        if (status === 501) {
-          this._feedback(
-            `MAC ${mac}: lookup not wired yet (${body?.reason || "stub"}). Select player manually.`,
-            "warn"
-          );
-          return;
+        const { ok, body } = await this._api("/api/events/active");
+        if (ok && body) {
+          this._activeEventId = body.active_event_id || null;
+          this._activeEventName = body.event_name || "";
+        } else {
+          this._activeEventId = null;
+          this._activeEventName = "";
         }
-        if (status === 200 && body?.player) {
-          const p = body.player;
-          this.shadowRoot.getElementById("fld-name").value = p.name || "";
-          this.shadowRoot.getElementById("fld-neocorp").value = this._normNeocorp(
-            p.neocorp || p.allegiance
-          );
-          this.shadowRoot.getElementById("fld-faction").value = p.faction || "";
-          this._feedback(`Resolved ${p.name} from MAC`, "ok");
-          return;
+      } catch (_) {
+        this._activeEventId = null;
+        this._activeEventName = "";
+      }
+      this._paintActiveEvent();
+    }
+    _paintActiveEvent() {
+      const el = this.shadowRoot?.getElementById("active-event-chip");
+      if (!el) return;
+      if (this._activeEventId) {
+        const label = this._activeEventName ? `${this._activeEventName} (${this._activeEventId})` : this._activeEventId;
+        el.textContent = `Active event: ${label}`;
+        el.className = "event-chip ok";
+      } else {
+        el.textContent = "No active event \u2014 set one in Registration before capture";
+        el.className = "event-chip warn";
+      }
+    }
+    _formatBytes(n) {
+      const bytes = Number(n) || 0;
+      if (bytes < 1024) return `${bytes} B`;
+      if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+      if (bytes < 1024 * 1024 * 1024) return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+      return `${(bytes / (1024 * 1024 * 1024)).toFixed(2)} GB`;
+    }
+    async _loadEventMedia() {
+      try {
+        const { ok, body } = await this._api("/api/events/media");
+        this._eventMedia = ok && Array.isArray(body) ? body : [];
+      } catch (_) {
+        this._eventMedia = [];
+      }
+      this._paintEventMedia();
+    }
+    _paintEventMedia() {
+      const body = this.shadowRoot?.getElementById("event-media-body");
+      if (!body) return;
+      if (!this._eventMedia.length) {
+        body.innerHTML = `<tr><td colspan="4" class="muted">No event media folders yet</td></tr>`;
+        return;
+      }
+      body.innerHTML = "";
+      for (const row of this._eventMedia) {
+        const tr = document.createElement("tr");
+        if (row.is_active) tr.className = "is-active";
+        const name = row.event_name ? `${row.event_name}` : row.is_active ? "(active)" : "";
+        tr.innerHTML = `
+        <td><code>${row.event_id}</code>${name ? `<div class="muted">${name}</div>` : ""}${row.is_active ? `<div class="badge">active</div>` : ""}</td>
+        <td>${row.clip_count}</td>
+        <td>${this._formatBytes(row.bytes_total)}</td>
+        <td class="actions-cell"></td>
+      `;
+        const actions = tr.querySelector(".actions-cell");
+        const btnExport = document.createElement("button");
+        btnExport.type = "button";
+        btnExport.textContent = "Export clips";
+        btnExport.onclick = () => this._exportEventClips(row.event_id);
+        const btnDel = document.createElement("button");
+        btnDel.type = "button";
+        btnDel.className = "danger";
+        btnDel.textContent = "Delete";
+        btnDel.onclick = () => this._deleteEventMedia(row.event_id);
+        actions.appendChild(btnExport);
+        actions.appendChild(btnDel);
+        body.appendChild(tr);
+      }
+    }
+    async _exportEventClips(eventId) {
+      if (!eventId) return;
+      try {
+        this._feedback(`Exporting clips for ${eventId}\u2026`, "ok");
+        const headers = {};
+        if (this._token()) headers.Authorization = `Bearer ${this._token()}`;
+        const resp = await fetch(
+          `/api/gbn/proxy/api/events/${encodeURIComponent(eventId)}/clips/export`,
+          { headers, credentials: "same-origin", cache: "no-store" }
+        );
+        if (!resp.ok) {
+          const text = await resp.text();
+          return this._feedback(`Export failed (${resp.status}): ${text}`, "err");
         }
-        this._feedback(`Intake ${status}: ${JSON.stringify(body)}`, "err");
+        const blob = await resp.blob();
+        const cd = resp.headers.get("Content-Disposition") || "";
+        const match = /filename="?([^";]+)"?/i.exec(cd);
+        const filename = match?.[1] || `gbn-clips-${eventId}.zip`;
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement("a");
+        a.href = url;
+        a.download = filename;
+        a.click();
+        URL.revokeObjectURL(url);
+        this._feedback(`Downloaded ${filename}`, "ok");
       } catch (err) {
-        this._feedback(`Intake failed: ${this._errText(err)}`, "err");
+        this._feedback(`Export failed: ${this._errText(err)}`, "err");
+      }
+    }
+    async _deleteEventMedia(eventId) {
+      if (!eventId) return;
+      const ok = window.confirm(
+        `Delete all clips and posters for event \u201C${eventId}\u201D? This cannot be undone.`
+      );
+      if (!ok) return;
+      try {
+        const { ok: success, status, body } = await this._api(
+          `/api/events/${encodeURIComponent(eventId)}/media`,
+          { method: "DELETE" }
+        );
+        if (!success) {
+          return this._feedback(
+            `Delete failed (${status}): ${JSON.stringify(body)}`,
+            "err"
+          );
+        }
+        this._feedback(`Deleted media for ${eventId}`, "ok");
+        await this._loadEventMedia();
+      } catch (err) {
+        this._feedback(`Delete failed: ${this._errText(err)}`, "err");
       }
     }
     _setRecStatus(text) {
       const el = this.shadowRoot.getElementById("rec-status");
       if (el) el.textContent = text || "";
     }
-    _teardownCamera() {
+    _clearCaptureTimers() {
       if (this._recordTimer) {
         clearTimeout(this._recordTimer);
         this._recordTimer = null;
@@ -284,6 +653,10 @@
         clearInterval(this._countdownTimer);
         this._countdownTimer = null;
       }
+    }
+    _teardownCamera() {
+      this._clearCaptureTimers();
+      this._captureBusy = false;
       if (this._recorder && this._recorder.state !== "inactive") {
         try {
           this._recorder.stop();
@@ -398,29 +771,43 @@
       return "";
     }
     async _recordClip() {
+      if (this._captureBusy) {
+        return this._feedback("Already recording", "warn");
+      }
       if (!this._stream) {
         await this._startCamera();
         if (!this._stream) return;
       }
-      if (this._recorder && this._recorder.state === "recording") {
-        return this._feedback("Already recording", "warn");
+      this._clearCaptureTimers();
+      if (this._recorder && this._recorder.state !== "inactive") {
+        try {
+          this._recorder.stop();
+        } catch (_) {
+        }
       }
       let secs = Number(this.shadowRoot.getElementById("fld-seconds").value) || 4;
       secs = Math.min(5, Math.max(3, secs));
       this._chunks = [];
       this._blob = null;
+      this._captureBusy = true;
       const mime = this._pickMime();
+      let recorder;
       try {
-        this._recorder = mime ? new MediaRecorder(this._stream, { mimeType: mime }) : new MediaRecorder(this._stream);
+        recorder = mime ? new MediaRecorder(this._stream, { mimeType: mime }) : new MediaRecorder(this._stream);
       } catch (err) {
+        this._captureBusy = false;
         return this._feedback(`MediaRecorder failed: ${this._errText(err)}`, "err");
       }
-      this._recorder.ondataavailable = (ev) => {
+      this._recorder = recorder;
+      recorder.ondataavailable = (ev) => {
         if (ev.data && ev.data.size) this._chunks.push(ev.data);
       };
-      this._recorder.onstop = () => {
+      recorder.onstop = () => {
+        this._clearCaptureTimers();
+        this._captureBusy = false;
+        if (this._recorder !== recorder) return;
         this._blob = new Blob(this._chunks, {
-          type: this._recorder && this._recorder.mimeType || "video/webm"
+          type: recorder.mimeType || "video/webm"
         });
         const review = this.shadowRoot.getElementById("review-video");
         const live = this.shadowRoot.getElementById("live-video");
@@ -428,28 +815,52 @@
         review.src = URL.createObjectURL(this._blob);
         review.classList.remove("hidden");
         live.classList.add("hidden");
+        review.play?.().catch(() => {
+        });
         this._setRecStatus(`Captured ${(this._blob.size / 1024).toFixed(0)} KB`);
         this._feedback("Clip ready \u2014 review, retake, or create poster", "ok");
       };
       let left = 3;
+      let started = false;
       this._setRecStatus(`Recording in ${left}\u2026`);
-      this._countdownTimer = setInterval(() => {
-        left -= 1;
-        if (left <= 0) {
-          clearInterval(this._countdownTimer);
-          this._countdownTimer = null;
-          this._recorder.start(200);
-          this._setRecStatus(`Recording ${secs}s\u2026`);
-          this._recordTimer = setTimeout(() => {
-            if (this._recorder && this._recorder.state === "recording") this._recorder.stop();
-            this._recordTimer = null;
-          }, secs * 1e3);
-        } else {
-          this._setRecStatus(`Recording in ${left}\u2026`);
+      const countdown = setInterval(() => {
+        if (this._countdownTimer !== countdown) {
+          clearInterval(countdown);
+          return;
         }
+        left -= 1;
+        if (left > 0) {
+          this._setRecStatus(`Recording in ${left}\u2026`);
+          return;
+        }
+        clearInterval(countdown);
+        if (this._countdownTimer === countdown) this._countdownTimer = null;
+        if (started || this._recorder !== recorder) return;
+        started = true;
+        try {
+          recorder.start(200);
+        } catch (err) {
+          this._captureBusy = false;
+          this._feedback(`Record failed: ${this._errText(err)}`, "err");
+          return;
+        }
+        this._setRecStatus(`Recording ${secs}s\u2026`);
+        const stopTimer = setTimeout(() => {
+          if (this._recordTimer === stopTimer) this._recordTimer = null;
+          if (this._recorder === recorder && recorder.state === "recording") {
+            try {
+              recorder.stop();
+            } catch (_) {
+            }
+          }
+        }, secs * 1e3);
+        this._recordTimer = stopTimer;
       }, 1e3);
+      this._countdownTimer = countdown;
     }
     _retake() {
+      this._clearCaptureTimers();
+      this._captureBusy = false;
       const review = this.shadowRoot.getElementById("review-video");
       if (review.src && review.src.startsWith("blob:")) URL.revokeObjectURL(review.src);
       review.removeAttribute("src");
@@ -490,7 +901,28 @@
       const flavor = root.getElementById("fld-flavor").value.trim();
       const playerId = this._selected?.id != null ? String(this._selected.id) : "";
       if (!playerId) return this._feedback("Select a player from the roster first", "warn");
-      const role = this._getRole();
+      if (!this._activeEventId) {
+        await this._loadActiveEvent();
+        if (!this._activeEventId) {
+          return this._feedback(
+            "No active event \u2014 set one in Registration before creating a poster",
+            "warn"
+          );
+        }
+      }
+      const role = this._apiRole();
+      const chrome = this._readChromeFromForm();
+      const selectedTmpl = this._templateById(chrome.template_id);
+      if (this._getRole() === "neither") {
+        if (!chrome.template_id || !selectedTmpl) {
+          return this._feedback(
+            "Select a poster template, or Save as new template before Create",
+            "warn"
+          );
+        }
+      } else if (!chrome.template_id && !chrome.headline) {
+        return this._feedback("Select a poster template (or set a headline) first", "warn");
+      }
       const form = new FormData();
       form.append("name", name);
       form.append("neocorp", allegiance);
@@ -502,6 +934,12 @@
       form.append("crimes", JSON.stringify(crimes));
       form.append("stats", JSON.stringify(stats));
       form.append("flavor_text", flavor);
+      form.append("template_id", chrome.template_id);
+      form.append("headline", chrome.headline);
+      form.append("subtitle", chrome.subtitle);
+      form.append("amount_label", chrome.amount_label);
+      form.append("list_label", chrome.list_label);
+      form.append("list_empty", chrome.list_empty);
       const safe = name.replace(/\s+/g, "_").toLowerCase();
       const filename = this._blob instanceof File && this._blob.name ? this._blob.name : `${safe}.webm`;
       form.append("video", this._blob, filename);
@@ -522,11 +960,12 @@
         }
         this._existingPoster = body;
         const link = root.getElementById("poster-link");
-        const url = body.poster_url || this._posterUrlForPlayer(playerId);
+        const url = await this._livePosterUrl(playerId, body.poster_url);
         link.href = url;
         link.textContent = url;
         root.getElementById("success-box").hidden = false;
         this._feedback(`Poster saved for player ${playerId}`, "ok");
+        await this._loadEventMedia();
       } catch (err) {
         this._feedback(`Upload failed: ${this._errText(err)}`, "err");
       }
@@ -623,9 +1062,38 @@
           width: min(420px, 90vw); border: 1px solid var(--divider-color);
         }
         .hint { font-size: 0.7rem; opacity: 0.65; margin-top: 0.35rem; }
-        .mac-row { display: flex; gap: 0.5rem; align-items: center; }
-        .mac-row input { flex: 1; }
-        .mac-row button { width: auto; }
+        .event-chip {
+          font-size: 0.8rem; margin: 0 0 0.75rem; padding: 0.4rem 0.6rem;
+          border: 1px solid var(--divider-color, #1f3a44); border-radius: 3px;
+        }
+        .event-chip.ok { border-color: #6dffb0; color: #6dffb0; }
+        .event-chip.warn { border-color: #ffd166; color: #ffd166; }
+        details.look {
+          margin-bottom: 0.75rem;
+          border: 1px solid var(--divider-color, #1f3a44);
+          border-radius: 3px; padding: 0.35rem 0.55rem 0.55rem;
+        }
+        details.look > summary {
+          cursor: pointer; list-style: none;
+          font-size: 0.8rem; letter-spacing: 0.08em; text-transform: uppercase;
+          color: var(--ac-cyan, #00e5ff); padding: 0.35rem 0;
+        }
+        details.look > summary::-webkit-details-marker { display: none; }
+        #look-summary { font-size: 0.75rem; opacity: 0.75; margin: 0 0 0.35rem; }
+        .media-table { width: 100%; border-collapse: collapse; font-size: 0.85rem; }
+        .media-table th, .media-table td {
+          text-align: left; padding: 0.4rem 0.35rem;
+          border-bottom: 1px solid var(--divider-color, #1f3a44);
+          vertical-align: top;
+        }
+        .media-table tr.is-active { background: rgba(0, 229, 255, 0.06); }
+        .media-table .actions-cell { display: flex; flex-wrap: wrap; gap: 0.35rem; }
+        .media-table .actions-cell button { width: auto; }
+        .media-table .muted { opacity: 0.65; font-size: 0.75rem; }
+        .media-table .badge {
+          display: inline-block; margin-top: 0.2rem; font-size: 0.65rem;
+          letter-spacing: 0.08em; text-transform: uppercase; color: var(--ac-cyan, #00e5ff);
+        }
         .cam-row {
           display: grid;
           grid-template-columns: 2fr 1fr auto auto;
@@ -660,6 +1128,7 @@
             <button type="button" id="btn-server">Server URL</button>
           </div>
         </header>
+        <div id="active-event-chip" class="event-chip warn">Loading active event\u2026</div>
 
         <div class="grid">
           <section class="card">
@@ -671,7 +1140,7 @@
             </div>
             <label for="fld-name">Name</label>
             <input id="fld-name" autocomplete="off" />
-            <label for="fld-neocorp">NeoCorp</label>
+            <label for="fld-neocorp">Allegiance/NeoCorp</label>
             <select id="fld-neocorp">
               <option value="reboot">reboot</option>
               <option value="helix">helix</option>
@@ -680,19 +1149,48 @@
             </select>
             <label for="fld-faction">Faction</label>
             <input id="fld-faction" autocomplete="off" />
-            <label for="fld-mac">Simulate MAC intake (FDN later)</label>
-            <div class="mac-row">
-              <input id="fld-mac" placeholder="aa:bb:cc:dd:ee:ff" />
-              <button type="button" id="btn-intake">Simulate</button>
-            </div>
-            <p class="hint">MAC \u2192 player lookup is stubbed (501) until Central supports it.</p>
           </section>
 
           <section class="card">
-            <h2 id="flavor-card-title">Flavor / crimes</h2>
-            <label for="fld-bounty">Mock bounty (\u20A9)</label>
+            <h2>Poster copy</h2>
+            <p id="look-summary">Using: \u2014</p>
+            <details class="look" id="look-details">
+              <summary>Customize poster look</summary>
+              <label for="fld-template">Poster template</label>
+              <select id="fld-template">
+                <option value="">\u2014 Select template \u2014</option>
+              </select>
+              <p class="hint" id="template-hint">Hunter/Bounty auto-select; other roles pick a template.</p>
+              <div class="row">
+                <div>
+                  <label for="fld-headline">Headline title</label>
+                  <input id="fld-headline" placeholder="WANTED / GUN FOR HIRE / \u2026" />
+                </div>
+                <div>
+                  <label for="fld-subtitle">Subtitle (optional)</label>
+                  <input id="fld-subtitle" placeholder="DEAD OR ALIVE" />
+                </div>
+              </div>
+              <div class="row">
+                <div>
+                  <label for="fld-amount-label">Amount label</label>
+                  <input id="fld-amount-label" placeholder="REWARD / RATE" />
+                </div>
+                <div>
+                  <label for="fld-list-label">List label</label>
+                  <input id="fld-list-label" placeholder="WANTED FOR / REASONS TO HIRE" />
+                </div>
+              </div>
+              <label for="fld-list-empty">Empty-list placeholder</label>
+              <input id="fld-list-empty" placeholder="Charges pending" />
+              <div class="actions" style="margin-top:0.5rem">
+                <button type="button" id="btn-template-save">Save as new template</button>
+              </div>
+              <p class="hint">Required before Create if you changed chrome for a non-Hunter/Bounty player.</p>
+            </details>
+            <label id="lbl-amount-field" for="fld-bounty">REWARD (\u20A9)</label>
             <input id="fld-bounty" type="number" min="0" step="10000" value="1000000" />
-            <label id="lbl-list-field" for="fld-crimes">Crimes / Wanted for (one per line)</label>
+            <label id="lbl-list-field" for="fld-crimes">WANTED FOR (one per line)</label>
             <textarea id="fld-crimes"></textarea>
             <div class="row">
               <div>
@@ -732,7 +1230,7 @@
             </div>
             <div class="preview">
               <video id="live-video" autoplay muted playsinline></video>
-              <video id="review-video" class="hidden" controls loop playsinline></video>
+              <video id="review-video" class="hidden" controls playsinline></video>
             </div>
             <div class="rec-status" id="rec-status"></div>
             <div class="actions">
@@ -748,6 +1246,27 @@
               <strong>Poster live</strong>
               <div><a id="poster-link" href="#" target="_blank" rel="noopener"></a></div>
             </div>
+          </section>
+
+          <section class="card" style="grid-column: 1 / -1">
+            <h2>Event media</h2>
+            <div class="actions" style="margin-top:0">
+              <button type="button" id="btn-media-refresh">Refresh</button>
+            </div>
+            <p class="hint">Clips are stored per event as {player_id}.ext. Export downloads a zip of videos only.</p>
+            <table class="media-table">
+              <thead>
+                <tr>
+                  <th>Event</th>
+                  <th>Clips</th>
+                  <th>Size</th>
+                  <th>Actions</th>
+                </tr>
+              </thead>
+              <tbody id="event-media-body">
+                <tr><td colspan="4" class="muted">Loading\u2026</td></tr>
+              </tbody>
+            </table>
           </section>
         </div>
 
@@ -766,15 +1285,45 @@
       </div>
     `;
       const root = this.shadowRoot;
-      root.getElementById("btn-reload").onclick = () => this._loadPlayers();
+      root.getElementById("btn-reload").onclick = async () => {
+        await this._loadActiveEvent();
+        await this._loadPlayers();
+        await this._loadEventMedia();
+      };
       root.getElementById("btn-generate").onclick = () => this._generateFlavor();
-      root.getElementById("btn-intake").onclick = () => this._simulateIntake();
       root.getElementById("btn-cam-refresh").onclick = () => this._refreshCameras();
       root.getElementById("btn-cam-start").onclick = () => this._startCamera();
       root.getElementById("btn-record").onclick = () => this._recordClip();
       root.getElementById("btn-retake").onclick = () => this._retake();
       root.getElementById("btn-submit").onclick = () => this._submit();
+      root.getElementById("btn-media-refresh").onclick = async () => {
+        await this._loadActiveEvent();
+        await this._loadEventMedia();
+      };
       root.getElementById("fld-upload").onchange = (ev) => this._onUpload(ev);
+      root.getElementById("fld-template").onchange = () => {
+        this._onTemplateSelected();
+        this._updateLookSummary();
+      };
+      root.getElementById("btn-template-save").onclick = () => this._saveTemplateAsNew();
+      const lookDetails = root.getElementById("look-details");
+      if (lookDetails) {
+        lookDetails.addEventListener("toggle", () => {
+          this._lookManuallyToggled = true;
+        });
+      }
+      for (const id of [
+        "fld-headline",
+        "fld-subtitle",
+        "fld-amount-label",
+        "fld-list-label",
+        "fld-list-empty"
+      ]) {
+        root.getElementById(id).oninput = () => this._updateRoleUi();
+      }
+      this._fillTemplateSelect();
+      this._paintActiveEvent();
+      this._paintEventMedia();
       const combo = root.getElementById("player-combo-input");
       combo.onfocus = () => {
         this._renderComboList(combo.value);

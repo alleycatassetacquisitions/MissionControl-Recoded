@@ -45,6 +45,8 @@ Home Assistant is the **only** MQTT command publisher.
 
 **Panels:** AlleycatTV (live control) + AlleycatTV Content (full library/playlists via HA proxy). Placement and Broadcast Group membership: **Broadcast Group Controller**.
 
+**Webpage items:** Content can add scoreboard URLs or **+ Poster cycle** (needs Core Configurator `gbn`). Poster cycle upserts a long-lived `webpage` item pointing at GBN `/poster-cycle`, which rotates every made poster every 30s inside Chromium on the Pi.
+
 **Membership:** Pis learn `broadcast_group_id` from `mc/tv/cmd/device/{id}/membership` (Phase 7). Env `ALLEYCATV_BROADCAST_GROUP_ID` is lab bootstrap only.
 
 ---

@@ -10,12 +10,33 @@ _SERVER_DIR = _APP_DIR.parent
 DATA_DIR = Path(os.getenv("GBN_DATA", str(_SERVER_DIR / "data")))
 MEDIA_BASE = Path(os.getenv("GBN_MEDIA", str(_SERVER_DIR / "media")))
 POSTERS_FILE = Path(os.getenv("GBN_POSTERS", str(DATA_DIR / "posters.json")))
+TEMPLATES_FILE = Path(
+    os.getenv("GBN_TEMPLATES", str(DATA_DIR / "poster_templates.json"))
+)
 
 API_HOST = os.getenv("GBN_HOST", "0.0.0.0")
 API_PORT = int(os.getenv("GBN_PORT", "8100"))
 
-# Public base URL used when building poster links returned to clients.
+# Fallback public base when no request Host is available (install-time DHCP IP).
+# Poster/media links prefer ``public_base_for(request)`` so a new LAN IP is
+# picked up automatically when Core Configurator / clients hit the new address.
 PUBLIC_BASE = os.getenv("GBN_PUBLIC_BASE", f"http://127.0.0.1:{API_PORT}").rstrip("/")
+
+
+def public_base_for(request=None) -> str:
+    """Absolute base URL for poster and media links.
+
+    Prefer the Host the client used (HA proxy uses Core Configurator's ``gbn``
+    URL; direct browsers use whatever IP they opened). Fall back to
+    ``GBN_PUBLIC_BASE`` only when there is no request context.
+    """
+    if request is not None:
+        base_url = getattr(request, "base_url", None)
+        if base_url is not None:
+            base = str(base_url).rstrip("/")
+            if base:
+                return base
+    return PUBLIC_BASE
 
 # Master Control Server base (player overlay). Empty = skip live overlay / intake stub.
 MCS_BASE = os.getenv("GBN_MCS_BASE", "").rstrip("/")

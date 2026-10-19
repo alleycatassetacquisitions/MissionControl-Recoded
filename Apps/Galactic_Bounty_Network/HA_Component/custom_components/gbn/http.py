@@ -107,10 +107,16 @@ class GbnProxyView(HomeAssistantView):
                 _LOGGER.warning(
                     "GBN proxy upstream %s %s -> %s", method, api_path, resp.status
                 )
+            headers: dict[str, str] = {}
+            # Pass through download filename for clip zip exports.
+            cd = resp.headers.get("Content-Disposition")
+            if cd:
+                headers["Content-Disposition"] = cd
             return web.Response(
                 body=payload,
                 status=resp.status,
                 content_type=resp.content_type or "application/json",
+                headers=headers,
             )
         except Exception as err:  # noqa: BLE001
             _LOGGER.warning("GBN proxy %s %s failed: %s", method, api_path, err)

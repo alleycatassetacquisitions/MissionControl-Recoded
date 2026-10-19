@@ -69,7 +69,7 @@ The media player app used to play content across the event. Phase 6: HA integrat
 - **Communication:** MQTT (HA ↔ Pi), HTTP (HA ↔ content server)
 - **Language:** Python
 - **Key tools and formats:** MPV, JSON, IPC
-- **Used for:** premade content, scoreboards, and RTSP streams to displays around the event
+- **Used for:** premade content, scoreboards, GBN poster pages / poster-cycle, and RTSP streams to displays around the event
 - **Code:** `alleycattv`
 - **Deploy:** `Docs/AlleycatTV Config Steps.md`
 
@@ -77,8 +77,15 @@ The media player app used to play content across the event. Phase 6: HA integrat
 
 The Mission Control app for creating and updating posters that players see on AlleycatTV. Capture hardware and poster intake belong here.
 
+Poster **chrome** (headline, optional subtitle, amount label, list label) comes from **poster templates**: built-in Hunter / Bounty seeds auto-apply from roster role; other players pick or save a custom template at intake. Chrome is snapshotted onto each poster. The capture panel labels affiliation **Allegiance/NeoCorp** (code field remains `neocorp`).
+
+Capture **clips** and poster metadata are stored **per Event** (active Event from Registration / MCS): `media/events/{event_id}/videos/{player_id}.*` and `data/events/{event_id}/posters.json`. Operators can export a zip of clips (player-id filenames) or delete an event’s media from the GBN panel.
+
+Display URLs: single poster `/poster/player/{id}`; **poster-cycle** `/poster-cycle` rotates every made poster every 30s (AlleycatTV Content **+ Poster cycle**); **active-players** is a separate game-server curated list.
+
 - **Communication:** HTTP
 - **Code:** `gbn`
+- **Deploy:** `Docs/GBN Config Steps.md`
 
 ### Net Time
 
@@ -161,13 +168,15 @@ The Mission Control dashboard for **gameplay** controls on the active event: sco
 
 Historical label for corporation membership. Central now models this as **event affiliations** (categories + choices + player assignment). Seed data may use Allegiance/Faction category names. Registration will wire affiliation UI when Central ships the management JSON API.
 
+In the GBN capture panel the control is labeled **Allegiance/NeoCorp**; the stored field and API key remain `neocorp` (`reboot` / `helix` / `endline` / `freelancer`).
+
 ### Faction
 
 A named affiliation choice within an event category (often seeded as “Faction”). Same pending path as NeoCorp — wait for Central affiliation HTTP.
 
 ### Role / Mode
 
-Legacy HA alias for hunter/bounty assignment. Central now uses **teams** (`team_id` / `team_name`); MCS may still derive `mode`/`role` from team names such as Hunter/Bounty for older consumers. GBN must not define Role. GBN stores `player_id` as a foreign key and overlays live Player data from Master Control Server.
+Legacy HA alias for hunter/bounty assignment. Central now uses **teams** (`team_id` / `team_name`); MCS may still derive `mode`/`role` from team names such as Hunter/Bounty for older consumers. GBN must not define Role. GBN stores `player_id` as a foreign key and overlays live Player data from Master Control Server. For poster chrome, GBN maps hunter → built-in Hunter template, bounty → built-in Bounty template, and any other roster role to a manually chosen (or newly saved) custom template.
 
 ### ID
 

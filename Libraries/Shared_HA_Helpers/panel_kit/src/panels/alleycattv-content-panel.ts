@@ -20,6 +20,7 @@ class AlleycatTVContentPanel extends window.McPanel.Base {
     this._promptCb = null;
     this._libDrag = null;
     this._cachedServerUrl = "";
+    this._cachedGbnUrl = "";
   }
 
   set panel(panel) {
@@ -29,11 +30,16 @@ class AlleycatTVContentPanel extends window.McPanel.Base {
 
   async _boot() {
     await this._loadDirectoryUrl();
+    await this._loadGbnUrl();
     this._loadAll();
   }
 
   _serverUrl() {
     return String(this._cachedServerUrl || "").replace(/\/$/, "");
+  }
+
+  _gbnUrl() {
+    return String(this._cachedGbnUrl || "").replace(/\/$/, "");
   }
 
   async _loadDirectoryUrl() {
@@ -43,6 +49,16 @@ class AlleycatTVContentPanel extends window.McPanel.Base {
       }
     } catch (_) {
       this._cachedServerUrl = "";
+    }
+  }
+
+  async _loadGbnUrl() {
+    try {
+      if (window.CoreConfigurator && this.hass) {
+        this._cachedGbnUrl = await window.CoreConfigurator.getUrl(this.hass, "gbn");
+      }
+    } catch (_) {
+      this._cachedGbnUrl = "";
     }
   }
 
@@ -325,6 +341,7 @@ class AlleycatTVContentPanel extends window.McPanel.Base {
           <label>Transition bumper <select class="bumper">${bumperOpts}</select></label>
           <button class="btn ghost save">Save settings</button>
           <button class="btn primary score">+ Scoreboard URL</button>
+          <button class="btn ghost posters">+ Poster cycle</button>
         </div>
         <div class="drop">Drop library items or files, or click to upload
           <input type="file" multiple accept="video/*,image/*,.mp4,.mkv,.mov,.avi,.webm,.jpg,.jpeg,.png,.webp" />
@@ -338,6 +355,7 @@ class AlleycatTVContentPanel extends window.McPanel.Base {
           </div>`).join("") : `<p class="muted">No content yet — drag from the library below</p>`}</div>`;
       card.querySelector(".save").addEventListener("click", () => this._saveSettings(gid, card));
       card.querySelector(".score").addEventListener("click", () => this._addScoreboard(gid));
+      card.querySelector(".posters").addEventListener("click", () => this._addPosterCycle(gid));
       const fileInput = card.querySelector("input[type=file]");
       fileInput.addEventListener("change", (e) => this._handleFiles(e.target.files, gid, false));
       card.querySelector(".drop").addEventListener("click", (e) => {
@@ -476,6 +494,53 @@ class AlleycatTVContentPanel extends window.McPanel.Base {
     const items = pl.items || [];
     items.push({ filename: data.label, media_type: "webpage", url: data.url, duration: data.duration });
     await this._api("PUT", `/api/playlists/${encodeURIComponent(zoneId)}`, { ...pl, broadcast_group_id: zoneId, zone_id: zoneId, items });
+    await this._loadAll();
+    await this._reloadPlaylist(zoneId);
+  }
+
+  async _addPosterCycle(zoneId) {
+    try {
+      if (window.CoreConfigurator && this.hass) {
+        this._cachedGbnUrl = await window.CoreConfigurator.getUrl(this.hass, "gbn");
+      }
+    } catch (_) {
+      /* keep cached */
+    }
+    const gbn = this._gbnUrl();
+    if (!gbn) {
+      this._toast("Set Galactic Bounty Network URL in Core Configurator first", "err");
+      return;
+    }
+    const cycleUrl = `${gbn}/poster-cycle`;
+    const duration = 3600;
+    const pl = await this._api("GET", `/api/playlists/${encodeURIComponent(zoneId)}`);
+    const items = [...(pl.items || [])];
+    const existing = items.findIndex(
+      (it) => it.media_type === "webpage" && String(it.url || "").replace(/\/$/, "") === cycleUrl
+    );
+    if (existing >= 0) {
+      items[existing] = {
+        ...items[existing],
+        filename: "GBN Poster Cycle",
+        media_type: "webpage",
+        url: cycleUrl,
+        duration,
+      };
+    } else {
+      items.push({
+        filename: "GBN Poster Cycle",
+        media_type: "webpage",
+        url: cycleUrl,
+        duration,
+      });
+    }
+    await this._api("PUT", `/api/playlists/${encodeURIComponent(zoneId)}`, {
+      ...pl,
+      broadcast_group_id: zoneId,
+      zone_id: zoneId,
+      items,
+    });
+    this._toast("Poster cycle added — rotates all GBN posters every 30s", "ok");
     await this._loadAll();
     await this._reloadPlaylist(zoneId);
   }

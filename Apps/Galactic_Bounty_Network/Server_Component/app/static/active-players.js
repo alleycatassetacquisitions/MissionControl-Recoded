@@ -2,14 +2,14 @@
   const cfg = window.GBN_ACTIVE || {};
   const ids = Array.isArray(cfg.playerIds) ? cfg.playerIds.map(String) : [];
   const intervalMs = Math.max(5000, (cfg.intervalSec || 30) * 1000);
-  const base = (cfg.publicBase || "").replace(/\/$/, "");
   const frame = document.getElementById("poster-frame");
   const hud = document.getElementById("hud");
   const hudLabel = document.getElementById("hud-label");
   let index = 0;
 
   function posterUrl(playerId) {
-    return `${base}/poster/player/${encodeURIComponent(playerId)}`;
+    // Same-origin relative path — survives DHCP / IP scheme changes.
+    return `/poster/player/${encodeURIComponent(playerId)}`;
   }
 
   function showCurrent() {

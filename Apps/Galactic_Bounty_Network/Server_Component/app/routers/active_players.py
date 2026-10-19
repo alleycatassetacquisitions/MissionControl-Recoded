@@ -8,7 +8,7 @@ from datetime import datetime, timezone
 from fastapi import APIRouter, Header, HTTPException, Request
 from fastapi.templating import Jinja2Templates
 
-from app.config import ACTIVE_PLAYERS_SECRET, PUBLIC_BASE, TEMPLATES_DIR
+from app.config import ACTIVE_PLAYERS_SECRET, TEMPLATES_DIR
 from app.models import ActivePlayersRequest, ActivePlayersState
 
 _LOGGER = logging.getLogger(__name__)
@@ -67,7 +67,6 @@ async def active_players_page(request: Request):
         request,
         "active-players.html",
         {
-            "public_base": PUBLIC_BASE,
             "player_ids_json": json.dumps(state.player_ids),
             "interval_sec": state.interval_sec,
         },
