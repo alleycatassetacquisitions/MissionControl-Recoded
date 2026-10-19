@@ -79,9 +79,9 @@ The Mission Control app for creating and updating posters that players see on Al
 
 Poster **chrome** (headline, optional subtitle, amount label, list label) comes from **poster templates**: built-in Hunter / Bounty seeds auto-apply from roster role; other players pick or save a custom template at intake. Chrome is snapshotted onto each poster. The capture panel labels affiliation **Allegiance/NeoCorp** (code field remains `neocorp`).
 
-Capture **clips** and poster metadata are stored **per Event** (active Event from Registration / MCS): `media/events/{event_id}/videos/{player_id}.*` and `data/events/{event_id}/posters.json`. Operators can export a zip of clips (player-id filenames) or delete an event’s media from the GBN panel.
+Capture **clips** and poster metadata are stored **per Event** (active Event from Registration / MCS): `media/events/{event_id}/videos/{player_id}.*`, `data/events/{event_id}/posters.json`, and `data/events/{event_id}/meta.json` (display name). GBN also keeps `data/active_event.json` so AlleycatTV kiosks know the active Event when MCS is briefly unreachable. Registration **set active** pushes that pointer to GBN. Operators can export a zip of clips (player-id filenames) or delete an event’s media from the GBN panel.
 
-Display URLs: single poster `/poster/player/{id}`; **poster-cycle** `/poster-cycle` rotates every made poster every 30s (AlleycatTV Content **+ Poster cycle**); **active-players** is a separate game-server curated list.
+Display URLs: single poster `/poster/player/{id}` (resolved against the active Event); **poster-cycle** `/poster-cycle` rotates **that Event’s** posters every 30s (AlleycatTV Content **+ Poster cycle**); **active-players** is a separate game-server curated list.
 
 - **Communication:** HTTP
 - **Code:** `gbn`
@@ -150,7 +150,7 @@ Digital Node Nexus and AlleycatTV own payloads (LED, haptic, playback). They do 
 
 ### Event
 
-A venue session on Central Server. Players register into the **active** event. Mission Control creates/edits/activates events via Master Control Server (`POST` / `PATCH` / `PUT …/active`). Active event is read from Central `GET /game-state` (MCS `GET /events/active`).
+A venue session on Central Server. Players register into the **active** event. Mission Control creates/edits/activates events via Master Control Server (`POST` / `PATCH` / `PUT …/active`). Active event is read from Central `GET /game-state` (MCS `GET /events/active`). Registration also pushes the active Event to GBN so poster capture and `/poster-cycle` stay scoped to that session’s clips and posters.
 
 ### Player
 

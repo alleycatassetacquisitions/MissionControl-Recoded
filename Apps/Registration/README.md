@@ -12,9 +12,10 @@ Home Assistant face of **Master Control Server**. Operators manage **events** (i
 
 | Dependency | Why |
 |---|---|
-| Core Configurator | MCS URL (`master_control_server`), MCS Bearer (`extra.token`), `central_primary` / `central_secondary` |
+| Core Configurator | MCS URL (`master_control_server`), MCS Bearer (`extra.token`), `central_primary` / `central_secondary`, GBN URL (`gbn`) for active-event push |
 | Shared HA Helpers | `async_request`, `mc-panel.js` |
 | Master Control Server | Events + roster + players + teams |
+| Galactic Bounty Network (optional) | Receives active-event push so AlleycatTV `/poster-cycle` stays current |
 
 Registration never stores the MCS token in its own config entry.
 
@@ -28,7 +29,7 @@ Registration never stores the MCS token in its own config entry.
 | `registration.register_player` | `POST /players` JSON (`name`, optional `email`) |
 | `registration.create_event` | `POST /events` (+ optional set-active) |
 | `registration.update_event` | `PATCH /events/{event_id}` |
-| `registration.set_active_event` | `PUT /events/{event_id}/active` |
+| `registration.set_active_event` | `PUT /events/{event_id}/active` on MCS, then `PUT /api/events/active` on GBN (id + name) |
 | `registration.update_player` | `PUT /players/{id}` → Central PATCH (`name`/`email`/`team_id`/`active`) |
 | `registration.delete_player` | `DELETE /players/{id}` → soft-deactivate (`active: false`) |
 
@@ -53,9 +54,9 @@ Register payload: `name` + optional `email`. Affiliations (NeoCorp/Faction) wait
 
 Sidebar panel (`www/registration/registration-panel.js`):
 
-- **Events strip** — create / edit / set-active + Active indicator
+- **Events strip** — create / edit / set-active + Active indicator (set-active also notifies GBN for poster-cycle)
 - Register form: **Name** + **Email**
-- Roster: **PDN**, Name, **Team**, **Status**, Created, Email, Poster; **Edit** + **Deactivate**
+- Roster: **PDN**, Name, **Team**, **Status**, Created, Email, Poster (active-event thumbs via GBN proxy); **Edit** + **Deactivate**
 - Reads via websocket; writes via HA services only
 
 Load order in `configuration.yaml` `frontend.extra_module_url` (panel kit only — full shell order including custom-sidebar is in [`HomeAssist/configuration.yaml`](../../HomeAssist/configuration.yaml)):

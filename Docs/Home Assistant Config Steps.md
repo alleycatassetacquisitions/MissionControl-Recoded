@@ -283,7 +283,7 @@ ha core restart
 1. Settings → Devices & services → Add **AlleycatTV** (install-only). MQTT must already be ready (Phase 5a). Sidebar panels without this entry → “Unknown command” / “Proxy not registered”.
 2. Sidebar: **AlleycatTV** and **AlleycatTV Content**.
 3. Pis that publish `mc/tv/status/{pi_id}` appear as devices; playback commands use `alleycattv.play_broadcast_group` / `stop_broadcast_group`.
-4. Content **+ Poster cycle** (after Phase 8 / Core Configurator `gbn`) adds `{gbn}/poster-cycle` as a webpage playlist item — see [`GBN Config Steps.md` § C](GBN%20Config%20Steps.md#c-poster-display-urls).
+4. Content **+ Poster cycle** (after Phase 8 / Core Configurator `gbn`) adds `{gbn}/poster-cycle` as a webpage playlist item for **active-event** posters — see [`GBN Config Steps.md` § C](GBN%20Config%20Steps.md#c-poster-display-urls). Set the active Event in Registration so GBN’s cache is seeded.
 
 #### 6c. Flash TV Pi SD cards (prep PC)
 
@@ -352,7 +352,7 @@ Merge from [`HomeAssist/configuration.yaml`](../HomeAssist/configuration.yaml): 
 4. Poster HTML overlays live MCS name/role/neocorp/faction on every read; chrome comes from the poster snapshot (or role built-in).
 5. Registration **Poster** column shows thumb + open link via `/api/gbn/proxy`.
 6. Smoke: `GET http://<gbn-ip>:8100/api/poster-templates` returns hunter + bounty (not 404).
-7. Smoke: `GET http://<gbn-ip>:8100/poster-cycle` returns HTML; AlleycatTV Content **+ Poster cycle** adds that URL to a broadcast group playlist (rotates all posters every 30s).
+7. Smoke: set active Event in Registration; `GET http://<gbn-ip>:8100/api/events/active` shows that event; `GET http://<gbn-ip>:8100/poster-cycle` rotates its posters; AlleycatTV Content **+ Poster cycle** adds that URL to a broadcast group playlist.
 
 App README: [`Apps/Galactic_Bounty_Network/README.md`](../Apps/Galactic_Bounty_Network/README.md)
 

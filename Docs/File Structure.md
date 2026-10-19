@@ -261,7 +261,7 @@ Manages communications with FDNs (Fixed Data Nodes). Mission Control talks to FD
 
 ### Galactic Bounty Network
 
-Manages bounty posters, bounty boards, and poster capture. In code this is `gbn` — not Photobooth or `bounty`. Poster chrome templates (hunter/bounty built-ins + customs) live on the guest as `data/poster_templates.json`; public poster links follow the request Host (Core Configurator `gbn` URL). Kiosk pages: `/poster-cycle` (all posters, 30s) and `/active-players` (game-server list). AlleycatTV Content **+ Poster cycle** plays the former as a webpage playlist item.
+Manages bounty posters, bounty boards, and poster capture. In code this is `gbn` — not Photobooth or `bounty`. Poster chrome templates (hunter/bounty built-ins + customs) live on the guest as `data/poster_templates.json`; clips/posters are **per Event** under `data/events/{id}/` and `media/events/{id}/videos/`; `data/active_event.json` caches the active Event for kiosks (Registration `PUT /api/events/active`). Public poster links follow the request Host (Core Configurator `gbn` URL). Kiosk pages: `/poster-cycle` (**active-event** posters, 30s) and `/active-players` (game-server list). AlleycatTV Content **+ Poster cycle** plays the former as a webpage playlist item.
 
 **Path:** `Apps\Galactic_Bounty_Network\`  
 **On HA:** `/config/custom_components/gbn/` + `/config/www/gbn/`  
@@ -271,7 +271,7 @@ Manages bounty posters, bounty boards, and poster capture. In code this is `gbn`
 
 ### Registration
 
-Home Assistant face of Master Control Server: events strip, roster sensor, services (`sync_now`, `register_player`, `create_event`, `update_event`, `set_active_event`, `update_player`, soft-deactivate `delete_player`), and sidebar panel. Talks only to MCS — never opens a Central socket. MCS URL and token come from Core Configurator.
+Home Assistant face of Master Control Server: events strip, roster sensor, services (`sync_now`, `register_player`, `create_event`, `update_event`, `set_active_event`, `update_player`, soft-deactivate `delete_player`), and sidebar panel. Talks to MCS for players/events; **set_active_event** (and restore-on-start) also pushes the active Event to GBN (`PUT /api/events/active`) so AlleycatTV `/poster-cycle` stays in sync. Never opens a Central socket. MCS URL/token and GBN URL come from Core Configurator.
 
 **Path:** `Apps\Registration\`  
 **On HA:** `/config/custom_components/registration/` + `/config/www/registration/`  

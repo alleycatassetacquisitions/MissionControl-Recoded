@@ -2,8 +2,8 @@
 
 Poster capture and display for Alleycat. Operators create posters in Home
 Assistant; guests see animated pages served from Proxmox. AlleycatTV can play
-poster URLs as content, including `/poster-cycle` to rotate every made poster
-every 30 seconds.
+poster URLs as content, including `/poster-cycle` to rotate **active-event**
+posters every 30 seconds.
 
 **Code:** `gbn`  
 **Paths:**
@@ -21,7 +21,9 @@ Server** — GBN stores `player_id` and overlays live name/role/neocorp/faction.
 | Piece | Owner |
 |---|---|
 | Player records (name, role, neocorp, faction) | Master Control Server |
-| Poster CRUD + video + flavor | GBN server |
+| Active Event (authoritative) | Central via MCS; Registration sets it |
+| Active Event cache for kiosks | GBN (`data/active_event.json`; Registration `PUT` + MCS read) |
+| Poster CRUD + video + flavor | GBN server (per Event) |
 | Poster chrome templates (headline / labels) | GBN server (`poster_templates.json`) |
 | Poster HTML / poster-cycle / active-players kiosk | GBN server |
 | Capture UI panel | GBN HA panel via proxy |
@@ -52,11 +54,15 @@ Clips and poster metadata are stored **per active Event** (from MCS / Registrati
 | Path | Purpose |
 |---|---|
 | `data/events/{event_id}/posters.json` | Poster metadata for that event |
+| `data/events/{event_id}/meta.json` | Display name for Event media UI |
+| `data/active_event.json` | Last-known active Event for `/poster-cycle` |
 | `media/events/{event_id}/videos/{player_id}.ext` | Capture clips (filename = player id) |
 | `data/poster_templates.json` | Chrome templates (global) |
-| `data/posters.json` + `media/videos/` | Legacy pre-event store (read fallback only) |
+| `data/posters.json` + `media/videos/` | Legacy pre-event store (`GET /api/posters?include_legacy=true` only) |
 
-Create poster requires an active event (`409` if none). The panel **Event media** card lists folder sizes, exports a zip of clips only, and can delete an event’s media + posters.
+Create poster requires an active event (`409` if none). Public display URL stays `/poster/player/{id}` — GBN resolves video/metadata under the active Event folder. The panel **Event media** card shows Event **name** (UUID muted), sizes, export zip, and delete.
+
+**Active Event resolution:** MCS `GET /events/active` when `GBN_MCS_*` is set; else disk cache. Registration pushes `PUT /api/events/active` on set-active / restore so AlleycatTV Pis do not need a desktop browser visit after GBN restart. Startup warms the cache from MCS or disk.
 
 API:
 
@@ -65,9 +71,11 @@ API:
 | `GET` | `/api/poster-templates` | List built-ins + customs |
 | `POST` | `/api/poster-templates` | Create custom |
 | `PUT` / `DELETE` | `/api/poster-templates/{id}` | Non-builtin only |
-| `POST` | `/api/posters` | Requires active event; accepts `template_id` + chrome; stores snapshot under that event |
-| `GET` | `/api/events/active` | Active event id/name (via MCS) |
-| `GET` | `/api/events/media` | Event folders: clip count + bytes |
+| `GET` | `/api/posters` | Active-event posters only (`?event_id=` fallback; `?include_legacy=true` for old store) |
+| `POST` | `/api/posters` | Requires active event (or form `event_id`); stores under that event |
+| `GET` | `/api/events/active` | Active event id/name (MCS → cache) |
+| `PUT` | `/api/events/active` | Registration push: `{active_event_id, event_name}` |
+| `GET` | `/api/events/media` | Event folders: name, clip count + bytes (`?ensure_event_id=` / `ensure_event_name=`) |
 | `GET` | `/api/events/{id}/clips/export` | Zip of videos only (`{player_id}.ext`) |
 | `DELETE` | `/api/events/{id}/media` | Delete that event’s media + posters |
 
@@ -84,8 +92,8 @@ API:
 | `GBN_DATA` | `./data` | Data directory (`events/{id}/posters.json` per event) |
 | `GBN_POSTERS` | `./data/posters.json` | Legacy global poster store (read fallback) |
 | `GBN_TEMPLATES` | `./data/poster_templates.json` | Poster chrome templates (hunter/bounty built-ins + customs) |
-| `GBN_MCS_BASE` | _(empty)_ | MCS base URL for overlay + active event |
-| `GBN_MCS_TOKEN` | _(empty)_ | Bearer token for MCS |
+| `GBN_MCS_BASE` | _(empty)_ | MCS base URL for Player overlay + active-event backup |
+| `GBN_MCS_TOKEN` | _(empty)_ | Bearer token for MCS (same as Core Configurator) |
 | `GBN_ACTIVE_PLAYERS_SECRET` | _(empty)_ | Optional auth for POST active-players |
 | `GBN_MAX_UPLOAD_MB` | `100` | Video upload cap |
 
@@ -105,11 +113,11 @@ Health: `GET /health` → `{"status":"ok","service":"gbn"}`
 
 | Path | Purpose |
 |---|---|
-| `/poster/player/{id}` | Single animated poster |
-| `/poster-cycle` | Rotate **active-event** posters only (default 30s; `?interval=` 5–300). Re-fetches MCS active + `/api/posters?event_id=…` every 15s — never the legacy global store. |
+| `/poster/player/{id}` | Single animated poster (active Event on disk) |
+| `/poster-cycle` | Rotate **active-event** posters only (default 30s; `?interval=` 5–300). Loads `/api/events/active` then `/api/posters?event_id=…` every 15s — never the legacy global store. |
 | `/active-players` | Rotate game-server curated `player_ids` only |
 
-AlleycatTV Content **+ Poster cycle** adds `{gbn}/poster-cycle` as a webpage playlist item (1 hour slot). See [`Docs/GBN Config Steps.md`](../../Docs/GBN%20Config%20Steps.md).
+AlleycatTV Content **+ Poster cycle** adds `{gbn}/poster-cycle` as a webpage playlist item (1 hour slot). See [`Docs/GBN Config Steps.md`](../../Docs/GBN%20Config%20Steps.md). After deploying GBN, set the active Event in Registration (or confirm `GET /api/events/active`) before expecting Pis to show posters.
 
 ---
 
