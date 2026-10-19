@@ -11,7 +11,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import List
 
-from fastapi import APIRouter, File, Form, HTTPException, Request, UploadFile
+from fastapi import APIRouter, File, Form, HTTPException, Query, Request, UploadFile
 from fastapi.responses import RedirectResponse
 from fastapi.templating import Jinja2Templates
 
@@ -450,6 +450,22 @@ async def create_poster(
         record.neocorp,
     )
     return _to_public(record, request)
+
+
+@router.get("/poster-cycle")
+async def poster_cycle_page(
+    request: Request,
+    interval: int = Query(30, ge=5, le=300),
+):
+    """Kiosk page that rotates every made poster (default 30s)."""
+    return templates.TemplateResponse(
+        request,
+        "poster-cycle.html",
+        {
+            "public_base": public_base_for(request),
+            "interval_sec": interval,
+        },
+    )
 
 
 @router.get("/poster/player/{player_id}")

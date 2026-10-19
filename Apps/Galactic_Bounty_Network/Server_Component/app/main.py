@@ -3,6 +3,7 @@
 Serves:
   /api/*       — posters, flavor, intake, active-players
   /poster/*    — animated 16:9 bounty poster page
+  /poster-cycle — kiosk that rotates all made posters
   /media/*     — uploaded capture videos + NeoCorp assets
   /health      — liveness probe
 

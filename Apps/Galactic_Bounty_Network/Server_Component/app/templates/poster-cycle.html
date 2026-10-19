@@ -1,0 +1,22 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>GBN — Poster Cycle</title>
+  <link rel="stylesheet" href="/static/active-players.css" />
+</head>
+<body>
+  <iframe id="poster-frame" title="Bounty poster" src="about:blank"></iframe>
+  <div id="hud" class="hud" hidden>
+    <span id="hud-label"></span>
+  </div>
+  <script>
+    window.GBN_CYCLE = {
+      intervalSec: {{ interval_sec }},
+      publicBase: {{ public_base | tojson }}
+    };
+  </script>
+  <script src="/static/poster-cycle.js"></script>
+</body>
+</html>

@@ -124,6 +124,19 @@ def test_active_players_roundtrip(client):
     assert "text/html" in page.headers["content-type"]
 
 
+def test_poster_cycle_page(client):
+    page = client.get("/poster-cycle")
+    assert page.status_code == 200
+    assert "text/html" in page.headers["content-type"]
+    body = page.text
+    assert "poster-cycle.js" in body
+    assert "GBN_CYCLE" in body
+
+    custom = client.get("/poster-cycle?interval=45")
+    assert custom.status_code == 200
+    assert "45" in custom.text
+
+
 def test_intake_stub_501(client):
     resp = client.post("/api/intake", json={"mac": "aa:bb:cc:dd:ee:ff"})
     assert resp.status_code == 501

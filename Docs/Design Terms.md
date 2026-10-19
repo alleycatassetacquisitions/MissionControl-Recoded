@@ -69,7 +69,7 @@ The media player app used to play content across the event. Phase 6: HA integrat
 - **Communication:** MQTT (HA ↔ Pi), HTTP (HA ↔ content server)
 - **Language:** Python
 - **Key tools and formats:** MPV, JSON, IPC
-- **Used for:** premade content, scoreboards, and RTSP streams to displays around the event
+- **Used for:** premade content, scoreboards, GBN poster pages / poster-cycle, and RTSP streams to displays around the event
 - **Code:** `alleycattv`
 - **Deploy:** `Docs/AlleycatTV Config Steps.md`
 
@@ -78,6 +78,8 @@ The media player app used to play content across the event. Phase 6: HA integrat
 The Mission Control app for creating and updating posters that players see on AlleycatTV. Capture hardware and poster intake belong here.
 
 Poster **chrome** (headline, optional subtitle, amount label, list label) comes from **poster templates**: built-in Hunter / Bounty seeds auto-apply from roster role; other players pick or save a custom template at intake. Chrome is snapshotted onto each poster. The capture panel labels affiliation **Allegiance/NeoCorp** (code field remains `neocorp`).
+
+Display URLs: single poster `/poster/player/{id}`; **poster-cycle** `/poster-cycle` rotates every made poster every 30s (AlleycatTV Content **+ Poster cycle**); **active-players** is a separate game-server curated list.
 
 - **Communication:** HTTP
 - **Code:** `gbn`

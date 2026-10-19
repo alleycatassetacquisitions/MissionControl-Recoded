@@ -154,7 +154,7 @@
       <input id="prompt-url" type="url" placeholder="http://192.168.1.50/scoreboard" />
     </label>
     <label>Display duration (seconds)
-      <input id="prompt-duration" type="number" min="1" max="600" value="30" />
+      <input id="prompt-duration" type="number" min="1" max="86400" value="30" />
     </label>
     <div id="prompt-actions">
       <button type="button" class="btn btn-ghost" id="prompt-cancel">Cancel</button>
@@ -237,13 +237,16 @@ document.getElementById('confirm-ok').addEventListener('click', () => {
 });
 
 let _urlFormCb = null;
-function showUrlForm(title) {
+function showUrlForm(title, defaults = {}) {
   return new Promise(resolve => {
     _urlFormCb = resolve;
     document.getElementById('prompt-title').textContent = title;
-    document.getElementById('prompt-label').value = '';
-    document.getElementById('prompt-url').value = '';
-    document.getElementById('prompt-duration').value = '30';
+    document.getElementById('prompt-label').value = defaults.label || '';
+    document.getElementById('prompt-label').placeholder = defaults.labelPlaceholder || 'Live Scoreboard';
+    document.getElementById('prompt-url').value = defaults.url || '';
+    document.getElementById('prompt-url').placeholder = defaults.urlPlaceholder || 'http://192.168.1.50/scoreboard';
+    document.getElementById('prompt-duration').value = String(defaults.duration ?? 30);
+    document.getElementById('prompt-duration').max = String(defaults.maxDuration ?? 600);
     document.getElementById('prompt-backdrop').hidden = false;
     document.getElementById('prompt-label').focus();
   });
@@ -431,6 +434,7 @@ function renderZones(zones, plMap) {
         </label>
         <button type="button" class="btn btn-sm btn-ghost btn-save-settings" data-zone="${zoneEsc}">Save settings</button>
         <button type="button" class="btn btn-sm btn-primary btn-add-scoreboard" data-zone="${zoneEsc}">+ Scoreboard URL</button>
+        <button type="button" class="btn btn-sm btn-ghost btn-add-poster-cycle" data-zone="${zoneEsc}">+ Poster cycle</button>
       </div>
       <div class="drop-zone">
         <input type="file" multiple accept="video/*,image/*,.mp4,.mkv,.mov,.avi,.webm,.jpg,.jpeg,.png,.webp"
@@ -471,6 +475,7 @@ function renderZones(zones, plMap) {
     setupPlaylistDrag(card, z.zone_id);
     card.querySelector('.btn-save-settings')?.addEventListener('click', () => savePlaylistSettings(z.zone_id));
     card.querySelector('.btn-add-scoreboard')?.addEventListener('click', () => addScoreboardUrl(z.zone_id));
+    card.querySelector('.btn-add-poster-cycle')?.addEventListener('click', () => addPosterCycleUrl(z.zone_id));
     card.querySelector('.zone-file-input')?.addEventListener('change', (e) => handleFiles(e, z.zone_id));
     card.querySelectorAll('.btn-remove').forEach(btn => {
       btn.addEventListener('click', () => removeFromPlaylist(z.zone_id, parseInt(btn.dataset.idx, 10)));
@@ -539,6 +544,33 @@ async function addScoreboardUrl(zoneId) {
   items.push({ filename: data.label, media_type: 'webpage', url: data.url, duration: data.duration });
   await savePlaylist(zoneId, { ...pl, zone_id: zoneId, items });
   toast('Scoreboard URL added', 'ok');
+  await loadAll();
+}
+
+async function addPosterCycleUrl(zoneId) {
+  const data = await showUrlForm(`Add GBN poster cycle to ${zoneDisplayName(zoneId)}`, {
+    label: 'GBN Poster Cycle',
+    urlPlaceholder: 'http://<gbn-ip>:8100/poster-cycle',
+    duration: 3600,
+    maxDuration: 86400,
+  });
+  if (!data) return;
+  const cycleUrl = data.url.replace(/\/$/, '');
+  const pl = await fetch(`${API}/api/playlists/${encodeURIComponent(zoneId)}`).then(r => r.json());
+  const items = [...(pl.items || [])];
+  const existing = items.findIndex(
+    (it) => it.media_type === 'webpage' && String(it.url || '').replace(/\/$/, '') === cycleUrl
+  );
+  const entry = {
+    filename: data.label || 'GBN Poster Cycle',
+    media_type: 'webpage',
+    url: cycleUrl,
+    duration: data.duration || 3600,
+  };
+  if (existing >= 0) items[existing] = { ...items[existing], ...entry };
+  else items.push(entry);
+  await savePlaylist(zoneId, { ...pl, zone_id: zoneId, items });
+  toast('Poster cycle added — rotates all GBN posters every 30s', 'ok');
   await loadAll();
 }
 

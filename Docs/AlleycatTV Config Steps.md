@@ -126,6 +126,15 @@ ha core restart
 
 If Content shows “Proxy not registered” or AlleycatTV shows “Unknown command”, the Python package is not loaded: use `alleycattv: {}` (not a bare key), redeploy `custom_components/alleycattv`, restart HA, then confirm **AlleycatTV** appears under Devices & services.
 
+**Webpage playlist items** (scoreboards, GBN posters) use Chromium on the Pi for a duration, then the playlist advances:
+
+| Button | Requires | Playlist item |
+|---|---|---|
+| **+ Scoreboard URL** | Manual URL | `webpage` with label, URL, duration |
+| **+ Poster cycle** | Core Configurator key `gbn` | Upserts `GBN Poster Cycle` → `{gbn}/poster-cycle`, duration 3600s |
+
+GBN’s `/poster-cycle` page rotates every made poster every 30s inside that slot. Details: [`GBN Config Steps.md` § C](GBN%20Config%20Steps.md#c-poster-display-urls). Ops fallback `/manage` has the same **+ Poster cycle** button (paste the cycle URL).
+
 Playback services (examples):
 
 - `alleycattv.play_broadcast_group` / `stop_broadcast_group` with `broadcast_group_id`
@@ -257,6 +266,7 @@ Empty playlist / “Zone playlist has no playable items” is normal until Part 
 4. From HA / AlleycatTV Player panel: Play group `lobby` (or call `alleycattv.play_broadcast_group`).
 5. Pi plays; `media_player` / status JSON shows `broadcast_group_id: lobby`.
 6. Call `stop_broadcast_group` — playback stops; retained desired topic updates.
+7. (Optional, needs GBN) **+ Poster cycle** on a broadcast group → playlist shows `GBN Poster Cycle`; Pi opens `{gbn}/poster-cycle` and rotates posters every 30s.
 
 Lab-only override (optional): set `ALLEYCATV_BROADCAST_GROUP_ID` in `/etc/alleycattv.env` and restart `alleycattv-player`. Prefer BGC assign for venue ops.
 

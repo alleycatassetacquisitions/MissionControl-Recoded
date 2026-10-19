@@ -261,7 +261,7 @@ Manages communications with FDNs (Fixed Data Nodes). Mission Control talks to FD
 
 ### Galactic Bounty Network
 
-Manages bounty posters, bounty boards, and poster capture. In code this is `gbn` — not Photobooth or `bounty`. Poster chrome templates (hunter/bounty built-ins + customs) live on the guest as `data/poster_templates.json`; public poster links follow the request Host (Core Configurator `gbn` URL).
+Manages bounty posters, bounty boards, and poster capture. In code this is `gbn` — not Photobooth or `bounty`. Poster chrome templates (hunter/bounty built-ins + customs) live on the guest as `data/poster_templates.json`; public poster links follow the request Host (Core Configurator `gbn` URL). Kiosk pages: `/poster-cycle` (all posters, 30s) and `/active-players` (game-server list). AlleycatTV Content **+ Poster cycle** plays the former as a webpage playlist item.
 
 **Path:** `Apps\Galactic_Bounty_Network\`  
 **On HA:** `/config/custom_components/gbn/` + `/config/www/gbn/`  

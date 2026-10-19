@@ -2,7 +2,8 @@
 
 Poster capture and display for Alleycat. Operators create posters in Home
 Assistant; guests see animated pages served from Proxmox. AlleycatTV can play
-poster URLs as content.
+poster URLs as content, including `/poster-cycle` to rotate every made poster
+every 30 seconds.
 
 **Code:** `gbn`  
 **Paths:**
@@ -22,7 +23,7 @@ Server** — GBN stores `player_id` and overlays live name/role/neocorp/faction.
 | Player records (name, role, neocorp, faction) | Master Control Server |
 | Poster CRUD + video + flavor | GBN server |
 | Poster chrome templates (headline / labels) | GBN server (`poster_templates.json`) |
-| Poster HTML / active-players kiosk | GBN server |
+| Poster HTML / poster-cycle / active-players kiosk | GBN server |
 | Capture UI panel | GBN HA panel via proxy |
 | Registration Poster column | Registration panel → GBN proxy |
 
@@ -83,6 +84,16 @@ py -3 -m uvicorn app.main:app --host 127.0.0.1 --port 8100 --reload
 
 Health: `GET /health` → `{"status":"ok","service":"gbn"}`
 
+### Display URLs
+
+| Path | Purpose |
+|---|---|
+| `/poster/player/{id}` | Single animated poster |
+| `/poster-cycle` | Rotate every made poster (default 30s; `?interval=` 5–300) |
+| `/active-players` | Rotate game-server curated `player_ids` only |
+
+AlleycatTV Content **+ Poster cycle** adds `{gbn}/poster-cycle` as a webpage playlist item (1 hour slot). See [`Docs/GBN Config Steps.md`](../../Docs/GBN%20Config%20Steps.md).
+
 ---
 
 ## Tests
@@ -116,6 +127,8 @@ Push `Server_Component/app/` (must include `template_store.py` and `routers/temp
 ```bash
 curl -s http://127.0.0.1:8100/api/poster-templates
 # JSON array with hunter + bounty — not {"detail":"Not Found"}
+curl -s http://127.0.0.1:8100/poster-cycle | head -c 80
+# HTML title GBN — Poster Cycle
 ```
 
-Redeploy `HA_Component/www/gbn/` to Home Assistant and hard-refresh the browser.
+Redeploy `HA_Component/www/gbn/` to Home Assistant and hard-refresh the browser. For AlleycatTV **+ Poster cycle**, also redeploy `Apps/AlleycatTV/HA_Component/www/alleycattv/` to HA `www/`.

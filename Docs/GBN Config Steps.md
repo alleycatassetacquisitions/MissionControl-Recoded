@@ -107,7 +107,22 @@ Templates API (proxied): `GET/POST /api/gbn/proxy/api/poster-templates`.
 
 ---
 
-## C. Active-players kiosk (optional)
+## C. Poster display URLs
+
+| URL | Purpose |
+|---|---|
+| `http://<gbn-ip>:8100/poster/player/{id}` | Single poster |
+| `http://<gbn-ip>:8100/poster-cycle` | All made posters, rotate every 30s (AlleycatTV Content **+ Poster cycle**) |
+| `http://<gbn-ip>:8100/poster-cycle?interval=45` | Same, custom interval (5–300s) |
+| `http://<gbn-ip>:8100/active-players` | Game-server curated player list only |
+
+### Poster cycle (AlleycatTV)
+
+In AlleycatTV Content, **+ Poster cycle** adds `{gbn}/poster-cycle` as a webpage playlist item (1 hour slot). The GBN page loads `GET /api/posters` and rotates inside Chromium.
+
+Ops fallback (`/manage`): paste `http://<gbn-ip>:8100/poster-cycle` via **+ Poster cycle**.
+
+### Active-players kiosk (optional)
 
 Game server:
 
@@ -133,3 +148,5 @@ Display machine: open `http://<gbn-ip>:8100/active-players` (iframe paths are sa
 - [ ] Registration Poster column shows thumb after create
 - [ ] Core Configurator is the only place the GBN URL is stored
 - [ ] After a CT IP change, updating Core Configurator `gbn` is enough for new poster live links
+- [ ] `/poster-cycle` returns HTML and rotates posters when more than one exists
+- [ ] AlleycatTV Content **+ Poster cycle** adds the GBN cycle URL to a broadcast group
