@@ -488,7 +488,8 @@
       try {
         const headers = { "cache-control": "no-store" };
         if (this._token()) headers.Authorization = `Bearer ${this._token()}`;
-        const resp = await fetch("/api/gbn/proxy/api/posters", {
+        const q = this._activeEventId ? `?event_id=${encodeURIComponent(this._activeEventId)}` : "";
+        const resp = await fetch(`/api/gbn/proxy/api/posters${q}`, {
           headers,
           credentials: "same-origin",
           cache: "no-store"

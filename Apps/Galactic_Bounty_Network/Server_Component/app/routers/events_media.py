@@ -5,7 +5,7 @@ import io
 import logging
 import zipfile
 
-from fastapi import APIRouter, HTTPException, Request
+from fastapi import APIRouter, HTTPException, Query, Request
 from fastapi.responses import StreamingResponse
 
 from app.models import ActiveEventInfo, EventMediaRow
@@ -13,7 +13,9 @@ from app.services.event_paths import (
     delete_event_storage,
     event_videos_dir,
     list_event_media_dirs,
+    remember_active_event,
     sanitize_event_id,
+    write_event_meta,
 )
 from app.services.mcs_client import get_active_event, resolve_active_event_id
 
@@ -24,6 +26,29 @@ router = APIRouter(tags=["events-media"])
 
 def _event_stores(request: Request):
     return request.app.state.event_stores
+
+
+def _ensure_event_store(
+    request: Request,
+    event_id: str | None,
+    event_name: str | None = None,
+) -> str | None:
+    """Create per-event dirs when id is valid; return sanitized id or None."""
+    if not event_id:
+        return None
+    try:
+        eid = sanitize_event_id(event_id)
+    except ValueError as exc:
+        _LOGGER.warning("Ignoring invalid event_id for media ensure: %s", exc)
+        return None
+    try:
+        _event_stores(request).for_event(eid)
+    except ValueError as exc:
+        _LOGGER.warning("Could not ensure event store %s: %s", eid, exc)
+        return None
+    if (event_name or "").strip():
+        write_event_meta(eid, event_name or "")
+    return eid
 
 
 async def _active_meta() -> tuple[str | None, str, str]:
@@ -54,23 +79,54 @@ async def api_active_event() -> ActiveEventInfo:
 
 
 @router.get("/api/events/media", response_model=list[EventMediaRow])
-async def api_list_event_media(request: Request) -> list[EventMediaRow]:
+async def api_list_event_media(
+    request: Request,
+    ensure_event_id: str | None = Query(
+        default=None,
+        description=(
+            "Event id known to the panel (e.g. Registration active). "
+            "Seeds that folder when MCS active-event is unavailable."
+        ),
+    ),
+    ensure_event_name: str | None = Query(
+        default=None,
+        description="Display name for ensure_event_id (stored in event meta.json).",
+    ),
+) -> list[EventMediaRow]:
     active_id, active_name, _ = await _active_meta()
-    # Ensure active event folder exists so operators see it even before first capture
+    panel_name = (ensure_event_name or "").strip()
+    # Prefer MCS active; fall back to panel-supplied id (Registration WS).
+    seed_id = active_id or (ensure_event_id or "").strip() or None
+    seed_name = active_name or panel_name or None
+    ensured = _ensure_event_store(request, seed_id, event_name=seed_name)
+    if ensured and not active_id:
+        active_id = ensured
+        _LOGGER.info(
+            "Event media list using panel ensure_event_id=%s (MCS active unset)",
+            ensured,
+        )
+    # Persist MCS / panel name + active pointer for /poster-cycle on AlleycatTV Pis
     if active_id:
-        try:
-            _event_stores(request).for_event(active_id)
-        except ValueError:
-            pass
+        remember_active_event(
+            active_id,
+            active_name or panel_name or "",
+            source="mcs" if active_name else "panel",
+        )
 
     rows = list_event_media_dirs()
     out: list[EventMediaRow] = []
     for row in rows:
         is_active = bool(active_id and row["event_id"] == active_id)
+        name = (
+            (active_name if is_active else "")
+            or row.get("event_name")
+            or (panel_name if is_active else "")
+            or ""
+        )
         out.append(
             EventMediaRow(
                 event_id=row["event_id"],
-                event_name=active_name if is_active else "",
+                event_name=name,
                 clip_count=row["clip_count"],
                 bytes_total=row["bytes_total"],
                 has_media=row["has_media"],

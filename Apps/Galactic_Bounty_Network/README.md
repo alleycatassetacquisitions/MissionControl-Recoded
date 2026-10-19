@@ -106,7 +106,7 @@ Health: `GET /health` → `{"status":"ok","service":"gbn"}`
 | Path | Purpose |
 |---|---|
 | `/poster/player/{id}` | Single animated poster |
-| `/poster-cycle` | Rotate every made poster (default 30s; `?interval=` 5–300) |
+| `/poster-cycle` | Rotate **active-event** posters only (default 30s; `?interval=` 5–300). Re-fetches MCS active + `/api/posters?event_id=…` every 15s — never the legacy global store. |
 | `/active-players` | Rotate game-server curated `player_ids` only |
 
 AlleycatTV Content **+ Poster cycle** adds `{gbn}/poster-cycle` as a webpage playlist item (1 hour slot). See [`Docs/GBN Config Steps.md`](../../Docs/GBN%20Config%20Steps.md).

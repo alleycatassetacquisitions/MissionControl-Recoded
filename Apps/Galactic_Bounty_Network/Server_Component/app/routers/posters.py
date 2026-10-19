@@ -31,7 +31,11 @@ from app.models import (
     PosterTemplate,
     Role,
 )
-from app.services.event_paths import ensure_event_dirs, video_url_path
+from app.services.event_paths import (
+    ensure_event_dirs,
+    sanitize_event_id,
+    video_url_path,
+)
 from app.services.mcs_client import lookup_by_id, resolve_active_event_id
 from app.services.video_paths import (
     find_video_filename,
@@ -55,8 +59,14 @@ def _templates(request: Request) -> TemplateStore:
     return request.app.state.template_store
 
 
-async def _require_active_event_id() -> str:
+async def _require_active_event_id(fallback: str | None = None) -> str:
+    """MCS active event first; optional panel-supplied id when MCS is unset."""
     eid = await resolve_active_event_id()
+    if not eid and fallback:
+        try:
+            eid = sanitize_event_id(fallback)
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
     if not eid:
         raise HTTPException(
             status_code=409,
@@ -65,9 +75,27 @@ async def _require_active_event_id() -> str:
     return eid
 
 
-async def _active_store(request: Request) -> tuple[str, PosterStore]:
-    eid = await _require_active_event_id()
+async def _active_store(
+    request: Request, fallback: str | None = None
+) -> tuple[str, PosterStore]:
+    eid = await _require_active_event_id(fallback=fallback)
     return eid, _event_stores(request).for_event(eid)
+
+
+async def _resolve_event_id(fallback: str | None = None) -> str | None:
+    """Active event for reads: MCS, else sanitized panel fallback."""
+    eid = await resolve_active_event_id()
+    if eid:
+        return eid
+    raw = (fallback or "").strip()
+    if not raw:
+        return None
+    try:
+        return sanitize_event_id(raw)
+    except ValueError:
+        return None
+
+
 
 
 def _now() -> str:
@@ -348,10 +376,10 @@ async def _render_poster(
 
 
 async def _resolve_poster_for_player(
-    request: Request, player_id: str
+    request: Request, player_id: str, event_id: str | None = None
 ) -> tuple[PosterRecord, str | None]:
     stores = _event_stores(request)
-    active = await resolve_active_event_id()
+    active = await _resolve_event_id(event_id)
     poster, eid = stores.get_poster_for_player(player_id, event_id=active)
     if not poster:
         raise HTTPException(status_code=404, detail="No poster for player")
@@ -359,35 +387,60 @@ async def _resolve_poster_for_player(
 
 
 @router.get("/api/posters", response_model=List[PosterPublic])
-async def list_posters(request: Request) -> List[PosterPublic]:
+async def list_posters(
+    request: Request,
+    event_id: str | None = Query(
+        default=None,
+        description="Panel-known active event when GBN→MCS cannot resolve one",
+    ),
+    include_legacy: bool = Query(
+        default=False,
+        description="If true and no active event, list pre-event global posters.json",
+    ),
+) -> List[PosterPublic]:
+    """List posters for the active Event (not the legacy global store).
+
+    ``/poster-cycle`` and Registration thumbs depend on this staying
+    event-scoped so AlleycatTV does not rotate old flat ``data/posters.json``.
+    """
     out: List[PosterPublic] = []
-    active = await resolve_active_event_id()
+    active = await _resolve_event_id(event_id)
     stores = _event_stores(request)
     if active:
         for poster in stores.for_event(active).list():
             display = await _apply_live_overlay(poster.model_copy(deep=True))
             out.append(_to_public(display, request, event_id=active))
         return out
-    # No active event — expose legacy global store only
-    for poster in stores.legacy.list():
-        display = await _apply_live_overlay(poster.model_copy(deep=True))
-        out.append(_to_public(display, request, event_id=None))
+    if include_legacy:
+        for poster in stores.legacy.list():
+            display = await _apply_live_overlay(poster.model_copy(deep=True))
+            out.append(_to_public(display, request, event_id=None))
     return out
 
 
 @router.get("/api/posters/by-player/{player_id}", response_model=PosterPublic)
-async def get_poster_by_player(player_id: str, request: Request) -> PosterPublic:
-    poster, eid = await _resolve_poster_for_player(request, player_id)
+async def get_poster_by_player(
+    player_id: str,
+    request: Request,
+    event_id: str | None = Query(default=None),
+) -> PosterPublic:
+    poster, eid = await _resolve_poster_for_player(
+        request, player_id, event_id=event_id
+    )
     display = await _apply_live_overlay(poster.model_copy(deep=True))
     return _to_public(display, request, event_id=eid)
 
 
 @router.get("/api/posters/{poster_id}", response_model=PosterPublic)
-async def get_poster(poster_id: str, request: Request) -> PosterPublic:
+async def get_poster(
+    poster_id: str,
+    request: Request,
+    event_id: str | None = Query(default=None),
+) -> PosterPublic:
     if poster_id == "by-player":
         raise HTTPException(status_code=404, detail="Poster not found")
     stores = _event_stores(request)
-    active = await resolve_active_event_id()
+    active = await _resolve_event_id(event_id)
     poster = None
     eid: str | None = None
     if active:
@@ -420,6 +473,7 @@ async def create_poster(
     amount_label: str = Form(""),
     list_label: str = Form(""),
     list_empty: str = Form(""),
+    event_id: str = Form(""),
     video: UploadFile = File(...),
 ) -> PosterPublic:
     clean_name = name.strip()
@@ -445,7 +499,9 @@ async def create_poster(
     if not data:
         raise HTTPException(status_code=400, detail="Empty video upload")
 
-    event_id, store = await _active_store(request)
+    event_id, store = await _active_store(
+        request, fallback=(event_id or "").strip() or None
+    )
     ensure_event_dirs(event_id)
     existing = store.get_by_player(pid)
 

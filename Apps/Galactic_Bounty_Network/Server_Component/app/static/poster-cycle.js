@@ -9,6 +9,12 @@
   let posters = [];
   let index = 0;
   let currentKey = "";
+  /** @type {string} */
+  let activeEventId = "";
+  /** @type {string} */
+  let activeEventName = "";
+  /** @type {string} */
+  let emptyReason = "NO POSTERS YET";
 
   function posterKey(p) {
     return String(p.player_id || p.id || "");
@@ -27,7 +33,7 @@
       frame.src = "about:blank";
       currentKey = "";
       if (hud) hud.hidden = false;
-      if (hudLabel) hudLabel.textContent = "NO POSTERS YET";
+      if (hudLabel) hudLabel.textContent = emptyReason;
       return;
     }
     const p = posters[index % posters.length];
@@ -37,7 +43,9 @@
     if (hud) hud.hidden = false;
     if (hudLabel) {
       const label = p.name || currentKey || "?";
-      hudLabel.textContent = `${label} · ${index % posters.length + 1}/${posters.length}`;
+      const eventBit = activeEventName || activeEventId;
+      const prefix = eventBit ? `${eventBit} · ` : "";
+      hudLabel.textContent = `${prefix}${label} · ${index % posters.length + 1}/${posters.length}`;
     }
     if (next && posterKey(next) !== currentKey) {
       const prefetch = document.createElement("link");
@@ -49,7 +57,31 @@
 
   async function refreshPosters() {
     try {
-      const resp = await fetch("/api/posters");
+      // Active-event only — never fall back to legacy global posters.json.
+      const activeResp = await fetch("/api/events/active", { cache: "no-store" });
+      if (!activeResp.ok) {
+        posters = [];
+        activeEventId = "";
+        activeEventName = "";
+        emptyReason = "EVENT LOOKUP FAILED";
+        showCurrent();
+        return;
+      }
+      const active = await activeResp.json();
+      const eid = String(active?.active_event_id || "").trim();
+      activeEventId = eid;
+      activeEventName = String(active?.event_name || "").trim();
+      if (!eid) {
+        posters = [];
+        emptyReason = "NO ACTIVE EVENT";
+        showCurrent();
+        return;
+      }
+
+      const resp = await fetch(
+        `/api/posters?event_id=${encodeURIComponent(eid)}`,
+        { cache: "no-store" }
+      );
       if (!resp.ok) return;
       const data = await resp.json();
       if (!Array.isArray(data)) return;
@@ -60,6 +92,7 @@
         poster_url: String(p.poster_url || ""),
       }));
       posters = next;
+      emptyReason = "NO POSTERS FOR EVENT";
       if (!posters.length) {
         index = 0;
         showCurrent();
@@ -79,8 +112,7 @@
   }
 
   refreshPosters().then(() => {
-    if (posters.length) showCurrent();
-    else showCurrent();
+    showCurrent();
   });
 
   setInterval(() => {

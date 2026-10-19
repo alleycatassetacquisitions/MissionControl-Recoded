@@ -126,27 +126,66 @@ async def lookup_by_mac(mac: str) -> Optional[IntakePlayer]:
     return None
 
 
+def _eid_from_state(state: dict[str, Any]) -> str:
+    eid = state.get("active_event_id")
+    if eid is None and isinstance(state.get("event"), dict):
+        eid = state["event"].get("id")
+    return str(eid).strip() if eid is not None else ""
+
+
+def _name_from_state(state: dict[str, Any]) -> str:
+    event = state.get("event")
+    if isinstance(event, dict):
+        name = str(event.get("name") or "").strip()
+        if name:
+            return name
+    return str(state.get("event_name") or "").strip()
+
+
 async def get_active_event() -> Optional[dict[str, Any]]:
-    """Fetch MCS ``GET /events/active``.
+    """Fetch MCS ``GET /events/active``, with GBN disk cache fallback.
 
     Returns a dict with ``active_event_id``, optional ``event`` (id/name), and
-    ``source``, or ``None`` when MCS is unreachable / unset.
+    ``source``. When MCS is unset/unreachable, returns the last event remembered
+    from a successful MCS read or the HA panel (so /poster-cycle keeps working).
     """
-    if not MCS_BASE:
-        return None
+    from app.services.event_paths import (
+        clear_cached_active_event,
+        read_cached_active_event,
+        remember_active_event,
+    )
 
-    url = f"{MCS_BASE.rstrip('/')}/events/active"
-    try:
-        async with httpx.AsyncClient(timeout=8.0) as client:
-            resp = await client.get(url, headers=_auth_headers())
-            if resp.status_code != 200:
-                _LOGGER.warning("MCS GET %s -> %s", url, resp.status_code)
-                return None
-            data = resp.json()
-            if isinstance(data, dict):
-                return data
-    except Exception as exc:  # noqa: BLE001
-        _LOGGER.warning("MCS active event fetch failed (%s): %s", url, exc)
+    if MCS_BASE:
+        url = f"{MCS_BASE.rstrip('/')}/events/active"
+        try:
+            async with httpx.AsyncClient(timeout=8.0) as client:
+                resp = await client.get(url, headers=_auth_headers())
+                if resp.status_code == 200:
+                    data = resp.json()
+                    if isinstance(data, dict):
+                        eid = _eid_from_state(data)
+                        if eid:
+                            remember_active_event(
+                                eid,
+                                _name_from_state(data),
+                                source=str(data.get("source") or "mcs"),
+                            )
+                            return data
+                        # MCS explicitly reports no active event
+                        clear_cached_active_event()
+                        return data
+                else:
+                    _LOGGER.warning("MCS GET %s -> %s", url, resp.status_code)
+        except Exception as exc:  # noqa: BLE001
+            _LOGGER.warning("MCS active event fetch failed (%s): %s", url, exc)
+
+    cached = read_cached_active_event()
+    if cached:
+        _LOGGER.info(
+            "Using cached active event %s (MCS unset/unreachable)",
+            cached.get("active_event_id"),
+        )
+        return cached
     return None
 
 
@@ -155,8 +194,4 @@ async def resolve_active_event_id() -> Optional[str]:
     state = await get_active_event()
     if not state:
         return None
-    eid = state.get("active_event_id")
-    if eid is None and isinstance(state.get("event"), dict):
-        eid = state["event"].get("id")
-    eid = str(eid).strip() if eid is not None else ""
-    return eid or None
+    return _eid_from_state(state) or None

@@ -163,6 +163,57 @@ def test_poster_cycle_page(client):
     assert custom.status_code == 200
     assert "45" in custom.text
 
+    # Kiosk script must resolve active event — not bare /api/posters (legacy).
+    js = (Path(__file__).resolve().parent.parent / "app" / "static" / "poster-cycle.js").read_text(
+        encoding="utf-8"
+    )
+    assert "/api/events/active" in js
+    assert "event_id=" in js
+    assert "include_legacy" not in js
+
+
+def test_list_posters_empty_without_active_event(client, monkeypatch):
+    """Without an active event, do not leak legacy global posters into the cycle."""
+    import app.routers.posters as posters_mod
+
+    async def _none():
+        return None
+
+    monkeypatch.setattr(posters_mod, "resolve_active_event_id", _none)
+
+    # Seed legacy store directly
+    from app.main import app
+
+    stores = app.state.event_stores
+    from app.models import PosterRecord, PosterStats, PosterStatus
+
+    stores.legacy.save(
+        PosterRecord(
+            id="legacy-1",
+            player_id="legacy-1",
+            name="Old Poster",
+            role="bounty",
+            neocorp="freelancer",
+            faction="",
+            bounty_amount=1,
+            crimes=[],
+            stats=PosterStats(),
+            flavor_text="",
+            status=PosterStatus(),
+            video_filename="",
+            created_at="2020-01-01T00:00:00Z",
+            updated_at="2020-01-01T00:00:00Z",
+        )
+    )
+
+    listed = client.get("/api/posters")
+    assert listed.status_code == 200
+    assert listed.json() == []
+
+    legacy = client.get("/api/posters?include_legacy=true")
+    assert legacy.status_code == 200
+    assert any(p["player_id"] == "legacy-1" for p in legacy.json())
+
 
 def test_intake_stub_501(client):
     resp = client.post("/api/intake", json={"mac": "aa:bb:cc:dd:ee:ff"})
@@ -266,6 +317,93 @@ def test_event_media_list_export_delete(client, tmp_path):
     # After delete, clips gone; active event folder may be recreated empty
     export2 = client.get(f"/api/events/{ACTIVE_EVENT_ID}/clips/export")
     assert export2.status_code == 404
+
+
+def test_event_media_ensure_when_mcs_empty(client, monkeypatch):
+    """Panel ensure_event_id seeds a folder when GBN→MCS has no active event."""
+    import app.routers.events_media as events_mod
+
+    async def _none_active():
+        return None
+
+    monkeypatch.setattr(events_mod, "get_active_event", _none_active)
+
+    panel_event = "evt-from-registration"
+    listed = client.get(
+        f"/api/events/media?ensure_event_id={panel_event}"
+        f"&ensure_event_name=Development%20Event"
+    )
+    assert listed.status_code == 200
+    rows = listed.json()
+    assert any(r["event_id"] == panel_event for r in rows)
+    row = next(r for r in rows if r["event_id"] == panel_event)
+    assert row["is_active"] is True
+    assert row["clip_count"] == 0
+    assert row["event_name"] == "Development Event"
+
+
+def test_create_poster_uses_form_event_when_mcs_empty(client, monkeypatch):
+    import app.routers.posters as posters_mod
+
+    async def _none():
+        return None
+
+    monkeypatch.setattr(posters_mod, "resolve_active_event_id", _none)
+
+    fields = {
+        "name": "Fallback",
+        "neocorp": "freelancer",
+        "faction": "",
+        "role": "bounty",
+        "player_id": "fb1",
+        "bounty_amount": "100",
+        "crimes": "[]",
+        "stats": "{}",
+        "flavor_text": "",
+        "event_id": "evt-panel-fallback",
+    }
+    files = {"video": ("capture.webm", _tiny_webm(), "video/webm")}
+    resp = client.post("/api/posters", data=fields, files=files)
+    assert resp.status_code == 200
+    data = resp.json()
+    assert "evt-panel-fallback" in data["video_url"]
+
+
+def test_active_event_cache_feeds_poster_cycle(client, monkeypatch):
+    """When MCS is down, GBN cache (from panel ensure) still drives /api/events/active."""
+    import app.routers.events_media as events_mod
+    from app.services.event_paths import read_cached_active_event
+
+    async def _none():
+        return None
+
+    monkeypatch.setattr(events_mod, "get_active_event", _none)
+    # Seed cache via panel ensure on media list
+    seed = client.get(
+        "/api/events/media"
+        "?ensure_event_id=evt-kiosk"
+        "&ensure_event_name=Kiosk%20Event"
+    )
+    assert seed.status_code == 200
+    cached = read_cached_active_event()
+    assert cached is not None
+    assert cached["active_event_id"] == "evt-kiosk"
+    assert cached["event_name"] == "Kiosk Event"
+
+    async def _from_cache():
+        return read_cached_active_event()
+
+    monkeypatch.setattr(events_mod, "get_active_event", _from_cache)
+    active = client.get("/api/events/active")
+    assert active.status_code == 200
+    body = active.json()
+    assert body["active_event_id"] == "evt-kiosk"
+    assert body["event_name"] == "Kiosk Event"
+
+    posters = client.get("/api/posters?event_id=evt-kiosk")
+    assert posters.status_code == 200
+    assert isinstance(posters.json(), list)
+
 
 
 def test_mcs_overlay_on_poster_read(client):

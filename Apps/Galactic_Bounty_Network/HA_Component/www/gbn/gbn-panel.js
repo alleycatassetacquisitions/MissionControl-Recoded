@@ -402,7 +402,10 @@
       this._existingPoster = null;
       const root = this.shadowRoot;
       try {
-        const { ok, status, body } = await this._api(`/api/posters/by-player/${encodeURIComponent(playerId)}`);
+        const evQ = this._activeEventId ? `?event_id=${encodeURIComponent(this._activeEventId)}` : "";
+        const { ok, status, body } = await this._api(
+          `/api/posters/by-player/${encodeURIComponent(playerId)}${evQ}`
+        );
         if (status === 404 || !ok) {
           root.getElementById("success-box").hidden = true;
           this._feedback("No existing poster \u2014 capture or upload a new clip", "ok");
@@ -505,16 +508,19 @@
           const result = await this.hass.connection.sendMessagePromise({
             type: "registration/get_active_event"
           });
-          this._activeEventId = result?.active_event_id || null;
-          this._activeEventName = result?.event?.name || "";
-          this._paintActiveEvent();
-          return;
+          const eid = result?.active_event_id || null;
+          if (eid) {
+            this._activeEventId = eid;
+            this._activeEventName = result?.event?.name || "";
+            this._paintActiveEvent();
+            return;
+          }
         } catch (_) {
         }
       }
       try {
         const { ok, body } = await this._api("/api/events/active");
-        if (ok && body) {
+        if (ok && body?.active_event_id) {
           this._activeEventId = body.active_event_id || null;
           this._activeEventName = body.event_name || "";
         } else {
@@ -547,11 +553,31 @@
       return `${(bytes / (1024 * 1024 * 1024)).toFixed(2)} GB`;
     }
     async _loadEventMedia() {
+      const params = new URLSearchParams();
+      if (this._activeEventId) {
+        params.set("ensure_event_id", this._activeEventId);
+      }
+      if (this._activeEventName) {
+        params.set("ensure_event_name", this._activeEventName);
+      }
+      const q = params.toString() ? `?${params.toString()}` : "";
       try {
-        const { ok, body } = await this._api("/api/events/media");
-        this._eventMedia = ok && Array.isArray(body) ? body : [];
-      } catch (_) {
+        const { ok, body, status } = await this._api(`/api/events/media${q}`);
+        if (ok && Array.isArray(body)) {
+          this._eventMedia = body;
+        } else {
+          this._eventMedia = [];
+          this._feedback(
+            `Event media refresh failed (${status || "error"})`,
+            "warn"
+          );
+        }
+      } catch (err) {
         this._eventMedia = [];
+        this._feedback(
+          `Event media refresh failed: ${this._errText(err)}`,
+          "warn"
+        );
       }
       this._paintEventMedia();
     }
@@ -559,16 +585,19 @@
       const body = this.shadowRoot?.getElementById("event-media-body");
       if (!body) return;
       if (!this._eventMedia.length) {
-        body.innerHTML = `<tr><td colspan="4" class="muted">No event media folders yet</td></tr>`;
+        const hint = this._activeEventId ? "No folders on the GBN server yet \u2014 Refresh again after redeploy, or create a poster" : "No event media folders yet \u2014 set an active event in Registration";
+        body.innerHTML = `<tr><td colspan="4" class="muted">${hint}</td></tr>`;
         return;
       }
       body.innerHTML = "";
       for (const row of this._eventMedia) {
         const tr = document.createElement("tr");
         if (row.is_active) tr.className = "is-active";
-        const name = row.event_name ? `${row.event_name}` : row.is_active ? "(active)" : "";
+        const name = row.event_name || (row.is_active && this._activeEventName ? this._activeEventName : "") || "";
+        const title = name || row.event_id;
+        const idLine = name && name !== row.event_id ? `<div class="muted"><code>${row.event_id}</code></div>` : "";
         tr.innerHTML = `
-        <td><code>${row.event_id}</code>${name ? `<div class="muted">${name}</div>` : ""}${row.is_active ? `<div class="badge">active</div>` : ""}</td>
+        <td><strong>${title}</strong>${idLine}${row.is_active ? `<div class="badge">active</div>` : ""}</td>
         <td>${row.clip_count}</td>
         <td>${this._formatBytes(row.bytes_total)}</td>
         <td class="actions-cell"></td>
@@ -940,6 +969,7 @@
       form.append("amount_label", chrome.amount_label);
       form.append("list_label", chrome.list_label);
       form.append("list_empty", chrome.list_empty);
+      form.append("event_id", this._activeEventId || "");
       const safe = name.replace(/\s+/g, "_").toLowerCase();
       const filename = this._blob instanceof File && this._blob.name ? this._blob.name : `${safe}.webm`;
       form.append("video", this._blob, filename);

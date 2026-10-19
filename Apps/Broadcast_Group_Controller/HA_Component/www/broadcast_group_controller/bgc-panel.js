@@ -7,6 +7,7 @@
         ...super.properties,
         _devices: { state: true },
         _areas: { state: true },
+        _groups: { state: true },
         _selected: { state: true },
         _areaId: { state: true },
         _bgId: { state: true }
@@ -16,6 +17,7 @@
       super();
       this._devices = [];
       this._areas = [];
+      this._groups = [];
       this._selected = "";
       this._areaId = "";
       this._bgId = "";
@@ -28,20 +30,28 @@
         window.McPanel.css`
         .form-grid {
           display: grid;
-          grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+          grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
           gap: 12px 16px;
-          align-items: end;
+          align-items: start;
         }
         .field {
           display: flex;
           flex-direction: column;
           gap: 4px;
+          min-width: 0;
         }
         .field label {
           font-size: 0.75rem;
           text-transform: uppercase;
           letter-spacing: 0.04em;
           color: var(--secondary-text-color);
+        }
+        .field select {
+          width: 100%;
+          box-sizing: border-box;
+        }
+        .field-hint {
+          margin-top: 8px;
         }
         .chip-row {
           display: flex;
@@ -110,6 +120,20 @@
         this._areaId = d.area_id || "";
       }
     }
+    _groupOptions() {
+      const byId = /* @__PURE__ */ new Map();
+      for (const g of this._groups) {
+        const id = (g.broadcast_group_id || "").trim();
+        if (id) byId.set(id, { broadcast_group_id: id, name: g.name || id });
+      }
+      const current = (this._bgId || "").trim();
+      if (current && !byId.has(current)) {
+        byId.set(current, { broadcast_group_id: current, name: current });
+      }
+      return [...byId.values()].sort(
+        (a, b) => a.broadcast_group_id.localeCompare(b.broadcast_group_id)
+      );
+    }
     async _boot() {
       if (!this.hass) return;
       try {
@@ -123,7 +147,6 @@
         ]);
         this._devices = Array.isArray(devRes?.devices) ? devRes.devices : [];
         this._areas = Array.isArray(areaRes?.areas) ? areaRes.areas : [];
-        this._feedback("Refreshed", "ok");
       } catch (err) {
         const msg = this._formatErr(err);
         if (/unknown_command|not found/i.test(msg)) {
@@ -133,6 +156,25 @@
           );
         } else {
           this._feedback(msg, "err");
+        }
+        return;
+      }
+      try {
+        const groupRes = await this.hass.callWS({
+          type: "broadcast_group_controller/list_broadcast_groups"
+        });
+        this._groups = Array.isArray(groupRes?.broadcast_groups) ? groupRes.broadcast_groups : [];
+        this._feedback("Refreshed", "ok");
+      } catch (err) {
+        this._groups = [];
+        const msg = this._formatErr(err);
+        if (/unknown_command/i.test(msg)) {
+          this._feedback(
+            "Redeploy broadcast_group_controller + restart HA for group dropdown",
+            "warn"
+          );
+        } else {
+          this._feedback(`Groups unavailable: ${msg}`, "warn");
         }
       }
     }
@@ -186,6 +228,45 @@
         this._feedback(this._formatErr(err), "err");
       }
     }
+    _selectedPresence() {
+      if (!this._selected) return "unknown";
+      const d = this._devices.find(
+        (x) => `${x.kind}:${x.device_id}` === this._selected
+      );
+      return d?.presence || "unknown";
+    }
+    async _removeDevice() {
+      try {
+        const sel = this._selectedDevice();
+        if (!sel) return this._feedback("Select a device", "err");
+        if (this._selectedPresence() === "online") {
+          return this._feedback(
+            "Device is online \u2014 power it off before removing",
+            "warn"
+          );
+        }
+        const label = `${sel.kind}/${sel.device_id}`;
+        if (!window.confirm(
+          `Remove ${label} from the fabric?
+
+This deletes the HA device and clears retained MQTT so the name can be reused or retired.`
+        )) {
+          return;
+        }
+        await this.hass.callService(
+          "broadcast_group_controller",
+          "remove_device",
+          { kind: sel.kind, device_id: sel.device_id }
+        );
+        this._selected = "";
+        this._bgId = "";
+        this._areaId = "";
+        this._feedback(`Removed ${label}`, "ok");
+        await this._boot();
+      } catch (err) {
+        this._feedback(this._formatErr(err), "err");
+      }
+    }
     render() {
       const html = window.McPanel.html;
       return html`
@@ -202,7 +283,8 @@
         <p class="hint">
           Physical placement is a Home Assistant Area. Command membership is a
           Broadcast Group. AlleycatTV Content owns playlist buckets; this panel
-          assigns devices to those ids.
+          assigns devices to those ids. Offline devices can be removed from the
+          fabric so a name can be reused or retired.
         </p>
         <div class="card" style="margin-bottom:16px">
           <div class="card-header">Fabric devices</div>
@@ -252,16 +334,28 @@
               </div>
               <div class="field">
                 <label for="bg-id">Broadcast Group ID</label>
-                <input
+                <select
                   id="bg-id"
-                  placeholder="e.g. lobby"
                   .value=${this._bgId}
-                  @input=${(e) => {
+                  @change=${(e) => {
         this._bgId = e.target.value;
       }}
-                />
+                >
+                  <option value="">—</option>
+                  ${this._groupOptions().map(
+        (g) => html`<option value=${g.broadcast_group_id}>
+                        ${g.name && g.name !== g.broadcast_group_id ? `${g.name} (${g.broadcast_group_id})` : g.broadcast_group_id}
+                      </option>`
+      )}
+                </select>
               </div>
             </div>
+            ${!this._groupOptions().length ? html`<p class="hint field-hint">
+                  No groups yet — create a playlist bucket in AlleycatTV
+                  Content, then Refresh. If this stays empty after that,
+                  redeploy <code>broadcast_group_controller</code> and restart
+                  HA.
+                </p>` : ""}
             <div class="actions">
               <button class="btn btn-primary" @click=${() => this._setArea()}>
                 Set area
@@ -274,6 +368,14 @@
                 @click=${() => this._clearBg()}
               >
                 Clear broadcast group
+              </button>
+              <button
+                class="btn btn-secondary"
+                ?disabled=${!this._selected || this._selectedPresence() === "online"}
+                title=${this._selectedPresence() === "online" ? "Power the device off before removing" : "Delete inactive device from fabric"}
+                @click=${() => this._removeDevice()}
+              >
+                Remove from fabric
               </button>
             </div>
           </div>

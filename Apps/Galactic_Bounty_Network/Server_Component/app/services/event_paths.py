@@ -1,6 +1,7 @@
 """Event-scoped data and media paths for GBN."""
 from __future__ import annotations
 
+import json
 import logging
 import re
 import shutil
@@ -29,6 +30,10 @@ def event_posters_file(event_id: str) -> Path:
     return event_data_dir(event_id) / "posters.json"
 
 
+def event_meta_file(event_id: str) -> Path:
+    return event_data_dir(event_id) / "meta.json"
+
+
 def event_videos_dir(event_id: str) -> Path:
     return MEDIA_BASE / "events" / sanitize_event_id(event_id) / "videos"
 
@@ -37,10 +42,113 @@ def legacy_videos_dir() -> Path:
     return Path(MEDIA_BASE) / "videos"
 
 
-def ensure_event_dirs(event_id: str) -> None:
+def ensure_event_dirs(event_id: str, event_name: str | None = None) -> None:
     eid = sanitize_event_id(event_id)
     event_data_dir(eid).mkdir(parents=True, exist_ok=True)
     event_videos_dir(eid).mkdir(parents=True, exist_ok=True)
+    name = (event_name or "").strip()
+    if name:
+        write_event_meta(eid, name)
+
+
+def read_event_name(event_id: str) -> str:
+    path = event_meta_file(event_id)
+    if not path.is_file():
+        return ""
+    try:
+        data = json.loads(path.read_text(encoding="utf-8") or "{}")
+        if isinstance(data, dict):
+            return str(data.get("name") or "").strip()
+    except (OSError, json.JSONDecodeError):
+        pass
+    return ""
+
+
+def write_event_meta(event_id: str, name: str) -> None:
+    eid = sanitize_event_id(event_id)
+    clean = (name or "").strip()
+    if not clean:
+        return
+    path = event_meta_file(eid)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    existing: dict = {}
+    if path.is_file():
+        try:
+            raw = json.loads(path.read_text(encoding="utf-8") or "{}")
+            if isinstance(raw, dict):
+                existing = raw
+        except (OSError, json.JSONDecodeError):
+            existing = {}
+    if existing.get("name") == clean:
+        return
+    existing["name"] = clean
+    existing["id"] = eid
+    path.write_text(json.dumps(existing, indent=2), encoding="utf-8")
+
+
+def active_event_cache_path() -> Path:
+    """Last-known active event for kiosk when MCS is unreachable."""
+    return Path(DATA_DIR) / "active_event.json"
+
+
+def remember_active_event(
+    event_id: str,
+    event_name: str = "",
+    source: str = "local",
+) -> None:
+    """Persist active event so /poster-cycle works without a live MCS round-trip."""
+    try:
+        eid = sanitize_event_id(event_id)
+    except ValueError:
+        return
+    name = (event_name or "").strip() or read_event_name(eid)
+    if name:
+        write_event_meta(eid, name)
+    from datetime import datetime, timezone
+
+    payload = {
+        "active_event_id": eid,
+        "event_name": name,
+        "event": {"id": eid, "name": name} if eid else None,
+        "source": source or "local",
+        "updated_at": datetime.now(timezone.utc).isoformat(),
+    }
+    path = active_event_cache_path()
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(payload, indent=2), encoding="utf-8")
+    _LOGGER.debug("Remembered active event %s (%s)", eid, name or "unnamed")
+
+
+def clear_cached_active_event() -> None:
+    path = active_event_cache_path()
+    try:
+        if path.is_file():
+            path.unlink()
+    except OSError as exc:
+        _LOGGER.warning("Could not clear active event cache: %s", exc)
+
+
+def read_cached_active_event() -> Optional[dict]:
+    path = active_event_cache_path()
+    if not path.is_file():
+        return None
+    try:
+        data = json.loads(path.read_text(encoding="utf-8") or "{}")
+    except (OSError, json.JSONDecodeError):
+        return None
+    if not isinstance(data, dict):
+        return None
+    eid = str(data.get("active_event_id") or "").strip()
+    if not eid:
+        return None
+    name = str(data.get("event_name") or "").strip() or read_event_name(eid)
+    return {
+        "ready": True,
+        "active_event_id": eid,
+        "event_name": name,
+        "event": {"id": eid, "name": name},
+        "source": str(data.get("source") or "gbn_cache"),
+    }
 
 
 def video_url_path(event_id: Optional[str], filename: str) -> str:
@@ -99,6 +207,7 @@ def list_event_media_dirs() -> List[dict]:
         rows.append(
             {
                 "event_id": eid,
+                "event_name": read_event_name(eid),
                 "clip_count": clip_count,
                 "bytes_total": bytes_total,
                 "has_media": vdir.is_dir(),
