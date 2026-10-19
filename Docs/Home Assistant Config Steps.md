@@ -2,7 +2,7 @@
 
 Required configuration for Home Assistant integration.
 
-This assumes you are using **Proxmox**. Install **Home Assistant OS** as a virtual machine from the official KVM/Proxmox disk image. Do not install Home Assistant Container for Mission Control.
+This assumes you are using **Proxmox** (host install + free updates: [`Proxmox Config Steps.md`](Proxmox%20Config%20Steps.md)). Install **Home Assistant OS** as a virtual machine from the official KVM/Proxmox disk image. Do not install Home Assistant Container for Mission Control.
 
 The installer script does the work shown in [Installing Home Assistant on Proxmox](https://youtu.be/CXBqeis7fgc) and uses the current image from [Home Assistant — Alternative installation](https://www.home-assistant.io/installation/alternative). The tables below are the Mission Control target (not the video’s minimums). The script applies them and picks the next free VM ID.
 

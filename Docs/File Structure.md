@@ -355,6 +355,7 @@ Standing law:
 - `Home Assistant Mapping.md` — how Home Assistant is used
 - `MQTT Communication Principles.md` — topics and MQTT ownership
 - `File Structure.md` — this file (repo **and** HA/LXC layouts)
+- `Proxmox Config Steps.md` — bare-metal ISO install, subscription nag removal, free (no-subscription) updates
 - `Home Assistant Config Steps.md` — Proxmox VM bootstrap + deploying files onto HA
 - `Master Control Server Config Steps.md` — Proxmox LXC bootstrap for Master Control Server
 - `AlleycatTV Config Steps.md` — Proxmox content server + HA integration + Pi SD flash (Phase 6)
