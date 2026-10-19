@@ -26,10 +26,12 @@ from app.config import (
     MEDIA_SUBDIRS,
     POSTERS_FILE,
     STATIC_DIR,
+    TEMPLATES_FILE,
 )
 from app.models import ActivePlayersState
-from app.routers import active_players, flavor, intake, posters
+from app.routers import active_players, flavor, intake, posters, templates as template_routes
 from app.store import PosterStore
+from app.template_store import TemplateStore
 
 logging.basicConfig(
     level=logging.INFO,
@@ -67,6 +69,7 @@ async def log_requests(request: Request, call_next):
 
 
 app.include_router(posters.router)
+app.include_router(template_routes.router)
 app.include_router(active_players.router)
 app.include_router(flavor.router)
 app.include_router(intake.router)
@@ -79,8 +82,14 @@ async def startup() -> None:
         Path(MEDIA_BASE, sub).mkdir(parents=True, exist_ok=True)
     STATIC_DIR.mkdir(parents=True, exist_ok=True)
     app.state.poster_store = PosterStore(POSTERS_FILE)
+    app.state.template_store = TemplateStore(TEMPLATES_FILE)
     app.state.active_playlist = ActivePlayersState()
-    _LOGGER.info("GBN started. Media: %s Posters: %s", MEDIA_BASE, POSTERS_FILE)
+    _LOGGER.info(
+        "GBN started. Media: %s Posters: %s Templates: %s",
+        MEDIA_BASE,
+        POSTERS_FILE,
+        TEMPLATES_FILE,
+    )
 
 
 @app.get("/health")

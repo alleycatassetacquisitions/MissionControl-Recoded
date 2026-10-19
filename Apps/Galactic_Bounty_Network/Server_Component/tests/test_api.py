@@ -24,10 +24,12 @@ def client(tmp_path, monkeypatch):
     data.mkdir()
     posters = data / "posters.json"
     posters.write_text("[]", encoding="utf-8")
+    templates = data / "poster_templates.json"
 
     monkeypatch.setenv("GBN_MEDIA", str(media))
     monkeypatch.setenv("GBN_DATA", str(data))
     monkeypatch.setenv("GBN_POSTERS", str(posters))
+    monkeypatch.setenv("GBN_TEMPLATES", str(templates))
     monkeypatch.setenv("GBN_PUBLIC_BASE", "http://test.local:8100")
     monkeypatch.setenv("GBN_MCS_BASE", "http://mcs.test")
     monkeypatch.setenv("GBN_MCS_TOKEN", "test-mcs-token")
@@ -59,6 +61,16 @@ def _create_poster(client: TestClient, player_id: str = "p1", **extra) -> dict:
         "stats": json.dumps(extra.get("stats", {})),
         "flavor_text": extra.get("flavor_text", "Flavor line."),
     }
+    for key in (
+        "template_id",
+        "headline",
+        "subtitle",
+        "amount_label",
+        "list_label",
+        "list_empty",
+    ):
+        if key in extra:
+            fields[key] = extra[key]
     files = {"video": ("capture.webm", _tiny_webm(), "video/webm")}
     resp = client.post("/api/posters", data=fields, files=files)
     assert resp.status_code == 200, resp.text
@@ -131,7 +143,9 @@ def test_poster_crud_and_list(client):
     assert created["role"] == "hunter"
     assert created["neocorp"] == "reboot"
     assert created["has_video"] is True
-    assert "/poster/player/hunter-1" in created["poster_url"]
+    assert created["poster_url"].endswith("/poster/player/hunter-1")
+    # Links follow the request Host (not a stale GBN_PUBLIC_BASE alone).
+    assert created["poster_url"].startswith("http://testserver/")
 
     listed = client.get("/api/posters")
     assert listed.status_code == 200
@@ -140,6 +154,23 @@ def test_poster_crud_and_list(client):
     by_id = client.get(f"/api/posters/{created['id']}")
     assert by_id.status_code == 200
     assert by_id.json()["id"] == created["id"]
+
+
+def test_poster_urls_follow_request_host(client):
+    """New LAN IP / Host header must appear in poster_url and video_url."""
+    created = _create_poster(client, player_id="host-check")
+    assert created["poster_url"] == "http://testserver/poster/player/host-check"
+    assert created["video_url"].startswith("http://testserver/media/videos/")
+
+    # Simulate HA proxy (or venue client) hitting the CT at a new DHCP IP.
+    resp = client.get(
+        "/api/posters/by-player/host-check",
+        headers={"Host": "10.10.50.187:8100"},
+    )
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["poster_url"] == "http://10.10.50.187:8100/poster/player/host-check"
+    assert data["video_url"].startswith("http://10.10.50.187:8100/media/videos/")
 
 
 def test_mcs_overlay_on_poster_read(client):
@@ -245,3 +276,105 @@ def test_poster_html_bounty_role(client):
         assert "WANTED" in html.text
         assert "DEAD OR ALIVE" in html.text
         assert "WANTED FOR" in html.text
+        assert "REWARD" in html.text
+
+
+def test_poster_templates_seeded(client):
+    resp = client.get("/api/poster-templates")
+    assert resp.status_code == 200
+    rows = resp.json()
+    ids = {t["id"] for t in rows}
+    assert "hunter" in ids
+    assert "bounty" in ids
+    hunter = next(t for t in rows if t["id"] == "hunter")
+    assert hunter["builtin"] is True
+    assert hunter["headline"] == "GUN FOR HIRE"
+    assert hunter["amount_label"] == "RATE"
+
+
+def test_poster_templates_crud_blocks_builtins(client):
+    assert client.put(
+        "/api/poster-templates/hunter",
+        json={"headline": "NOPE"},
+    ).status_code == 400
+    assert client.delete("/api/poster-templates/bounty").status_code == 400
+
+    created = client.post(
+        "/api/poster-templates",
+        json={
+            "name": "VIP Guest",
+            "headline": "HONORED GUEST",
+            "subtitle": "ALL ACCESS",
+            "amount_label": "COVER",
+            "list_label": "KNOWN FOR",
+            "list_empty": "Details pending",
+        },
+    )
+    assert created.status_code == 200, created.text
+    body = created.json()
+    assert body["id"]
+    assert body["builtin"] is False
+    assert body["headline"] == "HONORED GUEST"
+
+    updated = client.put(
+        f"/api/poster-templates/{body['id']}",
+        json={"headline": "VIP CLEARANCE"},
+    )
+    assert updated.status_code == 200
+    assert updated.json()["headline"] == "VIP CLEARANCE"
+
+    deleted = client.delete(f"/api/poster-templates/{body['id']}")
+    assert deleted.status_code == 200
+    assert client.get(f"/api/poster-templates/{body['id']}").status_code == 404
+
+
+def test_create_poster_snapshots_custom_chrome(client):
+    created = _create_poster(
+        client,
+        player_id="custom-1",
+        role="bounty",
+        template_id="bounty",
+        headline="MOST WANTED",
+        subtitle="ALIVE PREFERRED",
+        amount_label="PAYOUT",
+        list_label="CHARGES",
+        list_empty="None listed",
+    )
+    assert created["template_id"] == "bounty"
+    assert created["headline"] == "MOST WANTED"
+    assert created["subtitle"] == "ALIVE PREFERRED"
+    assert created["amount_label"] == "PAYOUT"
+    assert created["list_label"] == "CHARGES"
+
+    with patch(
+        "app.routers.posters.lookup_by_id",
+        new=AsyncMock(return_value=None),
+    ):
+        html = client.get("/poster/player/custom-1")
+        assert html.status_code == 200
+        assert "MOST WANTED" in html.text
+        assert "ALIVE PREFERRED" in html.text
+        assert "PAYOUT" in html.text
+        assert "CHARGES" in html.text
+
+
+def test_create_poster_uses_custom_template_id(client):
+    tmpl = client.post(
+        "/api/poster-templates",
+        json={
+            "name": "Sponsor",
+            "headline": "FEATURED",
+            "amount_label": "FEE",
+            "list_label": "CREDITS",
+        },
+    ).json()
+    created = _create_poster(
+        client,
+        player_id="sponsor-1",
+        role="bounty",
+        template_id=tmpl["id"],
+    )
+    assert created["template_id"] == tmpl["id"]
+    assert created["headline"] == "FEATURED"
+    assert created["amount_label"] == "FEE"
+    assert created["list_label"] == "CREDITS"

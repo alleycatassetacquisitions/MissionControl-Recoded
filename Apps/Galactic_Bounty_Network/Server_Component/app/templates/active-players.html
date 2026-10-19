@@ -14,8 +14,7 @@
   <script>
     window.GBN_ACTIVE = {
       playerIds: {{ player_ids_json | safe }},
-      intervalSec: {{ interval_sec }},
-      publicBase: {{ public_base | tojson }}
+      intervalSec: {{ interval_sec }}
     };
   </script>
   <script src="/static/active-players.js"></script>

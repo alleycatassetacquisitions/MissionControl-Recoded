@@ -21,11 +21,37 @@ Server** — GBN stores `player_id` and overlays live name/role/neocorp/faction.
 |---|---|
 | Player records (name, role, neocorp, faction) | Master Control Server |
 | Poster CRUD + video + flavor | GBN server |
+| Poster chrome templates (headline / labels) | GBN server (`poster_templates.json`) |
 | Poster HTML / active-players kiosk | GBN server |
 | Capture UI panel | GBN HA panel via proxy |
 | Registration Poster column | Registration panel → GBN proxy |
 
 GBN does **not** expose `/api/players`. Use MCS / Registration.
+
+---
+
+## Poster templates
+
+Chrome (headline, optional subtitle, amount label, list label) is selected at intake:
+
+| Roster role | Template behavior |
+|---|---|
+| Hunter | Auto-select built-in `hunter` (`GUN FOR HIRE` / `RATE` / `REASONS TO HIRE`) |
+| Bounty | Auto-select built-in `bounty` (`WANTED` / `DEAD OR ALIVE` / `REWARD` / `WANTED FOR`) |
+| Neither | Operator picks a template or edits chrome and **Save as new** (Create poster also persists a custom template) |
+
+Built-ins cannot be overwritten; **Save as new** always forks. Chrome is **snapshotted** onto each poster at create time. Custom templates keep that snapshot; built-in hunter/bounty chrome follows live MCS role overlays on read.
+
+Panel field **Allegiance/NeoCorp** is the affiliation dropdown (values still `reboot` / `helix` / `endline` / `freelancer`).
+
+API:
+
+| Method | Path | Notes |
+|---|---|---|
+| `GET` | `/api/poster-templates` | List built-ins + customs |
+| `POST` | `/api/poster-templates` | Create custom |
+| `PUT` / `DELETE` | `/api/poster-templates/{id}` | Non-builtin only |
+| `POST` | `/api/posters` | Accepts `template_id` + chrome fields; stores snapshot |
 
 ---
 
@@ -35,10 +61,11 @@ GBN does **not** expose `/api/players`. Use MCS / Registration.
 |---|---|---|
 | `GBN_HOST` | `0.0.0.0` | Bind address |
 | `GBN_PORT` | `8100` | Bind port |
-| `GBN_PUBLIC_BASE` | `http://127.0.0.1:8100` | Public URL in poster links |
+| `GBN_PUBLIC_BASE` | `http://127.0.0.1:8100` | Fallback public URL only — live poster/media links use the request Host (so a new CT IP via Core Configurator is picked up without rewriting this env) |
 | `GBN_MEDIA` | `./media` | Videos + NeoCorp SVG assets |
 | `GBN_DATA` | `./data` | Data directory |
 | `GBN_POSTERS` | `./data/posters.json` | Poster store |
+| `GBN_TEMPLATES` | `./data/poster_templates.json` | Poster chrome templates (hunter/bounty built-ins + customs) |
 | `GBN_MCS_BASE` | _(empty)_ | MCS base URL for overlay |
 | `GBN_MCS_TOKEN` | _(empty)_ | Bearer token for MCS |
 | `GBN_ACTIVE_PLAYERS_SECRET` | _(empty)_ | Optional auth for POST active-players |
@@ -81,3 +108,14 @@ HA Phase 8: [`Docs/Home Assistant Config Steps.md`](../../Docs/Home%20Assistant%
 Guest install (inside LXC): `sudo bash setup/install-server.sh`  
 Installs under `/opt/gbn/`, systemd unit `gbn`. Set Core Configurator key `gbn`
 to the public base URL.
+
+### Upgrade existing CT (app code only)
+
+Push `Server_Component/app/` (must include `template_store.py` and `routers/templates.py`) into `/opt/gbn/app/`, then `systemctl restart gbn`. Confirm:
+
+```bash
+curl -s http://127.0.0.1:8100/api/poster-templates
+# JSON array with hunter + bounty — not {"detail":"Not Found"}
+```
+
+Redeploy `HA_Component/www/gbn/` to Home Assistant and hard-refresh the browser.

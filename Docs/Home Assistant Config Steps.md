@@ -328,7 +328,7 @@ App README: [`Apps/Broadcast_Group_Controller/README.md`](../Apps/Broadcast_Grou
 
 ### Phase 8 — Galactic Bounty Network consumes identity
 
-Posters own media and flavor. `player_id` is a foreign key to MCS. HA proxies the poster API; panels do not fetch LAN URLs.
+Posters own media, flavor, and chrome templates. `player_id` is a foreign key to MCS. HA proxies the poster API; panels do not fetch LAN URLs.
 
 **Proxmox:** [`GBN Config Steps.md`](GBN%20Config%20Steps.md) · [`install-gbn-proxmox.sh`](../ProxmoxInstallFiles/install-gbn-proxmox.sh)
 
@@ -338,12 +338,14 @@ scp -r "z:\CodingProjects\Alleycat\MissionControl\Apps\Galactic_Bounty_Network\H
 scp -r "z:\CodingProjects\Alleycat\MissionControl\Apps\Registration\HA_Component\www\registration" root@<HA-IP>:/config/www/
 ```
 
-Merge from [`HomeAssist/configuration.yaml`](../HomeAssist/configuration.yaml): `gbn: {}` and the Galactic Bounty Network `panel_custom` entry. Ensure Core Configurator key `gbn` points at the poster server. Restart HA.
+Merge from [`HomeAssist/configuration.yaml`](../HomeAssist/configuration.yaml): `gbn: {}` and the Galactic Bounty Network `panel_custom` entry. Ensure Core Configurator key `gbn` points at the poster server. Restart HA. Hard-refresh after `www/gbn/` updates.
 
 1. Settings → Devices & services → Add **Galactic Bounty Network**.
 2. Sidebar **Galactic Bounty Network**: roster pick → Generate → record/upload → create poster.
-3. Poster HTML overlays live MCS name/role/neocorp/faction on every read.
-4. Registration **Poster** column shows thumb + open link via `/api/gbn/proxy`.
+3. Hunter/Bounty auto-select built-in poster templates; other roles pick or **Save as new** (Create poster also persists custom chrome). Affiliation control is labeled **Allegiance/NeoCorp**.
+4. Poster HTML overlays live MCS name/role/neocorp/faction on every read; chrome comes from the poster snapshot (or role built-in).
+5. Registration **Poster** column shows thumb + open link via `/api/gbn/proxy`.
+6. Smoke: `GET http://<gbn-ip>:8100/api/poster-templates` returns hunter + bounty (not 404).
 
 App README: [`Apps/Galactic_Bounty_Network/README.md`](../Apps/Galactic_Bounty_Network/README.md)
 

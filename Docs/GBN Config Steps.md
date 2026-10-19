@@ -28,11 +28,51 @@ Confirm:
 ```bash
 curl -s http://<gbn-ip>:8100/health
 # {"status":"ok","service":"gbn"}
+
+curl -s http://<gbn-ip>:8100/api/poster-templates
+# JSON array including builtin hunter + bounty
 ```
 
 Set **Core Configurator → Galactic Bounty Network** to `http://<gbn-ip>:8100`.
 
-Env file on the guest: `/etc/gbn.env` (`GBN_PUBLIC_BASE`, `GBN_MCS_BASE`, `GBN_MCS_TOKEN`).
+When the CT gets a new LAN IP, update Core Configurator to that URL — poster “live” links and API `poster_url` / `video_url` follow the request Host (no LXC rebuild). Optionally refresh `GBN_PUBLIC_BASE` in `/etc/gbn.env` as a fallback; `GBN_MCS_BASE` / `GBN_MCS_TOKEN` still live there.
+
+Env file on the guest: `/etc/gbn.env` (`GBN_PUBLIC_BASE`, `GBN_MCS_BASE`, `GBN_MCS_TOKEN`, optional `GBN_TEMPLATES`).
+
+Data on the guest:
+
+| Path | Purpose |
+| --- | --- |
+| `/opt/gbn/data/posters.json` | Poster store |
+| `/opt/gbn/data/poster_templates.json` | Chrome templates (auto-seeded hunter/bounty) |
+| `/opt/gbn/app/` | Python package (`uvicorn app.main:app`) |
+
+### Upgrade app on an existing CT
+
+From a workstation (example IPs: Proxmox `10.10.50.205`, GBN CT `101`):
+
+```powershell
+ssh root@<PROXMOX-IP> "rm -rf /tmp/gbn-app && mkdir -p /tmp/gbn-app"
+scp -r "z:\CodingProjects\Alleycat\MissionControl\Apps\Galactic_Bounty_Network\Server_Component\app\*" root@<PROXMOX-IP>:/tmp/gbn-app/
+```
+
+On the Proxmox host — **confirm new files before installing**:
+
+```bash
+ls -la /tmp/gbn-app/template_store.py /tmp/gbn-app/routers/templates.py
+# both must exist
+
+pct exec <CTID> -- mkdir -p /opt/gbn/app
+tar -C /tmp/gbn-app -cf - . | pct exec <CTID> -- tar -C /opt/gbn/app -xf -
+pct exec <CTID> -- bash -lc '
+  chown -R gbn:gbn /opt/gbn/app
+  systemctl restart gbn
+  sleep 2
+  curl -s http://127.0.0.1:8100/api/poster-templates
+'
+```
+
+A stale `/tmp/gbn-app` without `templates.py` / `template_store.py` leaves the service on old routes (`404` on `/api/poster-templates`).
 
 ---
 
@@ -49,14 +89,21 @@ Merge from [`HomeAssist/configuration.yaml`](../HomeAssist/configuration.yaml):
 - `gbn: {}`
 - `panel_custom` entry for `gbn-panel`
 
-Restart HA.
+Restart HA. Hard-refresh the browser after updating `www/gbn/`.
 
 1. Settings → Devices & services → Add **Galactic Bounty Network** (install-only).
 2. Sidebar **Galactic Bounty Network**: pick a Registration roster player → Generate → record/upload → create poster.
-3. Open `/poster/player/{id}` on the GBN public URL (or via the success link).
-4. Registration table **Poster** column shows thumb + open link (via HA proxy).
+3. **Subject:** affiliation control is labeled **Allegiance/NeoCorp** (same values as before).
+4. **Poster template:**
+   - Hunter / Bounty players auto-select the matching built-in chrome.
+   - Other roles: pick a template, or edit headline / subtitle / amount label / list label and **Save as new template** (Create poster also adds a custom template when chrome is filled).
+   - Chrome is snapshotted onto the poster at create time.
+5. Open `/poster/player/{id}` on the GBN public URL (or via the success link).
+6. Registration table **Poster** column shows thumb + open link (via HA proxy).
 
 Panel API traffic goes through `/api/gbn/proxy/...` only — no browser LAN fetch.
+
+Templates API (proxied): `GET/POST /api/gbn/proxy/api/poster-templates`.
 
 ---
 
@@ -70,15 +117,19 @@ curl -X POST http://<gbn-ip>:8100/api/active-players \
   -d '{"player_ids":["12","34"],"interval_sec":30}'
 ```
 
-Display machine: open `http://<gbn-ip>:8100/active-players`.
+Display machine: open `http://<gbn-ip>:8100/active-players` (iframe paths are same-origin relative — survive IP changes).
 
 ---
 
 ## D. Smoke checklist
 
 - [ ] `/health` returns `service: gbn`
+- [ ] `GET /api/poster-templates` returns hunter + bounty built-ins (not 404)
 - [ ] Create poster in HA panel for a known MCS player
+- [ ] Hunter / Bounty auto-select built-in templates; neither-role player can Save as new / Create poster and see the custom template in the dropdown
+- [ ] Custom headline / amount / list labels appear on `/poster/player/{id}`
 - [ ] Change player name in Registration → reload poster page → name updates (MCS overlay)
 - [ ] `GET /api/players/{id}` on GBN returns **404** (removed)
 - [ ] Registration Poster column shows thumb after create
 - [ ] Core Configurator is the only place the GBN URL is stored
+- [ ] After a CT IP change, updating Core Configurator `gbn` is enough for new poster live links

@@ -25,6 +25,40 @@ class PosterStatus(BaseModel):
     longest_streak: str = ""
 
 
+class PosterTemplate(BaseModel):
+    """Poster chrome preset (headline / amount / list labels)."""
+
+    id: str
+    name: str
+    headline: str
+    subtitle: str = ""
+    amount_label: str = "REWARD"
+    list_label: str = "WANTED FOR"
+    list_empty: str = "Charges pending"
+    builtin: bool = False
+    created_at: str = ""
+    updated_at: str = ""
+
+
+class PosterTemplateCreate(BaseModel):
+    name: str
+    headline: str
+    subtitle: str = ""
+    amount_label: str = "REWARD"
+    list_label: str = "WANTED FOR"
+    list_empty: str = "Charges pending"
+    id: str = ""  # optional; server generates slug if empty
+
+
+class PosterTemplateUpdate(BaseModel):
+    name: Optional[str] = None
+    headline: Optional[str] = None
+    subtitle: Optional[str] = None
+    amount_label: Optional[str] = None
+    list_label: Optional[str] = None
+    list_empty: Optional[str] = None
+
+
 class PosterRecord(BaseModel):
     id: str
     player_id: str = ""
@@ -38,6 +72,13 @@ class PosterRecord(BaseModel):
     status: PosterStatus = Field(default_factory=PosterStatus)
     flavor_text: str = ""
     video_filename: str = ""
+    # Chrome snapshot (stable if the template is later edited)
+    template_id: str = ""
+    headline: str = ""
+    subtitle: str = ""
+    amount_label: str = ""
+    list_label: str = ""
+    list_empty: str = ""
     created_at: str = ""
     updated_at: str = ""
 
@@ -59,6 +100,12 @@ class PosterPublic(BaseModel):
     video_url: str = ""
     poster_url: str = ""
     has_video: bool = False
+    template_id: str = ""
+    headline: str = ""
+    subtitle: str = ""
+    amount_label: str = ""
+    list_label: str = ""
+    list_empty: str = ""
     created_at: str = ""
     updated_at: str = ""
 
