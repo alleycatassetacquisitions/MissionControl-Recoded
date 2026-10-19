@@ -97,6 +97,25 @@ async def startup() -> None:
     app.state.poster_store = app.state.event_stores.legacy
     app.state.template_store = TemplateStore(TEMPLATES_FILE)
     app.state.active_playlist = ActivePlayersState()
+    # Warm active-event cache from MCS (or keep disk cache) so /poster-cycle
+    # does not need a human to open the page once after restart.
+    try:
+        from app.services.mcs_client import get_active_event
+
+        warm = await get_active_event()
+        if warm and warm.get("active_event_id"):
+            _LOGGER.info(
+                "Active event ready at startup: %s (%s)",
+                warm.get("active_event_id"),
+                warm.get("source") or "?",
+            )
+        else:
+            _LOGGER.warning(
+                "No active event at startup — set one in Registration "
+                "(pushes to GBN) or Pis show NO ACTIVE EVENT until then"
+            )
+    except Exception as exc:  # noqa: BLE001
+        _LOGGER.warning("Active event warmup failed: %s", exc)
     _LOGGER.info(
         "GBN started. Media: %s Legacy posters: %s Templates: %s",
         MEDIA_BASE,

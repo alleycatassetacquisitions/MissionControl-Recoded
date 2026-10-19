@@ -123,7 +123,9 @@ Event media (proxied): `GET /api/gbn/proxy/api/events/media`, export/delete unde
 
 ### Poster cycle (AlleycatTV)
 
-In AlleycatTV Content, **+ Poster cycle** adds `{gbn}/poster-cycle` as a webpage playlist item (1 hour slot). The GBN page loads `GET /api/posters` and rotates inside Chromium.
+In AlleycatTV Content, **+ Poster cycle** adds `{gbn}/poster-cycle` as a webpage playlist item (1 hour slot). The GBN page loads `GET /api/events/active` then `GET /api/posters?event_id=…` and rotates **that event’s** posters inside Chromium.
+
+Registration **set active event** (and HA restore-on-start) also `PUT /api/events/active` on GBN so kiosks do not depend on a browser visit to seed the active-event cache. Confirm `GBN_MCS_BASE` / `GBN_MCS_TOKEN` in `/etc/gbn.env` as a backup path.
 
 Ops fallback (`/manage`): paste `http://<gbn-ip>:8100/poster-cycle` via **+ Poster cycle**.
 

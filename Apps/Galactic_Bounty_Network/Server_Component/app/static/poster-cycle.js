@@ -28,6 +28,11 @@
     return `${base}/poster/${encodeURIComponent(p.id)}`;
   }
 
+  function frameIsBlank() {
+    const src = frame?.src || "";
+    return !src || src === "about:blank" || src === "about:blank#";
+  }
+
   function showCurrent() {
     if (!posters.length) {
       frame.src = "about:blank";
@@ -53,6 +58,15 @@
       prefetch.href = posterUrl(next);
       document.head.appendChild(prefetch);
     }
+  }
+
+  function paintHudOnly() {
+    if (!hudLabel || !posters.length) return;
+    const p = posters[index % posters.length];
+    const label = p.name || posterKey(p) || "?";
+    const eventBit = activeEventName || activeEventId;
+    const prefix = eventBit ? `${eventBit} · ` : "";
+    hudLabel.textContent = `${prefix}${label} · ${index % posters.length + 1}/${posters.length}`;
   }
 
   async function refreshPosters() {
@@ -82,9 +96,14 @@
         `/api/posters?event_id=${encodeURIComponent(eid)}`,
         { cache: "no-store" }
       );
-      if (!resp.ok) return;
+      if (!resp.ok) {
+        emptyReason = `POSTERS FETCH FAILED (${resp.status})`;
+        if (!posters.length) showCurrent();
+        return;
+      }
       const data = await resp.json();
       if (!Array.isArray(data)) return;
+      const wasBlank = frameIsBlank() || !posters.length;
       const next = data.map((p) => ({
         id: String(p.id || ""),
         player_id: String(p.player_id || ""),
@@ -100,11 +119,16 @@
       }
       if (currentKey) {
         const found = posters.findIndex((p) => posterKey(p) === currentKey);
-        if (found >= 0) index = found;
-        else index = index % posters.length;
+        index = found >= 0 ? found : index % posters.length;
       } else {
         index = 0;
+      }
+      // Leaving empty → populated must always paint (Pi kiosks used to stay blank
+      // until a desktop browser hit the page once and the next refresh had a key).
+      if (wasBlank || !currentKey) {
         showCurrent();
+      } else {
+        paintHudOnly();
       }
     } catch (_) {
       /* keep current list */

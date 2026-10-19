@@ -8,6 +8,9 @@ DOMAIN = "registration"
 # Core Configurator service key for MCS — other integrations use this too.
 KEY_MCS = "master_control_server"
 
+# GBN poster server — receive active-event push for /poster-cycle kiosks.
+KEY_GBN = "gbn"
+
 # Extra field on the MCS service key that holds the Bearer token.
 EXTRA_MCS_TOKEN = "token"
 

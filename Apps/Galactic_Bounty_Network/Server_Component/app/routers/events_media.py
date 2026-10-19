@@ -8,9 +8,10 @@ import zipfile
 from fastapi import APIRouter, HTTPException, Query, Request
 from fastapi.responses import StreamingResponse
 
-from app.models import ActiveEventInfo, EventMediaRow
+from app.models import ActiveEventInfo, ActiveEventSet, EventMediaRow
 from app.services.event_paths import (
     delete_event_storage,
+    ensure_event_dirs,
     event_videos_dir,
     list_event_media_dirs,
     remember_active_event,
@@ -75,6 +76,31 @@ async def api_active_event() -> ActiveEventInfo:
         active_event_id=eid,
         event_name=name,
         source=source or ("mcs" if eid else ""),
+    )
+
+
+@router.put("/api/events/active", response_model=ActiveEventInfo)
+async def api_set_active_event(
+    body: ActiveEventSet, request: Request
+) -> ActiveEventInfo:
+    """Registration push — remember active event for /poster-cycle kiosks."""
+    try:
+        eid = sanitize_event_id(body.active_event_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    name = (body.event_name or "").strip()
+    ensure_event_dirs(eid, event_name=name or None)
+    try:
+        _event_stores(request).for_event(eid)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    remember_active_event(eid, name, source="registration")
+    _LOGGER.info("Active event set by Registration: %s (%s)", eid, name or "unnamed")
+    return ActiveEventInfo(
+        ready=True,
+        active_event_id=eid,
+        event_name=name or "",
+        source="registration",
     )
 
 

@@ -38,6 +38,7 @@ from .const import (
     EVENT_STORE,
     KEY_CENTRAL_PRIMARY,
     KEY_CENTRAL_SECONDARY,
+    KEY_GBN,
     KEY_MCS,
     STORAGE_KEY,
     STORAGE_VERSION,
@@ -188,6 +189,51 @@ def _enrich_active_from_cache(
     return data
 
 
+async def _push_active_event_to_gbn(
+    hass: HomeAssistant, event_id: str, event_name: str = ""
+) -> None:
+    """Tell GBN the active event so /poster-cycle kiosks do not wait on MCS."""
+    if async_request is None or not event_id:
+        return
+    name = (event_name or "").strip()
+    if not name:
+        cached = _event_cache(hass).get(str(event_id)) or {}
+        name = str(cached.get("name") or "").strip()
+    try:
+        response = await async_request(
+            hass,
+            KEY_GBN,
+            "PUT",
+            "/api/events/active",
+            json={
+                "active_event_id": str(event_id),
+                "event_name": name,
+            },
+        )
+    except Exception as err:  # noqa: BLE001
+        _LOGGER.warning("Registration: GBN active-event push failed: %s", err)
+        return
+    if response is None:
+        _LOGGER.debug("Registration: GBN URL not configured — skip active push")
+        return
+    try:
+        if response.status >= 400:
+            detail = await _response_detail(response)
+            _LOGGER.warning(
+                "Registration: GBN active-event push HTTP %s: %s",
+                response.status,
+                detail or "(no body)",
+            )
+        else:
+            _LOGGER.info(
+                "Registration: pushed active event %s (%s) to GBN",
+                event_id,
+                name or "unnamed",
+            )
+    finally:
+        response.release()
+
+
 async def _restore_active_to_mcs(hass: HomeAssistant) -> None:
     """After HA/MCS restart, re-apply last active + name hint to MCS memory."""
     event_id = hass.data.get(DOMAIN, {}).get(ACTIVE_EVENT_ID_KEY)
@@ -216,6 +262,9 @@ async def _restore_active_to_mcs(hass: HomeAssistant) -> None:
         _LOGGER.warning(
             "Registration: could not restore active event to MCS: %s", err
         )
+    await _push_active_event_to_gbn(
+        hass, str(event_id), str(cached.get("name") or "")
+    )
 
 
 async def _response_detail(response) -> str:
@@ -478,6 +527,7 @@ def _register_services(hass: HomeAssistant, entry: ConfigEntry) -> None:
                 action="set_active_event",
             )
             await _remember_active(hass, event_id)
+            await _push_active_event_to_gbn(hass, event_id, name)
             await hass.data[DOMAIN][entry.entry_id].async_refresh()
 
     async def _handle_update_event(service_call: ServiceCall) -> None:
@@ -527,6 +577,9 @@ def _register_services(hass: HomeAssistant, entry: ConfigEntry) -> None:
                 "created_at": cached.get("created_at") or "",
             }
         await _remember_active(hass, event_id)
+        await _push_active_event_to_gbn(
+            hass, event_id, str(cached.get("name") or "")
+        )
         await hass.data[DOMAIN][entry.entry_id].async_refresh()
 
     registrations = (

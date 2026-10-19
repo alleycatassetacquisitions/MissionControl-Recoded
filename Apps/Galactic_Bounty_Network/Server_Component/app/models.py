@@ -128,6 +128,13 @@ class ActiveEventInfo(BaseModel):
     source: str = ""
 
 
+class ActiveEventSet(BaseModel):
+    """Registration → GBN push when the venue active event changes."""
+
+    active_event_id: str
+    event_name: str = ""
+
+
 class FlavorRequest(BaseModel):
     name: str
     neocorp: NeoCorp = "freelancer"
