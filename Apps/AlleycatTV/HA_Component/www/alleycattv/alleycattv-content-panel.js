@@ -471,7 +471,7 @@
         return;
       }
       const cycleUrl = `${gbn}/poster-cycle`;
-      const duration = 3600;
+      const duration = 86400;
       const pl = await this._api("GET", `/api/playlists/${encodeURIComponent(zoneId)}`);
       const items = [...pl.items || []];
       const existing = items.findIndex(
@@ -499,7 +499,10 @@
         zone_id: zoneId,
         items
       });
-      this._toast("Poster cycle added \u2014 rotates all GBN posters every 30s", "ok");
+      this._toast(
+        "Poster cycle added \u2014 GBN rotates posters every 30s for up to 24h in this slot",
+        "ok"
+      );
       await this._loadAll();
       await this._reloadPlaylist(zoneId);
     }
