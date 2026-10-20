@@ -80,18 +80,54 @@ class WebDisplay:
     Public API matches what AlleycatTVPlayer expects:
       show(url, duration) — display for N seconds then close (blocking)
       open(url) → bool   — open and keep running; returns False if Chromium crashed
-      close()            — kill the Chromium process
+      close()            — kill the Chromium process (also aborts an in-flight show)
     """
 
     def __init__(self) -> None:
         self._proc: Optional[subprocess.Popen] = None
         self._lock = threading.Lock()
+        self._cancel = threading.Event()
+        self._cancelled = False
+        self._chromium_died = False
+
+    @property
+    def cancelled(self) -> bool:
+        """True if the last ``show()`` was aborted by ``close()`` (e.g. reload)."""
+        return self._cancelled
+
+    @property
+    def chromium_died(self) -> bool:
+        """True if Chromium exited before the scheduled duration ended."""
+        return self._chromium_died
 
     def show(self, url: str, duration: int) -> None:
-        """Open URL, display for `duration` seconds (blocking), then close."""
+        """Open URL, display for `duration` seconds (blocking), then close.
+
+        Returns early if Chromium exits or ``close()`` is called (playlist reload).
+        """
         self.close()
+        self._cancel.clear()
+        self._cancelled = False
+        self._chromium_died = False
         self._launch(url)
-        time.sleep(max(1, duration))
+        deadline = time.monotonic() + max(1, int(duration))
+        while time.monotonic() < deadline:
+            if self._cancel.is_set():
+                self._cancelled = True
+                _LOGGER.info("Webpage display cancelled early for %s", url)
+                break
+            with self._lock:
+                proc = self._proc
+                dead = proc is None or proc.poll() is not None
+            if dead:
+                self._chromium_died = True
+                _LOGGER.warning(
+                    "Chromium exited early during webpage display (%s) — "
+                    "not sleeping the remaining duration",
+                    url,
+                )
+                break
+            time.sleep(0.5)
         self.close()
 
     def open(self, url: str) -> bool:
@@ -100,13 +136,17 @@ class WebDisplay:
         Returns True if Chromium started successfully, False otherwise.
         """
         self.close()
+        self._cancel.clear()
+        self._cancelled = False
+        self._chromium_died = False
         self._launch(url)
         time.sleep(2)
         with self._lock:
             return self._proc is not None and self._proc.poll() is None
 
     def close(self) -> None:
-        """Kill the running Chromium process."""
+        """Kill the running Chromium process and abort an in-flight ``show()``."""
+        self._cancel.set()
         with self._lock:
             if self._proc is None:
                 return

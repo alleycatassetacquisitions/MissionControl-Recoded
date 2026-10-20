@@ -35,7 +35,7 @@ logging.basicConfig(
 )
 _LOGGER = logging.getLogger("alleycattv.player")
 
-_PLAYER_VERSION = "2026.06.27-flickerfix"
+_PLAYER_VERSION = "2026.10.19-web-reload"
 
 _PHOTO_EXT = {".jpg", ".jpeg", ".png", ".webp"}
 _VIDEO_EXT = {".mp4", ".mkv", ".avi", ".mov", ".webm"}
@@ -209,6 +209,7 @@ class AlleycatTVPlayer:
         self._showing_bumper:  bool                   = False
         self._bumper_started:  Optional[float]        = None
         self._webpage_active:  bool                   = False
+        self._skip_webpage_advance: bool              = False
         self._ignore_end_file: bool                   = False
         self._end_file_suppress_until: float          = 0.0
 
@@ -326,12 +327,27 @@ class AlleycatTVPlayer:
             elif action == "reload":
                 _LOGGER.info("Reloading playlist from server")
                 if self._playlist.fetch_playlist():
-                    if (
-                        not self._interrupted
-                        and not self._webpage_active
-                        and self._state == "stopped"
-                    ):
+                    if self._interrupted:
+                        _LOGGER.info(
+                            "Playlist reloaded during interrupt — will apply after resume"
+                        )
+                    elif self._webpage_active:
+                        # Webpage show() blocks for full duration; without this,
+                        # reload never restarts Chromium (black screen if it died).
+                        _LOGGER.info(
+                            "Playlist reloaded during webpage — restarting current item"
+                        )
+                        self._skip_webpage_advance = True
+                        self._web.close()
+                        self._webpage_active = False
+                        if self._state != "stopped":
+                            self._state = "idle"
+                            self._play_current()
+                    elif self._state == "stopped":
                         self._state = "idle"
+                        self._play_current()
+                    elif self._state == "playing":
+                        # Pick up new duration / URLs on the current item
                         self._play_current()
                 else:
                     _LOGGER.warning("Playlist reload failed — keeping current playback")
@@ -529,17 +545,30 @@ class AlleycatTVPlayer:
         self._publish_status()
 
     def _play_webpage(self, item: PlaylistItem) -> None:
+        cancelled = False
+        chromium_died = False
         try:
             with self._webpage_lock:
                 if self._state == "stopped":
                     return
                 self._webpage_active = True
                 self._web.show(item.url, item.webpage_duration)
+                cancelled = bool(getattr(self._web, "cancelled", False))
+                chromium_died = bool(getattr(self._web, "chromium_died", False))
         finally:
             self._webpage_active = False
             self._web.close()
         if self._state == "stopped":
             return
+        # Reload cancelled the slot and will restart — do not skip ahead.
+        if cancelled or self._skip_webpage_advance:
+            self._skip_webpage_advance = False
+            _LOGGER.info("Webpage slot cancelled (reload) — not advancing playlist")
+            return
+        if chromium_died:
+            _LOGGER.warning(
+                "Chromium died during webpage — advancing to next playlist item"
+            )
         if self._mpv:
             self._mpv.pause(False)
         self._advance_after_item()

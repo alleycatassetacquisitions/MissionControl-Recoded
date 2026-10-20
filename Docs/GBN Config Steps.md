@@ -129,13 +129,13 @@ Active Event (proxied): `GET/PUT /api/gbn/proxy/api/events/active`.
 
 ### Poster cycle (AlleycatTV)
 
-In AlleycatTV Content, **+ Poster cycle** adds `{gbn}/poster-cycle` as a webpage playlist item (1 hour slot). The GBN page:
+In AlleycatTV Content, **+ Poster cycle** adds `{gbn}/poster-cycle` as a webpage playlist item (**24 hour** slot — AlleycatTV advances after `duration` seconds; GBN rotates posters inside the page every 30s). The GBN page:
 
 1. `GET /api/events/active` (MCS → else `data/active_event.json` cache from Registration push)
 2. `GET /api/posters?event_id=…` for that Event only (never the legacy global store)
 3. Rotates every 30s; re-fetches the list every 15s
 
-HUD shows Event name + poster count, or `NO ACTIVE EVENT` / `NO POSTERS FOR EVENT` when empty.
+No on-screen Event/player/counter chrome while posters play (full-bleed art). Empty/error states only: `NO ACTIVE EVENT`, `NO POSTERS FOR EVENT`, etc.
 
 **Active Event sources (in order):** MCS `GET /events/active` when `GBN_MCS_*` works; otherwise GBN disk cache. Registration **set active event**, create-with-set-active, and HA restore-on-start all `PUT /api/events/active` on GBN so AlleycatTV Pis do not need a desktop browser visit to “wake” the cycle after a GBN restart.
 
@@ -159,7 +159,7 @@ curl -X POST http://<gbn-ip>:8100/api/active-players \
   -d '{"player_ids":["12","34"],"interval_sec":30}'
 ```
 
-Display machine: open `http://<gbn-ip>:8100/active-players` (iframe paths are same-origin relative — survive IP changes).
+Display machine: open `http://<gbn-ip>:8100/active-players` (iframe paths are same-origin relative — survive IP changes). Same as poster-cycle: no player/counter HUD over the art.
 
 ---
 
@@ -179,6 +179,6 @@ Display machine: open `http://<gbn-ip>:8100/active-players` (iframe paths are sa
 - [ ] Registration Poster column shows thumb after create (active Event only)
 - [ ] Core Configurator is the only place the GBN URL is stored
 - [ ] After a CT IP change, updating Core Configurator `gbn` is enough for new poster live links
-- [ ] Desktop browser: `/poster-cycle` rotates active-event posters (HUD shows Event name)
+- [ ] Desktop browser: `/poster-cycle` rotates active-event posters with no Event/player/counter overlay
 - [ ] After `systemctl restart gbn`, set active in Registration once → Pi `/poster-cycle` recovers without a desktop visit
 - [ ] AlleycatTV Content **+ Poster cycle** adds the GBN cycle URL to a broadcast group; Pi shows the same posters

@@ -117,7 +117,7 @@ Health: `GET /health` → `{"status":"ok","service":"gbn"}`
 | `/poster-cycle` | Rotate **active-event** posters only (default 30s; `?interval=` 5–300). Loads `/api/events/active` then `/api/posters?event_id=…` every 15s — never the legacy global store. |
 | `/active-players` | Rotate game-server curated `player_ids` only |
 
-AlleycatTV Content **+ Poster cycle** adds `{gbn}/poster-cycle` as a webpage playlist item (1 hour slot). See [`Docs/GBN Config Steps.md`](../../Docs/GBN%20Config%20Steps.md). After deploying GBN, set the active Event in Registration (or confirm `GET /api/events/active`) before expecting Pis to show posters.
+AlleycatTV Content **+ Poster cycle** adds `{gbn}/poster-cycle` as a webpage playlist item (**24h** slot; GBN rotates every 30s inside the page). See [`Docs/GBN Config Steps.md`](../../Docs/GBN%20Config%20Steps.md). After deploying GBN, set the active Event in Registration (or confirm `GET /api/events/active`) before expecting Pis to show posters. Re-click **+ Poster cycle** (or edit playlist duration) after upgrading the Content panel so existing groups pick up the 24h slot.
 
 ---
 

@@ -45,7 +45,7 @@ Home Assistant is the **only** MQTT command publisher.
 
 **Panels:** AlleycatTV (live control) + AlleycatTV Content (full library/playlists via HA proxy). Placement and Broadcast Group membership: **Broadcast Group Controller**.
 
-**Webpage items:** Content can add scoreboard URLs or **+ Poster cycle** (needs Core Configurator `gbn`). Poster cycle upserts a long-lived `webpage` item pointing at GBN `/poster-cycle`, which rotates **active-event** posters every 30s inside Chromium on the Pi (set the active Event in Registration first — see [`Docs/GBN Config Steps.md`](../../Docs/GBN%20Config%20Steps.md) § C).
+**Webpage items:** Content can add scoreboard URLs or **+ Poster cycle** (needs Core Configurator `gbn`). Poster cycle upserts a `webpage` item pointing at GBN `/poster-cycle` for **24h** (`duration: 86400`) — GBN rotates **active-event** posters every 30s inside Chromium; AlleycatTV advances to the next playlist item when that slot expires (set the active Event in Registration first — see [`Docs/GBN Config Steps.md`](../../Docs/GBN%20Config%20Steps.md) § C).
 
 **Membership:** Create playlist buckets in **AlleycatTV Content**; assign them in **Broadcast Groups** (dropdown). Pis learn `broadcast_group_id` from `mc/tv/cmd/device/{id}/membership` (Phase 7). Env `ALLEYCATV_BROADCAST_GROUP_ID` is lab bootstrap only. Retire or reuse a Pi ID via Broadcast Groups → **Remove from fabric** (offline only).
 

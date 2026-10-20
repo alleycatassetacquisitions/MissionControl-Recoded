@@ -512,7 +512,9 @@ class AlleycatTVContentPanel extends window.McPanel.Base {
       return;
     }
     const cycleUrl = `${gbn}/poster-cycle`;
-    const duration = 3600;
+    // Webpage slots advance after `duration` seconds. Poster-cycle is ambient
+    // (GBN rotates inside the page), so use a full venue day — not 1 hour.
+    const duration = 86400;
     const pl = await this._api("GET", `/api/playlists/${encodeURIComponent(zoneId)}`);
     const items = [...(pl.items || [])];
     const existing = items.findIndex(
@@ -540,7 +542,10 @@ class AlleycatTVContentPanel extends window.McPanel.Base {
       zone_id: zoneId,
       items,
     });
-    this._toast("Poster cycle added — rotates all GBN posters every 30s", "ok");
+    this._toast(
+      "Poster cycle added — GBN rotates posters every 30s for up to 24h in this slot",
+      "ok"
+    );
     await this._loadAll();
     await this._reloadPlaylist(zoneId);
   }

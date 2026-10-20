@@ -10,10 +10,6 @@
   let index = 0;
   let currentKey = "";
   /** @type {string} */
-  let activeEventId = "";
-  /** @type {string} */
-  let activeEventName = "";
-  /** @type {string} */
   let emptyReason = "NO POSTERS YET";
 
   function posterKey(p) {
@@ -33,25 +29,29 @@
     return !src || src === "about:blank" || src === "about:blank#";
   }
 
+  function showEmptyHud(reason) {
+    if (hud) hud.hidden = false;
+    if (hudLabel) hudLabel.textContent = reason;
+  }
+
+  function hideHud() {
+    if (hud) hud.hidden = true;
+    if (hudLabel) hudLabel.textContent = "";
+  }
+
   function showCurrent() {
     if (!posters.length) {
       frame.src = "about:blank";
       currentKey = "";
-      if (hud) hud.hidden = false;
-      if (hudLabel) hudLabel.textContent = emptyReason;
+      showEmptyHud(emptyReason);
       return;
     }
     const p = posters[index % posters.length];
     const next = posters[(index + 1) % posters.length];
     currentKey = posterKey(p);
     frame.src = posterUrl(p);
-    if (hud) hud.hidden = false;
-    if (hudLabel) {
-      const label = p.name || currentKey || "?";
-      const eventBit = activeEventName || activeEventId;
-      const prefix = eventBit ? `${eventBit} · ` : "";
-      hudLabel.textContent = `${prefix}${label} · ${index % posters.length + 1}/${posters.length}`;
-    }
+    // Kiosk: no event/player/counter chrome over the poster art.
+    hideHud();
     if (next && posterKey(next) !== currentKey) {
       const prefetch = document.createElement("link");
       prefetch.rel = "prefetch";
@@ -60,31 +60,18 @@
     }
   }
 
-  function paintHudOnly() {
-    if (!hudLabel || !posters.length) return;
-    const p = posters[index % posters.length];
-    const label = p.name || posterKey(p) || "?";
-    const eventBit = activeEventName || activeEventId;
-    const prefix = eventBit ? `${eventBit} · ` : "";
-    hudLabel.textContent = `${prefix}${label} · ${index % posters.length + 1}/${posters.length}`;
-  }
-
   async function refreshPosters() {
     try {
       // Active-event only — never fall back to legacy global posters.json.
       const activeResp = await fetch("/api/events/active", { cache: "no-store" });
       if (!activeResp.ok) {
         posters = [];
-        activeEventId = "";
-        activeEventName = "";
         emptyReason = "EVENT LOOKUP FAILED";
         showCurrent();
         return;
       }
       const active = await activeResp.json();
       const eid = String(active?.active_event_id || "").trim();
-      activeEventId = eid;
-      activeEventName = String(active?.event_name || "").trim();
       if (!eid) {
         posters = [];
         emptyReason = "NO ACTIVE EVENT";
@@ -127,9 +114,8 @@
       // until a desktop browser hit the page once and the next refresh had a key).
       if (wasBlank || !currentKey) {
         showCurrent();
-      } else {
-        paintHudOnly();
       }
+      // Already showing a poster — leave the frame alone; no identity HUD.
     } catch (_) {
       /* keep current list */
     }

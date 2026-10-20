@@ -131,7 +131,7 @@ If Content shows “Proxy not registered” or AlleycatTV shows “Unknown comma
 | Button | Requires | Playlist item |
 |---|---|---|
 | **+ Scoreboard URL** | Manual URL | `webpage` with label, URL, duration |
-| **+ Poster cycle** | Core Configurator key `gbn` | Upserts `GBN Poster Cycle` → `{gbn}/poster-cycle`, duration 3600s |
+| **+ Poster cycle** | Core Configurator key `gbn` | Upserts `GBN Poster Cycle` → `{gbn}/poster-cycle`, duration **86400s (24h)** — GBN rotates inside the page every 30s; AlleycatTV leaves the slot after `duration` |
 
 GBN’s `/poster-cycle` page rotates **active-event** posters every 30s inside that slot (not the legacy global store). Registration must have an active Event (it pushes that to GBN). If the Pi shows a blank cycle, check `GET {gbn}/api/events/active` and `GET {gbn}/api/posters` — then set active in Registration once. Details: [`GBN Config Steps.md` § C](GBN%20Config%20Steps.md#c-poster-display-urls). Ops fallback `/manage` has the same **+ Poster cycle** button (paste the cycle URL).
 
@@ -248,9 +248,21 @@ Empty playlist / “Zone playlist has no playable items” is normal until Part 
 | `MQTT connect failed rc=5` | Mosquitto rejected auth | Save `logins` in Mosquitto add-on, then put the same user/pass in `/etc/alleycattv.env` and `sudo systemctl restart alleycattv-player` |
 | Inject to Temp / “no boot mount” | Windows slow to remount `bootfs` | Wait for `bootfs` in Explorer; enter `D:\` at prompt; tool now polls up to 90s |
 | Panel “No devices yet” | No presence publish | Fix MQTT `rc=5` first; confirm `alleycattv-player` is `active` |
+| Poster cycle goes black; Reload does nothing | Old player slept full webpage `duration` after Chromium died; reload skipped restart while webpage active | Update client (`player.py` + `web_display.py`) under `/opt/alleycattv/`, then `sudo systemctl restart alleycattv-player`. Confirm playlist poster-cycle `duration` is **86400** (re-click **+ Poster cycle** if still 3600) |
 | Stale Pi chip / want to reuse a Pi ID | Device still in fabric after flash rename or retirement | Broadcast Groups panel → select offline chip → **Remove from fabric** (must not be online) |
 | BGC dropdown empty / “Unknown command” | Panel www newer than BGC Python, or no Content buckets | Redeploy `custom_components/broadcast_group_controller` **and** `www/…`, then `ha core restart`; create buckets in AlleycatTV Content and Refresh |
 | Imager: destination not removable | USB reader looks like fixed disk | Tool passes `--enable-writing-system-drives`; own picker still blocks system disks |
+
+### Update player code on a live Pi (no reflash)
+
+From the prep PC (replace `<pi-ip>`):
+
+```powershell
+scp -r "z:\CodingProjects\Alleycat\MissionControl\Apps\AlleycatTV\Client_Component\alleycattv_player" alleycat@<pi-ip>:/tmp/alleycattv_player
+ssh alleycat@<pi-ip> "sudo rm -rf /opt/alleycattv/alleycattv_player && sudo mv /tmp/alleycattv_player /opt/alleycattv/ && sudo chown -R alleycat:alleycat /opt/alleycattv/alleycattv_player && sudo systemctl restart alleycattv-player"
+```
+
+Confirm: `journalctl -u alleycattv-player -n 20 --no-pager` should show version `2026.10.19-web-reload` (or newer) and MQTT connected.
 
 ### Notes
 
