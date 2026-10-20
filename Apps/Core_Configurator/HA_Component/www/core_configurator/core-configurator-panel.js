@@ -54,6 +54,12 @@
       this._netTimeOfflineOpen = false;
       this._netTimeOfflineDate = "";
       this._netTimeOfflineTime = "";
+      this._updateBusy = false;
+      this._updateStatus = null;
+      this._updateDetail = "";
+      this._updateLastAt = "";
+      this._updateLatest = "";
+      this._updateChanged = [];
     }
     static get properties() {
       return {
@@ -67,7 +73,13 @@
         _netTimeTimezone: { state: true },
         _netTimeOfflineOpen: { state: true },
         _netTimeOfflineDate: { state: true },
-        _netTimeOfflineTime: { state: true }
+        _netTimeOfflineTime: { state: true },
+        _updateBusy: { state: true },
+        _updateStatus: { state: true },
+        _updateDetail: { state: true },
+        _updateLastAt: { state: true },
+        _updateLatest: { state: true },
+        _updateChanged: { state: true }
       };
     }
     static get styles() {
@@ -343,6 +355,108 @@
         guess += wantUtc - asUtc;
       }
       return new Date(guess).toISOString();
+    }
+    async _venueUpdateCheck() {
+      if (!this.hass || this._updateBusy) return;
+      this._updateBusy = true;
+      this._updateDetail = "Checking GitHub for updates\u2026";
+      try {
+        const result = await this.hass.connection.sendMessagePromise({
+          type: "core_configurator/update_check"
+        });
+        this._updateStatus = result.status || "error";
+        this._updateLastAt = result.last_updated_at || "";
+        this._updateLatest = result.summary || result.latest_release || result.installed_release || "";
+        this._updateChanged = result.changed_components || [];
+        if (result.status === "up_to_date") {
+          this._updateDetail = `Up to date with the latest release${this._updateLatest ? `: ${this._updateLatest}` : ""}${this._updateLastAt ? ` \xB7 last updated ${this._updateLastAt}` : ""}`;
+          this._feedback("Up to date", "ok");
+        } else if (result.status === "update_available") {
+          const changed = this._updateChanged.length ? ` (${this._updateChanged.join(", ")})` : "";
+          this._updateDetail = `Update available${changed}${this._updateLatest ? ` \u2014 ${this._updateLatest}` : ""}. Would you like to install?`;
+          this._feedback("Update available", "ok");
+        } else {
+          this._updateDetail = result.detail || "Update check failed";
+          this._feedback(this._updateDetail, "err");
+        }
+      } catch (err) {
+        this._updateStatus = "error";
+        const e = err;
+        this._updateDetail = e.message || "Update check failed";
+        this._feedback(this._updateDetail, "err");
+      } finally {
+        this._updateBusy = false;
+      }
+    }
+    async _venueUpdateApply() {
+      if (!this.hass || this._updateBusy) return;
+      this._updateBusy = true;
+      this._updateStatus = "applying";
+      this._updateDetail = "Installing update on Proxmox host\u2026";
+      try {
+        const started = await this.hass.connection.sendMessagePromise({
+          type: "core_configurator/update_apply"
+        });
+        if (started.status === "error") {
+          this._updateStatus = "error";
+          this._updateDetail = started.detail || "Apply failed to start";
+          this._feedback(this._updateDetail, "err");
+          return;
+        }
+        for (let i = 0; i < 60; i++) {
+          await new Promise((r) => setTimeout(r, 3e3));
+          const st = await this.hass.connection.sendMessagePromise({
+            type: "core_configurator/update_status"
+          });
+          if (st.apply_running) continue;
+          const last = st.last_apply || {};
+          this._updateLastAt = st.last_updated_at || this._updateLastAt;
+          if (last.status === "ok" || !last.errors?.length && last.status !== "error") {
+            this._updateStatus = "up_to_date";
+            this._updateLatest = st.installed_release || this._updateLatest;
+            this._updateChanged = [];
+            this._updateDetail = `Up to date${this._updateLatest ? `: ${this._updateLatest}` : ""}${this._updateLastAt ? ` \xB7 last updated ${this._updateLastAt}` : ""}`;
+            this._feedback("Update installed", "ok");
+          } else {
+            this._updateStatus = "error";
+            this._updateDetail = last.detail || (last.errors || []).join("; ") || "Update apply failed";
+            this._feedback(this._updateDetail, "err");
+          }
+          return;
+        }
+        this._updateStatus = "error";
+        this._updateDetail = "Timed out waiting for apply \u2014 check Proxmox host";
+        this._feedback(this._updateDetail, "err");
+      } catch (err) {
+        this._updateStatus = "error";
+        const e = err;
+        this._updateDetail = e.message || "Apply failed";
+        this._feedback(this._updateDetail, "err");
+      } finally {
+        this._updateBusy = false;
+      }
+    }
+    _renderVenueUpdateOps() {
+      const html = window.McPanel.html;
+      return html`
+      <div class="ops" style="margin-top:0.75rem">
+        <button
+          type="button"
+          ?disabled=${this._updateBusy}
+          @click=${() => void this._venueUpdateCheck()}
+        >
+          Check for GitHub Update
+        </button>
+        ${this._updateStatus === "update_available" ? html`<button
+              type="button"
+              ?disabled=${this._updateBusy}
+              @click=${() => void this._venueUpdateApply()}
+            >
+              Install update
+            </button>` : window.McPanel.nothing}
+        ${this._updateDetail ? html`<p class="hint" style="margin-top:0.5rem">${this._updateDetail}</p>` : window.McPanel.nothing}
+      </div>
+    `;
     }
     async _netTimeAttemptOnlineSync() {
       if (!this.hass || this._netTimeBusy) return;
@@ -695,7 +809,7 @@
                       <span class="key">${svc.key}</span>
                       ${empty ? html`<span class="badge-empty">not set</span>` : window.McPanel.nothing}
                     </div>
-                    ${svc.key === "net_time" ? this._renderNetTimeOps() : window.McPanel.nothing}
+                    ${svc.key === "net_time" ? this._renderNetTimeOps() : svc.key === "venue_updater" ? this._renderVenueUpdateOps() : window.McPanel.nothing}
                   </article>
                 `;
       })}
