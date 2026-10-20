@@ -29,3 +29,13 @@ class DigitalNodeNexusConfigFlow(ConfigFlow, domain=DOMAIN):
             return self.async_create_entry(title="Digital Node Nexus", data={})
 
         return self.async_show_form(step_id="user")
+
+    async def async_step_import(
+        self, user_input: dict[str, Any] | None = None
+    ) -> ConfigFlowResult:
+        """Create the install-only entry from configuration.yaml ``digital_node_nexus:``."""
+        if self._async_current_entries():
+            return self.async_abort(reason="single_instance_allowed")
+        await self.async_set_unique_id(DOMAIN)
+        self._abort_if_unique_id_configured()
+        return self.async_create_entry(title="Digital Node Nexus", data={})

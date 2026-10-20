@@ -28,6 +28,8 @@ Official install reference: [Proxmox VE — Installation](https://pve.proxmox.co
 
 ## B. Remove the “No valid subscription” popup
 
+> **Venue installer:** [`install-mission-control.sh`](../ProxmoxInstallFiles/install-mission-control.sh) runs § B and § C automatically as its first step (`mc_prepare_proxmox_host`). You only need the manual commands below if you are preparing the host without the venue orchestrator.
+
 The free edition is fully usable; Proxmox just nags on every login. The popup is sparked from one function in the web UI JS. Patch it on the **node** shell (SSH or Datacenter → host → **Shell**):
 
 ```bash

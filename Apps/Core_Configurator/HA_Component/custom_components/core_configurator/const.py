@@ -12,6 +12,7 @@ KEY_GBN = "gbn"
 KEY_PROXMOX = "proxmox"
 KEY_RTSP = "rtsp"
 KEY_NET_TIME = "net_time"
+KEY_VENUE_UPDATER = "venue_updater"
 
 # Extra field keys stored under a service entry's ``extra`` dict.
 EXTRA_TOKEN = "token"
@@ -24,6 +25,7 @@ EXTRA_ENABLED = "enabled"
 # YAML / config-flow fields that seed extras.
 YAML_MCS_TOKEN = "master_control_server_token"
 YAML_NET_TIME_TOKEN = "net_time_token"
+YAML_VENUE_UPDATER_TOKEN = "venue_updater_token"
 YAML_PROXMOX_TOKEN_ID = "proxmox_token_id"
 YAML_PROXMOX_TOKEN_SECRET = "proxmox_token_secret"
 YAML_RTSP_LABEL = "rtsp_label"
@@ -131,6 +133,21 @@ SERVICE_CATALOG = (
             },
         ),
     },
+    {
+        "key": KEY_VENUE_UPDATER,
+        "label": "Venue updates",
+        "hint": "Proxmox host agent — Check for GitHub Update / install (port 8722)",
+        "apps": ["Venue installer"],
+        "placeholder": "http://192.168.1.1:8722",
+        "extra_fields": (
+            {
+                "key": EXTRA_TOKEN,
+                "label": "API token",
+                "placeholder": "same value as VENUE_UPDATER_TOKEN on the Proxmox host",
+                "sensitive": True,
+            },
+        ),
+    },
 )
 
 # Keys accepted from YAML import. URLs and tokens both seed here once.
@@ -150,4 +167,6 @@ YAML_KEYS = (
     YAML_RTSP_ENABLED,
     KEY_NET_TIME,
     YAML_NET_TIME_TOKEN,
+    KEY_VENUE_UPDATER,
+    YAML_VENUE_UPDATER_TOKEN,
 )

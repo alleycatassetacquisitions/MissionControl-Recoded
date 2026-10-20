@@ -12,10 +12,11 @@ import logging
 
 import voluptuous as vol
 from homeassistant.components import websocket_api
-from homeassistant.config_entries import ConfigEntry
+from homeassistant.config_entries import SOURCE_IMPORT, ConfigEntry
 from homeassistant.core import HomeAssistant, ServiceCall, callback
 from homeassistant.exceptions import ConfigEntryNotReady, HomeAssistantError
 from homeassistant.helpers import config_validation as cv
+from homeassistant.helpers.typing import ConfigType
 
 from .const import DOMAIN, MQTT_KIND, WS_GET_DEVICES, WS_GET_ROSTER
 from .mcs import fetch_roster
@@ -23,6 +24,8 @@ from .payloads import encode_haptic_cmd, encode_led_cmd, encode_page_cmd
 from .routing import resolve_cmd_segments
 
 _LOGGER = logging.getLogger(__name__)
+
+CONFIG_SCHEMA = cv.empty_config_schema(DOMAIN)
 
 try:
     from custom_components.shared_libraries.fabric import (
@@ -112,6 +115,18 @@ async def _publish_cmd(
         qos=1,
         retain=False,
     )
+
+
+async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
+    """Load from YAML ``digital_node_nexus:`` and import the install-only config entry."""
+    if DOMAIN in config and not hass.config_entries.async_entries(DOMAIN):
+        hass.async_create_task(
+            hass.config_entries.flow.async_init(
+                DOMAIN, context={"source": SOURCE_IMPORT}, data={}
+            )
+        )
+        _LOGGER.info("Digital Node Nexus: starting config-entry import from YAML")
+    return True
 
 
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:

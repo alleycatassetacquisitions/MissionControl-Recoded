@@ -1,0 +1,54 @@
+name: Venue release
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  package:
+    name: Build venue bundle
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+          cache-dependency-path: Libraries/Shared_HA_Helpers/panel_kit/package-lock.json
+
+      - name: Package venue bundle
+        env:
+          RELEASE: venue-${{ github.run_number }}-${{ github.sha }}
+          COMMIT: ${{ github.sha }}
+        run: |
+          chmod +x ProxmoxInstallFiles/package-venue-bundle.sh ProxmoxInstallFiles/lib/*.sh
+          bash ProxmoxInstallFiles/package-venue-bundle.sh
+
+      - name: Publish rolling GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: venue-latest
+          name: Venue latest (${{ github.sha }})
+          body: |
+            Rolling Mission Control venue install bundle from `main`.
+
+            Latest commit: ${{ github.sha }}
+
+            ```bash
+            bash <(curl -fsSL https://github.com/${{ github.repository }}/releases/latest/download/install-mission-control.sh)
+            ```
+
+            Offline: download `mission-control-venue.tar.gz`, extract on the Proxmox host, run `install-mission-control.sh`.
+          files: |
+            dist/install-mission-control.sh
+            dist/mission-control-venue.tar.gz
+            dist/SHA256SUMS
+          make_latest: true
+          overwrite_files: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

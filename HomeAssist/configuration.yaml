@@ -57,9 +57,18 @@ core_configurator:
   # Net Time (Proxmox companion — LAN NTP authority)
   net_time: !secret cc_net_time
   net_time_token: !secret cc_net_time_token
+  # Venue update agent on the Proxmox host (Check for GitHub Update card)
+  venue_updater: !secret cc_venue_updater
+  venue_updater_token: !secret cc_venue_updater_token
 
 # Loads AlleycatTV (proxy + WS). Must be `{}` — bare `alleycattv:` is YAML null.
 alleycattv: {}
+
+# Loads Registration (MCS face — install-only config entry via YAML import).
+registration: {}
+
+# Loads Digital Node Nexus (FDN paging / LED / haptic).
+digital_node_nexus: {}
 
 # Loads Broadcast Group Controller (placement + membership).
 broadcast_group_controller: {}
@@ -84,11 +93,12 @@ net_time: {}
 frontend:
   themes: !include_dir_merge_named themes
   extra_module_url:
-    # HACS shell — custom-sidebar (title: Mission Control) + card-mod (Alleycat theme extras).
-    # Install both via HACS → Frontend. Title text is www/custom-sidebar-config.yaml;
-    # that file does nothing until this plugin URL is loaded.
-    - /hacsfiles/custom-sidebar/custom-sidebar-plugin.js
-    - /hacsfiles/lovelace-card-mod/card-mod.js
+    # Vendored shell (offline-safe) — custom-sidebar renames sidebar to Mission Control;
+    # card-mod powers Alleycat theme extras. Sourced into www/mc-shell/ by
+    # ProxmoxInstallFiles/lib/fetch-ha-shell.sh (also run from package-venue-bundle).
+    # Title text lives in www/custom-sidebar-config.yaml.
+    - /local/mc-shell/custom-sidebar-plugin.js
+    - /local/mc-shell/card-mod.js
     # Alleycat CRT overlay + dark form fills (Lovelace + shadow inputs).
     - /local/alleycat-scanlines.js
     # Shared Lit panel kit — must load before any Mission Control panel.

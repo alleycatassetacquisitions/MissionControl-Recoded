@@ -18,10 +18,11 @@ import logging
 from typing import Any
 
 from homeassistant.components import websocket_api
-from homeassistant.config_entries import ConfigEntry
+from homeassistant.config_entries import SOURCE_IMPORT, ConfigEntry
 from homeassistant.core import Event, HomeAssistant, ServiceCall, callback
 from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers.storage import Store
+from homeassistant.helpers.typing import ConfigType
 
 import voluptuous as vol
 from homeassistant.helpers import config_validation as cv
@@ -50,6 +51,8 @@ from .const import (
 from .coordinator import McsDataUpdateCoordinator, _mcs_token
 
 _LOGGER = logging.getLogger(__name__)
+
+CONFIG_SCHEMA = cv.empty_config_schema(DOMAIN)
 
 PLATFORMS = ["sensor"]
 
@@ -412,6 +415,18 @@ async def _mcs_request(
 # ---------------------------------------------------------------------------
 # HA lifecycle
 # ---------------------------------------------------------------------------
+
+
+async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
+    """Load from YAML ``registration:`` and import the install-only config entry."""
+    if DOMAIN in config and not hass.config_entries.async_entries(DOMAIN):
+        hass.async_create_task(
+            hass.config_entries.flow.async_init(
+                DOMAIN, context={"source": SOURCE_IMPORT}, data={}
+            )
+        )
+        _LOGGER.info("Registration: starting config-entry import from YAML")
+    return True
 
 
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:

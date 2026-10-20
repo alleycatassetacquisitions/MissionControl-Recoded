@@ -79,10 +79,18 @@ Code domains and forbidden aliases: [`Docs/Design Terms.md`](Docs/Design%20Terms
 
 ### ProxmoxInstallFiles
 
-One-shot scripts for the **Proxmox node** shell (Datacenter → host → **Shell**). Copy each script to `/root/` first, then run it. Config Steps stay in `Docs/`; these scripts only create VMs/LXCs.
+One-shot scripts for the **Proxmox node** shell (Datacenter → host → **Shell**). Prefer the **venue orchestrator** for a full site — see [`Docs/Venue Install.md`](Docs/Venue%20Install.md).
+
+```bash
+# Online one-liner (after a venue release is published)
+bash <(curl -fsSL https://github.com/alleycatassetacquisitions/MissionControl-Recoded/releases/latest/download/install-mission-control.sh)
+```
 
 | Script | Creates |
 | --- | --- |
+| [`install-mission-control.sh`](ProxmoxInstallFiles/install-mission-control.sh) | Full venue: HAOS + LXCs + HA deploy + secrets + update agent |
+| [`update-mission-control.sh`](ProxmoxInstallFiles/update-mission-control.sh) | Check/apply GitHub (or local bundle) updates |
+| [`package-venue-bundle.sh`](ProxmoxInstallFiles/package-venue-bundle.sh) | Build offline tarball on a workstation / CI |
 | [`install-haos-proxmox.sh`](ProxmoxInstallFiles/install-haos-proxmox.sh) | Home Assistant OS VM (official KVM image) |
 | [`install-mcs-proxmox.sh`](ProxmoxInstallFiles/install-mcs-proxmox.sh) | Master Control Server Ubuntu LXC; prints URL + token for Core Configurator |
 | [`install-alleycattv-proxmox.sh`](ProxmoxInstallFiles/install-alleycattv-proxmox.sh) | AlleycatTV content LXC (no MQTT); prints Core Configurator URL |

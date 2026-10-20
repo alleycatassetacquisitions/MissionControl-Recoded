@@ -78,6 +78,12 @@ class CoreConfiguratorPanel extends window.McPanel.Base {
       _netTimeOfflineOpen: { state: true },
       _netTimeOfflineDate: { state: true },
       _netTimeOfflineTime: { state: true },
+      _updateBusy: { state: true },
+      _updateStatus: { state: true },
+      _updateDetail: { state: true },
+      _updateLastAt: { state: true },
+      _updateLatest: { state: true },
+      _updateChanged: { state: true },
     };
   }
 
@@ -93,6 +99,13 @@ class CoreConfiguratorPanel extends window.McPanel.Base {
   declare _netTimeOfflineOpen: boolean;
   declare _netTimeOfflineDate: string;
   declare _netTimeOfflineTime: string;
+  declare _updateBusy: boolean;
+  /** null | up_to_date | update_available | error | applying */
+  declare _updateStatus: string | null;
+  declare _updateDetail: string;
+  declare _updateLastAt: string;
+  declare _updateLatest: string;
+  declare _updateChanged: string[];
   private _unsub: (() => void) | null = null;
 
   constructor() {
@@ -107,6 +120,12 @@ class CoreConfiguratorPanel extends window.McPanel.Base {
     this._netTimeOfflineOpen = false;
     this._netTimeOfflineDate = "";
     this._netTimeOfflineTime = "";
+    this._updateBusy = false;
+    this._updateStatus = null;
+    this._updateDetail = "";
+    this._updateLastAt = "";
+    this._updateLatest = "";
+    this._updateChanged = [];
   }
 
   static get styles() {
@@ -403,6 +422,144 @@ class CoreConfiguratorPanel extends window.McPanel.Base {
       guess += wantUtc - asUtc;
     }
     return new Date(guess).toISOString();
+  }
+
+  async _venueUpdateCheck() {
+    if (!this.hass || this._updateBusy) return;
+    this._updateBusy = true;
+    this._updateDetail = "Checking GitHub for updates…";
+    try {
+      const result = (await this.hass.connection.sendMessagePromise({
+        type: "core_configurator/update_check",
+      })) as {
+        status?: string;
+        detail?: string;
+        installed_release?: string;
+        latest_release?: string;
+        latest_published_at?: string;
+        last_updated_at?: string;
+        summary?: string;
+        changed_components?: string[];
+      };
+      this._updateStatus = result.status || "error";
+      this._updateLastAt = result.last_updated_at || "";
+      this._updateLatest =
+        result.summary || result.latest_release || result.installed_release || "";
+      this._updateChanged = result.changed_components || [];
+      if (result.status === "up_to_date") {
+        this._updateDetail = `Up to date with the latest release${
+          this._updateLatest ? `: ${this._updateLatest}` : ""
+        }${
+          this._updateLastAt ? ` · last updated ${this._updateLastAt}` : ""
+        }`;
+        this._feedback("Up to date", "ok");
+      } else if (result.status === "update_available") {
+        const changed = this._updateChanged.length
+          ? ` (${this._updateChanged.join(", ")})`
+          : "";
+        this._updateDetail = `Update available${changed}${
+          this._updateLatest ? ` — ${this._updateLatest}` : ""
+        }. Would you like to install?`;
+        this._feedback("Update available", "ok");
+      } else {
+        this._updateDetail = result.detail || "Update check failed";
+        this._feedback(this._updateDetail, "err");
+      }
+    } catch (err) {
+      this._updateStatus = "error";
+      const e = err as { message?: string };
+      this._updateDetail = e.message || "Update check failed";
+      this._feedback(this._updateDetail, "err");
+    } finally {
+      this._updateBusy = false;
+    }
+  }
+
+  async _venueUpdateApply() {
+    if (!this.hass || this._updateBusy) return;
+    this._updateBusy = true;
+    this._updateStatus = "applying";
+    this._updateDetail = "Installing update on Proxmox host…";
+    try {
+      const started = (await this.hass.connection.sendMessagePromise({
+        type: "core_configurator/update_apply",
+      })) as { status?: string; detail?: string };
+      if (started.status === "error") {
+        this._updateStatus = "error";
+        this._updateDetail = started.detail || "Apply failed to start";
+        this._feedback(this._updateDetail, "err");
+        return;
+      }
+      // Poll status until apply finishes
+      for (let i = 0; i < 60; i++) {
+        await new Promise((r) => setTimeout(r, 3000));
+        const st = (await this.hass.connection.sendMessagePromise({
+          type: "core_configurator/update_status",
+        })) as {
+          apply_running?: boolean;
+          last_apply?: { status?: string; detail?: string; errors?: string[] };
+          last_updated_at?: string;
+          installed_release?: string;
+        };
+        if (st.apply_running) continue;
+        const last = st.last_apply || {};
+        this._updateLastAt = st.last_updated_at || this._updateLastAt;
+        if (last.status === "ok" || (!last.errors?.length && last.status !== "error")) {
+          this._updateStatus = "up_to_date";
+          this._updateLatest = st.installed_release || this._updateLatest;
+          this._updateChanged = [];
+          this._updateDetail = `Up to date${
+            this._updateLatest ? `: ${this._updateLatest}` : ""
+          }${this._updateLastAt ? ` · last updated ${this._updateLastAt}` : ""}`;
+          this._feedback("Update installed", "ok");
+        } else {
+          this._updateStatus = "error";
+          this._updateDetail =
+            last.detail ||
+            (last.errors || []).join("; ") ||
+            "Update apply failed";
+          this._feedback(this._updateDetail, "err");
+        }
+        return;
+      }
+      this._updateStatus = "error";
+      this._updateDetail = "Timed out waiting for apply — check Proxmox host";
+      this._feedback(this._updateDetail, "err");
+    } catch (err) {
+      this._updateStatus = "error";
+      const e = err as { message?: string };
+      this._updateDetail = e.message || "Apply failed";
+      this._feedback(this._updateDetail, "err");
+    } finally {
+      this._updateBusy = false;
+    }
+  }
+
+  _renderVenueUpdateOps() {
+    const html = window.McPanel.html;
+    return html`
+      <div class="ops" style="margin-top:0.75rem">
+        <button
+          type="button"
+          ?disabled=${this._updateBusy}
+          @click=${() => void this._venueUpdateCheck()}
+        >
+          Check for GitHub Update
+        </button>
+        ${this._updateStatus === "update_available"
+          ? html`<button
+              type="button"
+              ?disabled=${this._updateBusy}
+              @click=${() => void this._venueUpdateApply()}
+            >
+              Install update
+            </button>`
+          : window.McPanel.nothing}
+        ${this._updateDetail
+          ? html`<p class="hint" style="margin-top:0.5rem">${this._updateDetail}</p>`
+          : window.McPanel.nothing}
+      </div>
+    `;
   }
 
   async _netTimeAttemptOnlineSync() {
@@ -801,6 +958,8 @@ class CoreConfiguratorPanel extends window.McPanel.Base {
                     </div>
                     ${svc.key === "net_time"
                       ? this._renderNetTimeOps()
+                      : svc.key === "venue_updater"
+                      ? this._renderVenueUpdateOps()
                       : window.McPanel.nothing}
                   </article>
                 `;
