@@ -33,6 +33,7 @@ import {
   defaultsByCategoryId,
   emptyCatalog,
   ensureAffiliationChoice,
+  filterChoices,
   findChoiceExact,
   isFactionCategory,
   playerAssignmentForCategory,
@@ -103,6 +104,7 @@ class RegistrationPanel extends window.McPanel.Base {
       _teams: { state: true },
       _catalog: { state: true },
       _fAffByCat: { state: true },
+      _factionOpenId: { state: true },
       _editId: { state: true },
       _editTeamId: { state: true },
       _editActive: { state: true },
@@ -132,11 +134,13 @@ class RegistrationPanel extends window.McPanel.Base {
   declare _teams: RegTeam[];
   declare _catalog: AffCatalog;
   declare _fAffByCat: Record<string, string>;
+  declare _factionOpenId: string;
   declare _editId: string;
   declare _editTeamId: string;
   declare _editActive: boolean;
 
   private _checkTimer: ReturnType<typeof setTimeout> | null = null;
+  private _factionBlurTimer: ReturnType<typeof setTimeout> | null = null;
   private _editPrevAff: Record<string, string> = {};
 
   constructor() {
@@ -164,6 +168,7 @@ class RegistrationPanel extends window.McPanel.Base {
     this._teams = [];
     this._catalog = emptyCatalog();
     this._fAffByCat = {};
+    this._factionOpenId = "";
     this._editId = "";
     this._editTeamId = "";
     this._editActive = true;
@@ -207,6 +212,44 @@ class RegistrationPanel extends window.McPanel.Base {
         }
         .aff-group {
           margin-bottom: 10px;
+        }
+        .aff-combo {
+          position: relative;
+        }
+        .aff-combo-menu {
+          position: absolute;
+          z-index: 20;
+          left: 0;
+          right: 0;
+          top: calc(100% + 2px);
+          max-height: 220px;
+          overflow-y: auto;
+          margin: 0;
+          padding: 4px 0;
+          list-style: none;
+          background: var(--secondary-background-color, #0d1418);
+          border: 1px solid var(--divider-color, #1f3a44);
+          border-radius: 6px;
+          box-shadow: 0 8px 24px rgba(0, 0, 0, 0.35);
+        }
+        .aff-combo-menu li {
+          margin: 0;
+          padding: 8px 12px;
+          cursor: pointer;
+          font-size: 14px;
+          color: var(--primary-text-color, #e8f6ff);
+        }
+        .aff-combo-menu li:hover,
+        .aff-combo-menu li.active {
+          background: rgba(0, 229, 255, 0.12);
+        }
+        .aff-combo-menu li.create-hint {
+          color: var(--secondary-text-color, #7aa8b8);
+          font-size: 12px;
+          cursor: default;
+        }
+        .aff-combo-menu li.create-hint:hover {
+          background: transparent;
         }
         .chip-row {
           display: flex;
@@ -603,10 +646,15 @@ class RegistrationPanel extends window.McPanel.Base {
     this._editTeamId = "";
     this._editActive = true;
     this._editPrevAff = {};
+    this._factionOpenId = "";
     this._applyCreateDefaults();
     if (this._checkTimer) {
       clearTimeout(this._checkTimer);
       this._checkTimer = null;
+    }
+    if (this._factionBlurTimer) {
+      clearTimeout(this._factionBlurTimer);
+      this._factionBlurTimer = null;
     }
   }
 
@@ -850,6 +898,22 @@ class RegistrationPanel extends window.McPanel.Base {
     return html`<a href=${href} target="_blank" rel="noopener">open</a>`;
   }
 
+  _openFactionMenu(catId: string) {
+    if (this._factionBlurTimer) {
+      clearTimeout(this._factionBlurTimer);
+      this._factionBlurTimer = null;
+    }
+    this._factionOpenId = catId;
+  }
+
+  _scheduleCloseFactionMenu(catId: string) {
+    if (this._factionBlurTimer) clearTimeout(this._factionBlurTimer);
+    this._factionBlurTimer = setTimeout(() => {
+      if (this._factionOpenId === catId) this._factionOpenId = "";
+      this._factionBlurTimer = null;
+    }, 150);
+  }
+
   /** Dropdown (or Faction combobox) for one category — one selection each. */
   _affField(
     cat: AffCategory,
@@ -859,34 +923,69 @@ class RegistrationPanel extends window.McPanel.Base {
     const html = window.McPanel.html;
     const choices = cat.affiliations || [];
     const label = cat.name || "Affiliation";
-    const listId = `aff-list-${cat.id}`;
     if (isFactionCategory(cat.name)) {
+      const open = this._factionOpenId === cat.id;
+      const filtered = filterChoices(choices, value);
+      const exact = findChoiceExact(choices, value);
+      const typed = (value || "").trim();
+      const showCreateHint = Boolean(typed) && !exact;
       return html`
         <label for=${`aff-${cat.id}`}>${label}</label>
-        <div class="aff-group">
-          ${choices.length === 0
-            ? html`<p class="aff-hint">
-                No factions yet — type a name to create one, or add them in Game
-                Master.
-              </p>`
-            : ""}
+        <div class="aff-group aff-combo">
           <input
             id=${`aff-${cat.id}`}
             type="text"
-            list=${listId}
             autocomplete="off"
-            placeholder=${choices.length ? "Select or type a new faction…" : "Type a new faction…"}
+            role="combobox"
+            aria-expanded=${open ? "true" : "false"}
+            aria-autocomplete="list"
+            placeholder=${choices.length
+              ? "Click to pick or type a new faction…"
+              : "Type a new faction…"}
             .value=${value}
+            @focus=${() => this._openFactionMenu(cat.id)}
+            @click=${() => this._openFactionMenu(cat.id)}
             @input=${(e: Event) => {
               onChange((e.target as HTMLInputElement).value);
+              this._openFactionMenu(cat.id);
             }}
+            @keydown=${(e: KeyboardEvent) => {
+              if (e.key === "Escape") this._factionOpenId = "";
+              if (e.key === "ArrowDown") this._openFactionMenu(cat.id);
+            }}
+            @blur=${() => this._scheduleCloseFactionMenu(cat.id)}
           />
-          <datalist id=${listId}>
-            ${choices.map(
-              (c) => html`<option value=${c.name || ""}></option>`
-            )}
-          </datalist>
-          <p class="aff-hint">Pick from the list or type a new faction name.</p>
+          ${open
+            ? html`<ul class="aff-combo-menu" role="listbox">
+                ${filtered.length === 0 && !showCreateHint
+                  ? html`<li class="create-hint">
+                      ${choices.length
+                        ? "No matching factions"
+                        : "No factions yet — type a name to create one"}
+                    </li>`
+                  : filtered.map(
+                      (c) => html`<li
+                        role="option"
+                        class=${exact?.id === c.id ? "active" : ""}
+                        @mousedown=${(e: Event) => {
+                          e.preventDefault();
+                          onChange(c.name || "");
+                          this._factionOpenId = "";
+                        }}
+                      >
+                        ${c.name}
+                      </li>`
+                    )}
+                ${showCreateHint
+                  ? html`<li class="create-hint">
+                      Press Create/Save to add “${typed}” as a new faction
+                    </li>`
+                  : ""}
+              </ul>`
+            : ""}
+          <p class="aff-hint">
+            Click the field to open the list, or type a new faction name.
+          </p>
         </div>
       `;
     }
