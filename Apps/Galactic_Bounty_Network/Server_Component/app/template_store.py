@@ -8,7 +8,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import List, Optional
 
-from app.models import PosterTemplate
+from app.models import DEFAULT_ACCENT, PosterTemplate, normalize_accent
 
 _BUILTIN_SEEDS: List[PosterTemplate] = [
     PosterTemplate(
@@ -19,6 +19,7 @@ _BUILTIN_SEEDS: List[PosterTemplate] = [
         amount_label="RATE",
         list_label="REASONS TO HIRE",
         list_empty="Details pending",
+        accent=DEFAULT_ACCENT,
         builtin=True,
     ),
     PosterTemplate(
@@ -29,6 +30,7 @@ _BUILTIN_SEEDS: List[PosterTemplate] = [
         amount_label="REWARD",
         list_label="WANTED FOR",
         list_empty="Charges pending",
+        accent=DEFAULT_ACCENT,
         builtin=True,
     ),
 ]
@@ -141,6 +143,7 @@ class TemplateStore:
         amount_label: str = "REWARD",
         list_label: str = "WANTED FOR",
         list_empty: str = "Charges pending",
+        accent: str = DEFAULT_ACCENT,
         template_id: str = "",
     ) -> PosterTemplate:
         stamp = _now()
@@ -163,6 +166,7 @@ class TemplateStore:
                 amount_label=(amount_label or "").strip() or "REWARD",
                 list_label=(list_label or "").strip() or "WANTED FOR",
                 list_empty=(list_empty or "").strip() or "Charges pending",
+                accent=normalize_accent(accent),
                 builtin=False,
                 created_at=stamp,
                 updated_at=stamp,
@@ -186,7 +190,9 @@ class TemplateStore:
                         "builtin",
                         "created_at",
                     ):
-                        data[key] = value
+                        data[key] = (
+                            normalize_accent(value) if key == "accent" else value
+                        )
                 data["updated_at"] = _now()
                 row = PosterTemplate.model_validate(data)
                 templates[i] = row

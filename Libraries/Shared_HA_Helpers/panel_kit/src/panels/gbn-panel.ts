@@ -4,11 +4,35 @@
  * Galactic Bounty Network — Mission Control capture + flavor editor.
  *
  * Roster: registration/get_roster websocket
+ * Affiliations: game_master/get_affiliation_catalog (event-scoped; select-only —
+ *   categories/choices are created in Game Master)
  * API: GBN HTTP (flavor, intake, posters) via /api/gbn/proxy
  * Camera: getUserMedia + MediaRecorder (USB UVC webcam — not WebUSB)
  *
  * Deploy: config/www/gbn/
  */
+import {
+  emptyCatalog,
+  findChoiceExact,
+  isAllegianceCategory,
+  isFactionCategory,
+  neocorpSlugFromName,
+  playerAssignmentForCategory,
+} from "../shared/affiliations";
+
+const ACCENT_OPTIONS = [
+  ["blue", "Blue"],
+  ["green", "Green"],
+  ["red", "Red"],
+  ["yellow", "Yellow"],
+  ["purple", "Purple"],
+  ["gold", "Gold"],
+  ["cyan", "Cyan"],
+  ["orange", "Orange"],
+  ["pink", "Pink"],
+  ["white", "White"],
+];
+
 class GbnPanel extends window.McPanel.Base {
   constructor() {
     super();
@@ -33,6 +57,9 @@ class GbnPanel extends window.McPanel.Base {
     this._activeEventName = "";
     this._eventMedia = [];
     this._lookManuallyToggled = false;
+    this._catalog = emptyCatalog();
+    this._affValues = {};
+    this._affOpen = "";
   }
 
   set panel(p) {
@@ -61,9 +88,95 @@ class GbnPanel extends window.McPanel.Base {
     await this._loadDirectoryUrl();
     await this._loadActiveEvent();
     await this._loadTemplates();
+    await this._loadCatalog();
     await this._loadPlayers();
     await this._loadEventMedia();
     await this._refreshCameras();
+  }
+
+  async _loadCatalog() {
+    try {
+      const result = await this.hass.callWS({
+        type: "game_master/get_affiliation_catalog",
+      });
+      this._catalog = {
+        event_id: result?.event_id ?? null,
+        categories: result?.categories ?? [],
+      };
+    } catch (_) {
+      this._catalog = emptyCatalog();
+    }
+    this._renderAffFields();
+  }
+
+  _renderAffFields() {
+    const host = this.shadowRoot?.getElementById("aff-fields");
+    if (!host) return;
+    const cats = this._catalog.categories || [];
+    if (!cats.length) {
+      host.innerHTML =
+        `<p class="hint">No affiliation categories for this event yet — add categories in Game Master.</p>`;
+      return;
+    }
+    // Select-only: choices come from the Game Master catalog.
+    host.innerHTML = cats
+      .map((cat) => {
+        const val = (this._affValues[cat.id] || "").trim();
+        const options = (cat.affiliations || [])
+          .map((c) => {
+            const sel = findChoiceExact([c], val) ? " selected" : "";
+            return `<option value="${this._escAttr(c.name)}"${sel}>${this._escHtml(c.name)}</option>`;
+          })
+          .join("");
+        return `
+          <label for="aff-${cat.id}">${this._escHtml(cat.name || "Affiliation")}</label>
+          <select id="aff-${cat.id}" class="aff-select" data-cat="${cat.id}">
+            <option value="">— Unassigned —</option>
+            ${options}
+          </select>`;
+      })
+      .join("");
+    host.querySelectorAll(".aff-select").forEach((sel) => {
+      sel.onchange = () => {
+        this._affValues[sel.dataset.cat] = sel.value || "";
+      };
+    });
+  }
+
+  _escHtml(s) {
+    return String(s || "")
+      .replace(/&/g, "&amp;")
+      .replace(/</g, "&lt;")
+      .replace(/>/g, "&gt;");
+  }
+
+  _escAttr(s) {
+    return String(s || "")
+      .replace(/&/g, "&amp;")
+      .replace(/"/g, "&quot;")
+      .replace(/</g, "&lt;");
+  }
+
+  async _syncAffiliationsFromValues() {
+    const snaps = [];
+    let neocorp = "";
+    let faction = "";
+    for (const cat of this._catalog.categories || []) {
+      const raw = (this._affValues[cat.id] || "").trim();
+      if (!raw) continue;
+      // Select-only: ignore names that are not in the Game Master catalog.
+      const match = findChoiceExact(cat.affiliations || [], raw);
+      if (!match) continue;
+      const typed = match.name;
+      snaps.push({ category_name: cat.name, affiliation_name: typed });
+      if (isAllegianceCategory(cat.name)) {
+        neocorp = neocorpSlugFromName(typed) || typed;
+      } else if (isFactionCategory(cat.name)) {
+        faction = typed;
+      }
+    }
+    await this._loadCatalog();
+    return { snaps, neocorp, faction };
   }
 
   _feedback(msg, kind = "ok") {
@@ -80,8 +193,7 @@ class GbnPanel extends window.McPanel.Base {
   }
 
   _normNeocorp(v) {
-    const s = String(v || "freelancer").toLowerCase();
-    return ["reboot", "helix", "endline", "freelancer"].includes(s) ? s : "freelancer";
+    return neocorpSlugFromName(String(v || "")) || String(v || "").trim();
   }
 
   _playerRole(player) {
@@ -144,6 +256,7 @@ class GbnPanel extends window.McPanel.Base {
       amount_label: (root.getElementById("fld-amount-label")?.value || "").trim(),
       list_label: (root.getElementById("fld-list-label")?.value || "").trim(),
       list_empty: (root.getElementById("fld-list-empty")?.value || "").trim(),
+      accent: root.getElementById("fld-accent")?.value || "blue",
     };
   }
 
@@ -164,6 +277,7 @@ class GbnPanel extends window.McPanel.Base {
     set("fld-amount-label", chrome.amount_label);
     set("fld-list-label", chrome.list_label);
     set("fld-list-empty", chrome.list_empty);
+    set("fld-accent", chrome.accent || "blue");
     this._updateRoleUi();
   }
 
@@ -182,6 +296,7 @@ class GbnPanel extends window.McPanel.Base {
       amount_label: tmpl.amount_label,
       list_label: tmpl.list_label,
       list_empty: tmpl.list_empty,
+      accent: tmpl.accent || "blue",
     });
   }
 
@@ -197,6 +312,7 @@ class GbnPanel extends window.McPanel.Base {
           amount_label: tmpl.amount_label,
           list_label: tmpl.list_label,
           list_empty: tmpl.list_empty,
+          accent: tmpl.accent || "blue",
         });
       } else if (role === "hunter") {
         this._applyChromeToForm({
@@ -206,6 +322,7 @@ class GbnPanel extends window.McPanel.Base {
           amount_label: "RATE",
           list_label: "REASONS TO HIRE",
           list_empty: "Details pending",
+          accent: "blue",
         });
       } else {
         this._applyChromeToForm({
@@ -215,6 +332,7 @@ class GbnPanel extends window.McPanel.Base {
           amount_label: "REWARD",
           list_label: "WANTED FOR",
           list_empty: "Charges pending",
+          accent: "blue",
         });
       }
       return;
@@ -230,6 +348,7 @@ class GbnPanel extends window.McPanel.Base {
       amount_label: "",
       list_label: "",
       list_empty: "",
+      accent: "blue",
     });
     this._feedback("Player is neither Hunter nor Bounty — pick a poster template", "warn");
   }
@@ -265,6 +384,7 @@ class GbnPanel extends window.McPanel.Base {
         amount_label: (chrome.amount_label || "").trim() || "REWARD",
         list_label: (chrome.list_label || "").trim() || "WANTED FOR",
         list_empty: (chrome.list_empty || "").trim() || "Charges pending",
+        accent: chrome.accent || "blue",
       }),
     });
     if (!ok || !body || typeof body !== "object" || !body.id) {
@@ -289,6 +409,7 @@ class GbnPanel extends window.McPanel.Base {
       amount_label: body.amount_label,
       list_label: body.list_label,
       list_empty: body.list_empty,
+      accent: body.accent || "blue",
     });
     return body;
   }
@@ -319,7 +440,8 @@ class GbnPanel extends window.McPanel.Base {
     const tmpl = this._templateById(chrome.template_id);
     const name = tmpl?.name || chrome.template_id || "none";
     const headline = chrome.headline || "—";
-    summary.textContent = `Using: ${name} · ${headline}`;
+    const accent = chrome.accent || "blue";
+    summary.textContent = `Using: ${name} · ${headline} · ${accent}`;
   }
 
   _syncLookDisclosure() {
@@ -443,8 +565,19 @@ class GbnPanel extends window.McPanel.Base {
     }
     if (input) input.value = player.name || "";
     root.getElementById("fld-name").value = player.name || "";
-    root.getElementById("fld-neocorp").value = this._normNeocorp(player.neocorp || player.allegiance);
-    root.getElementById("fld-faction").value = player.faction || "";
+    const vals = {};
+    for (const cat of this._catalog.categories || []) {
+      let assigned = playerAssignmentForCategory(player.affiliations, cat);
+      if (!assigned && isAllegianceCategory(cat.name)) {
+        assigned = player.neocorp || player.allegiance || "";
+      }
+      if (!assigned && isFactionCategory(cat.name)) {
+        assigned = player.faction || "";
+      }
+      vals[cat.id] = assigned;
+    }
+    this._affValues = vals;
+    this._renderAffFields();
     this._autoSelectTemplateForPlayer();
     await this._loadExistingPoster(String(player.id));
   }
@@ -471,7 +604,6 @@ class GbnPanel extends window.McPanel.Base {
       root.getElementById("fld-weight").value = body.stats?.weight || "";
       root.getElementById("fld-age").value = body.stats?.age || "";
       root.getElementById("fld-flavor").value = body.flavor_text || "";
-      if (body.faction) root.getElementById("fld-faction").value = body.faction;
       if (body.template_id || body.headline) {
         this._applyChromeToForm({
           template_id: body.template_id || "",
@@ -480,16 +612,40 @@ class GbnPanel extends window.McPanel.Base {
           amount_label: body.amount_label || "",
           list_label: body.list_label || "",
           list_empty: body.list_empty || "",
+          accent: body.accent || "blue",
         });
       }
-      // Roster wins for live NeoCorp/name/faction display
+      // Roster wins for live affiliations; poster snaps fill gaps
       if (this._selected) {
         root.getElementById("fld-name").value = this._selected.name || body.name || "";
-        root.getElementById("fld-neocorp").value = this._normNeocorp(
-          this._selected.allegiance || body.neocorp || body.allegiance
-        );
-        root.getElementById("fld-faction").value =
-          this._selected.faction || body.faction || "";
+        const vals = { ...this._affValues };
+        for (const cat of this._catalog.categories || []) {
+          let assigned = playerAssignmentForCategory(
+            this._selected.affiliations,
+            cat
+          );
+          if (!assigned && Array.isArray(body.affiliations)) {
+            const snap = body.affiliations.find(
+              (a) =>
+                String(a.category_name || "").toLowerCase() ===
+                String(cat.name || "").toLowerCase()
+            );
+            assigned = snap?.affiliation_name || "";
+          }
+          if (!assigned && isAllegianceCategory(cat.name)) {
+            assigned =
+              this._selected.neocorp ||
+              body.neocorp ||
+              this._selected.allegiance ||
+              "";
+          }
+          if (!assigned && isFactionCategory(cat.name)) {
+            assigned = this._selected.faction || body.faction || "";
+          }
+          vals[cat.id] = assigned;
+        }
+        this._affValues = vals;
+        this._renderAffFields();
       }
       const link = root.getElementById("poster-link");
       const url = await this._livePosterUrl(playerId, body.poster_url);
@@ -538,14 +694,14 @@ class GbnPanel extends window.McPanel.Base {
   async _generateFlavor() {
     const root = this.shadowRoot;
     const name = root.getElementById("fld-name").value.trim();
-    const allegiance = root.getElementById("fld-neocorp").value;
+    const { neocorp } = await this._syncAffiliationsFromValues();
     const role = this._apiRole();
     if (!name) return this._feedback("Enter a name first", "warn");
     try {
       const { ok, status, body } = await this._api("/api/flavor/generate", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ name, neocorp: allegiance, role }),
+        body: JSON.stringify({ name, neocorp: neocorp || "freelancer", role }),
       });
       if (!ok) {
         return this._feedback(`Generate failed (${status}): ${JSON.stringify(body)}`, "err");
@@ -1040,8 +1196,6 @@ class GbnPanel extends window.McPanel.Base {
   async _submit() {
     const root = this.shadowRoot;
     const name = root.getElementById("fld-name").value.trim();
-    const allegiance = root.getElementById("fld-neocorp").value;
-    const faction = root.getElementById("fld-faction").value.trim();
     if (!name) return this._feedback("Name required", "warn");
     if (!this._blob) return this._feedback("Record or upload a clip first", "warn");
 
@@ -1082,11 +1236,13 @@ class GbnPanel extends window.McPanel.Base {
       return this._feedback("Select a poster template (or set a headline) first", "warn");
     }
 
+    const { snaps, neocorp, faction } = await this._syncAffiliationsFromValues();
+
     const form = new FormData();
     form.append("name", name);
-    form.append("neocorp", allegiance);
-    form.append("allegiance", allegiance); // legacy alias accepted by server
+    form.append("neocorp", neocorp);
     form.append("faction", faction);
+    form.append("affiliations", JSON.stringify(snaps));
     form.append("role", role);
     form.append("player_id", playerId);
     form.append("bounty_amount", String(bounty));
@@ -1099,6 +1255,7 @@ class GbnPanel extends window.McPanel.Base {
     form.append("amount_label", chrome.amount_label);
     form.append("list_label", chrome.list_label);
     form.append("list_empty", chrome.list_empty);
+    form.append("accent", chrome.accent || "blue");
     form.append("event_id", this._activeEventId || "");
     const safe = name.replace(/\s+/g, "_").toLowerCase();
     const filename =
@@ -1306,15 +1463,7 @@ class GbnPanel extends window.McPanel.Base {
             </div>
             <label for="fld-name">Name</label>
             <input id="fld-name" autocomplete="off" />
-            <label for="fld-neocorp">Allegiance/NeoCorp</label>
-            <select id="fld-neocorp">
-              <option value="reboot">reboot</option>
-              <option value="helix">helix</option>
-              <option value="endline">endline</option>
-              <option value="freelancer" selected>freelancer</option>
-            </select>
-            <label for="fld-faction">Faction</label>
-            <input id="fld-faction" autocomplete="off" />
+            <div id="aff-fields"></div>
           </section>
 
           <section class="card">
@@ -1349,6 +1498,13 @@ class GbnPanel extends window.McPanel.Base {
               </div>
               <label for="fld-list-empty">Empty-list placeholder</label>
               <input id="fld-list-empty" placeholder="Charges pending" />
+              <label for="fld-accent">Accent color (titles &amp; borders)</label>
+              <select id="fld-accent">
+                ${ACCENT_OPTIONS.map(
+                  ([slug, label]) =>
+                    `<option value="${slug}"${slug === "blue" ? " selected" : ""}>${label}</option>`
+                ).join("")}
+              </select>
               <div class="actions" style="margin-top:0.5rem">
                 <button type="button" id="btn-template-save">Save as new template</button>
               </div>
@@ -1454,9 +1610,11 @@ class GbnPanel extends window.McPanel.Base {
     const root = this.shadowRoot;
     root.getElementById("btn-reload").onclick = async () => {
       await this._loadActiveEvent();
+      await this._loadCatalog();
       await this._loadPlayers();
       await this._loadEventMedia();
     };
+    this._renderAffFields();
     root.getElementById("btn-generate").onclick = () => this._generateFlavor();
     root.getElementById("btn-cam-refresh").onclick = () => this._refreshCameras();
     root.getElementById("btn-cam-start").onclick = () => this._startCamera();
@@ -1485,8 +1643,12 @@ class GbnPanel extends window.McPanel.Base {
       "fld-amount-label",
       "fld-list-label",
       "fld-list-empty",
+      "fld-accent",
     ]) {
-      root.getElementById(id).oninput = () => this._updateRoleUi();
+      const el = root.getElementById(id);
+      if (!el) continue;
+      el.oninput = () => this._updateRoleUi();
+      el.onchange = () => this._updateLookSummary();
     }
     this._fillTemplateSelect();
     this._paintActiveEvent();

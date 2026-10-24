@@ -26,11 +26,17 @@ WS_GET_ROSTER = f"{DOMAIN}/get_roster"
 WS_GET_EVENTS = f"{DOMAIN}/get_events"
 WS_GET_ACTIVE_EVENT = f"{DOMAIN}/get_active_event"
 WS_GET_TEAMS = f"{DOMAIN}/get_teams"
+WS_GET_AFFILIATION_CATALOG = f"{DOMAIN}/get_affiliation_catalog"
 
 # hass.data keys (under DOMAIN)
 EVENT_CACHE_KEY = "event_cache"
 EVENT_STORE = "event_store"
 ACTIVE_EVENT_ID_KEY = "active_event_id"
+# Event-keyed affiliation catalog: {event_id, categories:[...]} — not MCS durable.
+AFFILIATION_CATALOG_KEY = "affiliation_catalog"
+
+# Mission Control desk / device display limit (Central allows more).
+PLAYER_NAME_MAX_LEN = 32
 
 # Persist known events + last active across HA restarts (until Central GET /events).
 STORAGE_VERSION = 1

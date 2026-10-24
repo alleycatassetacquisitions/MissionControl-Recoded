@@ -9,6 +9,7 @@ from player_normalize import (
     normalize_role,
     to_central_create_body,
     to_central_create_form,
+    to_central_update_body,
 )
 
 
@@ -112,3 +113,37 @@ def test_to_central_create_body_is_json_fields():
     assert body == {"name": "New", "email": "n@ex.com"}
     assert "allegiance" not in body
     assert "hunter" not in body
+
+
+def test_normalize_affiliations_derive_neocorp_faction():
+    out = normalize_player(
+        {
+            "id": "p1",
+            "name": "Alice",
+            "pdn_code": "0001",
+            "affiliations": [
+                {
+                    "category_id": "c1",
+                    "category_name": "Allegiance",
+                    "affiliation_id": "a1",
+                    "affiliation_name": "Helix Industries",
+                },
+                {
+                    "category_id": "c2",
+                    "category_name": "Faction",
+                    "affiliation_id": "a2",
+                    "affiliation_name": "Corvid Alliance",
+                },
+            ],
+        }
+    )
+    assert len(out["affiliations"]) == 2
+    assert out["neocorp"] == "helix"
+    assert out["faction"] == "Corvid Alliance"
+
+
+def test_to_central_update_body_includes_affiliations():
+    body = to_central_update_body(
+        affiliations={"c1": "a1", "c2": None},
+    )
+    assert body == {"affiliations": {"c1": "a1", "c2": None}}

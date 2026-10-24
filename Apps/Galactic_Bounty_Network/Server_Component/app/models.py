@@ -1,7 +1,8 @@
 """Pydantic models for the Galactic Bounty Network API.
 
-Field names use canonical vocabulary from Design Terms.md
-(neocorp, role hunter|bounty).
+Field names use canonical vocabulary from Design Terms.md.
+``neocorp`` / ``faction`` remain poster snapshot fields; values come from
+the active event's affiliation catalog (no longer a fixed enum).
 """
 from __future__ import annotations
 
@@ -9,8 +10,39 @@ from typing import List, Literal, Optional
 
 from pydantic import BaseModel, Field
 
-NeoCorp = Literal["reboot", "helix", "endline", "freelancer"]
 Role = Literal["hunter", "bounty"]
+
+ACCENT_PALETTE: dict[str, str] = {
+    "blue": "#5ec8ff",
+    "green": "#5eff9a",
+    "red": "#ff5e6e",
+    "yellow": "#ffe15e",
+    "purple": "#b85eff",
+    "gold": "#ffc857",
+    "cyan": "#5effef",
+    "orange": "#ff9a5e",
+    "pink": "#ff5ec8",
+    "white": "#e8f4ff",
+}
+DEFAULT_ACCENT = "blue"
+
+
+def normalize_accent(value: str | None) -> str:
+    slug = (value or DEFAULT_ACCENT).strip().lower()
+    return slug if slug in ACCENT_PALETTE else DEFAULT_ACCENT
+
+
+def accent_hex(value: str | None) -> str:
+    return ACCENT_PALETTE[normalize_accent(value)]
+
+
+def accent_dim(value: str | None) -> str:
+    """CSS rgba dim glow derived from accent hex."""
+    hex_color = accent_hex(value).lstrip("#")
+    r = int(hex_color[0:2], 16)
+    g = int(hex_color[2:4], 16)
+    b = int(hex_color[4:6], 16)
+    return f"rgba({r}, {g}, {b}, 0.35)"
 
 
 class PosterStats(BaseModel):
@@ -25,8 +57,15 @@ class PosterStatus(BaseModel):
     longest_streak: str = ""
 
 
+class PosterAffiliationSnap(BaseModel):
+    """Snapshot of a category → choice used on a poster."""
+
+    category_name: str = ""
+    affiliation_name: str = ""
+
+
 class PosterTemplate(BaseModel):
-    """Poster chrome preset (headline / amount / list labels)."""
+    """Poster chrome preset (headline / amount / list labels / accent)."""
 
     id: str
     name: str
@@ -35,6 +74,7 @@ class PosterTemplate(BaseModel):
     amount_label: str = "REWARD"
     list_label: str = "WANTED FOR"
     list_empty: str = "Charges pending"
+    accent: str = DEFAULT_ACCENT
     builtin: bool = False
     created_at: str = ""
     updated_at: str = ""
@@ -47,6 +87,7 @@ class PosterTemplateCreate(BaseModel):
     amount_label: str = "REWARD"
     list_label: str = "WANTED FOR"
     list_empty: str = "Charges pending"
+    accent: str = DEFAULT_ACCENT
     id: str = ""  # optional; server generates slug if empty
 
 
@@ -57,6 +98,7 @@ class PosterTemplateUpdate(BaseModel):
     amount_label: Optional[str] = None
     list_label: Optional[str] = None
     list_empty: Optional[str] = None
+    accent: Optional[str] = None
 
 
 class PosterRecord(BaseModel):
@@ -64,8 +106,9 @@ class PosterRecord(BaseModel):
     player_id: str = ""
     name: str
     role: Role = "bounty"
-    neocorp: NeoCorp = "freelancer"
+    neocorp: str = ""
     faction: str = ""
+    affiliations: List[PosterAffiliationSnap] = Field(default_factory=list)
     bounty_amount: int = Field(default=1_000_000, ge=0)
     crimes: List[str] = Field(default_factory=list)
     stats: PosterStats = Field(default_factory=PosterStats)
@@ -79,6 +122,7 @@ class PosterRecord(BaseModel):
     amount_label: str = ""
     list_label: str = ""
     list_empty: str = ""
+    accent: str = DEFAULT_ACCENT
     created_at: str = ""
     updated_at: str = ""
 
@@ -91,8 +135,9 @@ class PosterPublic(BaseModel):
     event_id: str = ""
     name: str
     role: Role = "bounty"
-    neocorp: NeoCorp = "freelancer"
+    neocorp: str = ""
     faction: str = ""
+    affiliations: List[PosterAffiliationSnap] = Field(default_factory=list)
     bounty_amount: int
     crimes: List[str]
     stats: PosterStats
@@ -107,6 +152,7 @@ class PosterPublic(BaseModel):
     amount_label: str = ""
     list_label: str = ""
     list_empty: str = ""
+    accent: str = DEFAULT_ACCENT
     created_at: str = ""
     updated_at: str = ""
 
@@ -137,7 +183,7 @@ class ActiveEventSet(BaseModel):
 
 class FlavorRequest(BaseModel):
     name: str
-    neocorp: NeoCorp = "freelancer"
+    neocorp: str = "freelancer"
     role: Role = "bounty"
 
 
@@ -157,7 +203,7 @@ class IntakePlayer(BaseModel):
     player_id: str
     name: str
     role: Role = "bounty"
-    neocorp: NeoCorp = "freelancer"
+    neocorp: str = ""
     faction: str = ""
     status: PosterStatus = Field(default_factory=PosterStatus)
 

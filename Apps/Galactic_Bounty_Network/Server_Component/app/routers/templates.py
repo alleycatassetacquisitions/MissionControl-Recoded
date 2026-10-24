@@ -48,6 +48,7 @@ async def create_template(
             amount_label=body.amount_label,
             list_label=body.list_label,
             list_empty=body.list_empty,
+            accent=body.accent,
             template_id=body.id,
         )
     except ValueError as exc:
@@ -69,6 +70,7 @@ async def update_template(
             amount_label=body.amount_label,
             list_label=body.list_label,
             list_empty=body.list_empty,
+            accent=body.accent,
         )
     except KeyError as exc:
         raise HTTPException(status_code=404, detail="Template not found") from exc

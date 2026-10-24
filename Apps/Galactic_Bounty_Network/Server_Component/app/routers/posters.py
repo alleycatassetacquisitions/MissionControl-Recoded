@@ -23,13 +23,17 @@ from app.config import (
 )
 from app.event_stores import EventPosterStores
 from app.models import (
-    NeoCorp,
+    DEFAULT_ACCENT,
+    PosterAffiliationSnap,
     PosterPublic,
     PosterRecord,
     PosterStats,
     PosterStatus,
     PosterTemplate,
     Role,
+    accent_dim,
+    accent_hex,
+    normalize_accent,
 )
 from app.services.event_paths import (
     ensure_event_dirs,
@@ -112,6 +116,7 @@ def _chrome_fallback(role: Role) -> PosterTemplate:
             amount_label="RATE",
             list_label="REASONS TO HIRE",
             list_empty="Details pending",
+            accent=DEFAULT_ACCENT,
             builtin=True,
         )
     return PosterTemplate(
@@ -122,6 +127,7 @@ def _chrome_fallback(role: Role) -> PosterTemplate:
         amount_label="REWARD",
         list_label="WANTED FOR",
         list_empty="Charges pending",
+        accent=DEFAULT_ACCENT,
         builtin=True,
     )
 
@@ -136,6 +142,7 @@ def _resolve_chrome(
     amount_label: str = "",
     list_label: str = "",
     list_empty: str = "",
+    accent: str = "",
 ) -> dict:
     """Resolve chrome from template + optional form overrides."""
     store = _templates(request)
@@ -148,6 +155,9 @@ def _resolve_chrome(
         o = (override or "").strip()
         return o if o else default
 
+    accent_slug = normalize_accent(accent) if (accent or "").strip() else normalize_accent(
+        tmpl.accent
+    )
     return {
         "template_id": tmpl.id,
         "headline": pick(headline, tmpl.headline),
@@ -155,6 +165,7 @@ def _resolve_chrome(
         "amount_label": pick(amount_label, tmpl.amount_label),
         "list_label": pick(list_label, tmpl.list_label),
         "list_empty": pick(list_empty, tmpl.list_empty),
+        "accent": accent_slug,
     }
 
 
@@ -167,6 +178,7 @@ def _effective_chrome(poster: PosterRecord) -> dict:
     fb = _chrome_fallback(poster.role)
     tid = (poster.template_id or "").strip()
     is_custom = bool(tid) and tid not in ("hunter", "bounty")
+    accent = normalize_accent(poster.accent or fb.accent)
 
     if is_custom and (poster.headline or "").strip():
         return {
@@ -176,13 +188,11 @@ def _effective_chrome(poster: PosterRecord) -> dict:
             "amount_label": (poster.amount_label or "").strip() or fb.amount_label,
             "list_label": (poster.list_label or "").strip() or fb.list_label,
             "list_empty": (poster.list_empty or "").strip() or fb.list_empty,
+            "accent": accent,
         }
 
     # Builtin / unset: use snapshot only when it still matches current role
-    if (
-        (poster.headline or "").strip()
-        and tid == fb.id
-    ):
+    if (poster.headline or "").strip() and tid == fb.id:
         return {
             "template_id": tid,
             "headline": poster.headline.strip(),
@@ -190,6 +200,7 @@ def _effective_chrome(poster: PosterRecord) -> dict:
             "amount_label": (poster.amount_label or "").strip() or fb.amount_label,
             "list_label": (poster.list_label or "").strip() or fb.list_label,
             "list_empty": (poster.list_empty or "").strip() or fb.list_empty,
+            "accent": accent,
         }
 
     return {
@@ -199,14 +210,49 @@ def _effective_chrome(poster: PosterRecord) -> dict:
         "amount_label": fb.amount_label,
         "list_label": fb.list_label,
         "list_empty": fb.list_empty,
+        "accent": normalize_accent(fb.accent),
     }
 
 
-def _normalize_neocorp(value: str) -> NeoCorp:
-    v = (value or "freelancer").strip().lower()
-    if v in ("reboot", "helix", "endline", "freelancer"):
-        return v  # type: ignore[return-value]
+_KNOWN_LOGO_SLUGS = frozenset({"reboot", "helix", "endline", "freelancer"})
+
+
+def _normalize_neocorp(value: str) -> str:
+    """Store affiliation display/slug as-is; do not coerce unknowns to freelancer."""
+    return (value or "").strip()
+
+
+def _logo_slug(neocorp: str) -> str:
+    raw = (neocorp or "").strip().lower()
+    if raw in _KNOWN_LOGO_SLUGS:
+        return raw
+    first = raw.split()[0] if raw else ""
+    if first in _KNOWN_LOGO_SLUGS:
+        return first
     return "freelancer"
+
+
+def _parse_affiliations_snap(raw: str) -> list[PosterAffiliationSnap]:
+    text = (raw or "").strip()
+    if not text:
+        return []
+    try:
+        data = json.loads(text)
+    except json.JSONDecodeError:
+        return []
+    if not isinstance(data, list):
+        return []
+    out: list[PosterAffiliationSnap] = []
+    for item in data:
+        if not isinstance(item, dict):
+            continue
+        cat = str(item.get("category_name") or "").strip()
+        name = str(item.get("affiliation_name") or "").strip()
+        if cat or name:
+            out.append(
+                PosterAffiliationSnap(category_name=cat, affiliation_name=name)
+            )
+    return out
 
 
 def _normalize_role(value: str) -> Role:
@@ -252,6 +298,7 @@ def _to_public(
         role=poster.role,
         neocorp=poster.neocorp,
         faction=poster.faction,
+        affiliations=list(poster.affiliations or []),
         bounty_amount=poster.bounty_amount,
         crimes=poster.crimes,
         stats=poster.stats,
@@ -266,6 +313,7 @@ def _to_public(
         amount_label=chrome["amount_label"],
         list_label=chrome["list_label"],
         list_empty=chrome["list_empty"],
+        accent=chrome["accent"],
         created_at=poster.created_at,
         updated_at=poster.updated_at,
     )
@@ -343,7 +391,8 @@ async def _apply_live_overlay(display: PosterRecord) -> PosterRecord:
 
 def _poster_context(public: PosterPublic) -> dict:
     is_hunter = public.role == "hunter"
-    neocorp_logo = f"/media/assets/neocorp/{public.neocorp}.svg"
+    logo_slug = _logo_slug(public.neocorp)
+    neocorp_logo = f"/media/assets/neocorp/{logo_slug}.svg"
     return {
         "poster": public,
         "bounty_display": f"₩{public.bounty_amount:,}",
@@ -355,6 +404,8 @@ def _poster_context(public: PosterPublic) -> dict:
         "headline_sub": public.subtitle,
         "amount_label": public.amount_label,
         "neocorp_logo": neocorp_logo,
+        "accent_hex": accent_hex(public.accent),
+        "accent_dim": accent_dim(public.accent),
         "status_rows": [
             ("CURRENT SCORE", public.status.current_score or "—"),
             ("FASTEST WIN", public.status.fastest_win or "—"),
@@ -473,6 +524,8 @@ async def create_poster(
     amount_label: str = Form(""),
     list_label: str = Form(""),
     list_empty: str = Form(""),
+    accent: str = Form(""),
+    affiliations: str = Form("[]"),
     event_id: str = Form(""),
     video: UploadFile = File(...),
 ) -> PosterPublic:
@@ -534,6 +587,7 @@ async def create_poster(
         amount_label=amount_label,
         list_label=list_label,
         list_empty=list_empty,
+        accent=accent,
     )
 
     record = PosterRecord(
@@ -543,6 +597,7 @@ async def create_poster(
         role=normalized_role,
         neocorp=_normalize_neocorp(neocorp),
         faction=faction.strip(),
+        affiliations=_parse_affiliations_snap(affiliations),
         bounty_amount=max(0, int(bounty_amount)),
         crimes=_parse_crimes(crimes),
         stats=_parse_stats(stats),
@@ -555,6 +610,7 @@ async def create_poster(
         amount_label=chrome["amount_label"],
         list_label=chrome["list_label"],
         list_empty=chrome["list_empty"],
+        accent=chrome["accent"],
         created_at=created_at,
         updated_at=stamp,
     )

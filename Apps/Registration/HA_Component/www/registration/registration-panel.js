@@ -1,10 +1,51 @@
 "use strict";
 (() => {
+  // src/shared/affiliations.ts
+  function emptyCatalog() {
+    return { event_id: null, categories: [] };
+  }
+  function findChoiceExact(choices, name) {
+    const needle = (name || "").trim().toLowerCase();
+    if (!needle) return void 0;
+    return choices.find((c) => (c.name || "").trim().toLowerCase() === needle);
+  }
+  function playerAssignmentForCategory(affiliations, category) {
+    if (!affiliations?.length) return "";
+    const catId = category.id;
+    const catName = (category.name || "").trim().toLowerCase();
+    for (const row of affiliations) {
+      if (row.category_id && String(row.category_id) === String(catId)) {
+        return (row.affiliation_name || "").trim();
+      }
+      if (catName && (row.category_name || "").trim().toLowerCase() === catName) {
+        return (row.affiliation_name || "").trim();
+      }
+    }
+    return "";
+  }
+  function buildAffiliationsPayload(categories, selectedByCategoryId, opts) {
+    const previousByCategoryId = opts?.previousByCategoryId;
+    const out = {};
+    for (const cat of categories) {
+      const chosenName = (selectedByCategoryId[cat.id] || "").trim();
+      const match = findChoiceExact(cat.affiliations || [], chosenName);
+      const prev = previousByCategoryId?.[cat.id];
+      if (match) {
+        out[cat.id] = match.id;
+      } else if (prev && !chosenName) {
+        out[cat.id] = null;
+      }
+    }
+    return out;
+  }
+
   // src/panels/registration-panel.ts
+  var PLAYER_NAME_MAX = 32;
   var RegistrationPanel = class extends window.McPanel.Base {
     constructor() {
       super();
       this._checkTimer = null;
+      this._editPrevAff = {};
       this._roster = [];
       this._postersByPlayer = {};
       this._search = "";
@@ -26,6 +67,9 @@
       this._evEditVenue = "";
       this._evSetActiveId = "";
       this._teams = [];
+      this._catalog = emptyCatalog();
+      this._fAffByCat = {};
+      this._editAffByCat = {};
       this._editId = "";
       this._editName = "";
       this._editEmail = "";
@@ -56,6 +100,9 @@
         _evEditVenue: { state: true },
         _evSetActiveId: { state: true },
         _teams: { state: true },
+        _catalog: { state: true },
+        _fAffByCat: { state: true },
+        _editAffByCat: { state: true },
         _editId: { state: true },
         _editName: { state: true },
         _editEmail: { state: true },
@@ -93,6 +140,56 @@
         .page-header h1 {
           margin: 0;
           font-size: 20px;
+        }
+        .name-hint {
+          font-size: 12px;
+          color: var(--secondary-text-color, #7aa8b8);
+          margin: 2px 0 8px;
+        }
+        .aff-group {
+          margin-bottom: 10px;
+        }
+        .chip-row {
+          display: flex;
+          flex-wrap: wrap;
+          gap: 6px;
+        }
+        .chip {
+          margin: 0;
+          padding: 5px 12px;
+          background: transparent;
+          color: var(--primary-color, #00e5ff);
+          border: 1px solid var(--primary-color, #00e5ff);
+          border-radius: 999px;
+          font: inherit;
+          font-size: 13px;
+          cursor: pointer;
+        }
+        .chip:hover {
+          background: rgba(0, 229, 255, 0.08);
+        }
+        .chip.active {
+          background: var(--primary-color, #00e5ff);
+          color: #041016;
+          font-weight: 600;
+        }
+        .chip-static {
+          display: inline-block;
+          margin: 0 4px 4px 0;
+          padding: 2px 10px;
+          border: 1px solid var(--primary-color, #00e5ff);
+          border-radius: 999px;
+          font-size: 12px;
+          white-space: nowrap;
+        }
+        .chip-static .chip-cat {
+          color: var(--secondary-text-color, #7aa8b8);
+          margin-right: 4px;
+        }
+        .aff-hint {
+          font-size: 12px;
+          color: var(--secondary-text-color, #7aa8b8);
+          margin: 0;
         }
         .sub {
           color: var(--secondary-text-color, #7aa8b8);
@@ -387,6 +484,14 @@
       if (typeof e.error === "string") return e.error;
       return e.message || e.code || JSON.stringify(err);
     }
+    async _resolveAffiliationsPayload(selected, previous) {
+      await this._loadCatalog();
+      return buildAffiliationsPayload(
+        this._catalog.categories || [],
+        selected,
+        { previousByCategoryId: previous }
+      );
+    }
     _formPayload() {
       const payload = {
         name: this._fName.trim()
@@ -398,6 +503,7 @@
     _clearForm() {
       this._fName = "";
       this._fEmail = "";
+      this._fAffByCat = {};
       this._nameStatus = "";
       if (this._checkTimer) {
         clearTimeout(this._checkTimer);
@@ -405,9 +511,9 @@
       }
     }
     _onNameInput(value) {
-      this._fName = value;
+      this._fName = value.slice(0, PLAYER_NAME_MAX);
       if (this._checkTimer) clearTimeout(this._checkTimer);
-      this._checkTimer = setTimeout(() => this._checkName(value), 300);
+      this._checkTimer = setTimeout(() => this._checkName(this._fName), 300);
     }
     _checkName(name) {
       const trimmed = name.trim();
@@ -471,6 +577,7 @@
         this._loadPosters()
       ]);
       await this._loadTeams();
+      await this._loadCatalog();
     }
     async _loadTeams() {
       try {
@@ -481,6 +588,26 @@
         this._teams = result?.teams ?? [];
       } catch (_) {
         this._teams = [];
+      }
+    }
+    async _loadCatalog() {
+      const prevEvent = this._catalog?.event_id || null;
+      try {
+        const result = await this.hass.callWS({
+          type: "game_master/get_affiliation_catalog"
+        });
+        const next = {
+          event_id: result?.event_id ?? null,
+          categories: result?.categories ?? []
+        };
+        if (prevEvent && next.event_id && String(prevEvent) !== String(next.event_id)) {
+          this._fAffByCat = {};
+          this._editAffByCat = {};
+          this._editPrevAff = {};
+        }
+        this._catalog = next;
+      } catch (_) {
+        this._catalog = emptyCatalog();
       }
     }
     async _loadPosters() {
@@ -567,6 +694,44 @@
       </a>`;
       }
       return html`<a href=${href} target="_blank" rel="noopener">open</a>`;
+    }
+    /** Chip select/deselect for one category — one active chip per category. */
+    _affChips(cat, value, onChange) {
+      const html = window.McPanel.html;
+      const choices = cat.affiliations || [];
+      const active = findChoiceExact(choices, value)?.name || "";
+      return html`
+      <label>${cat.name || "Affiliation"}</label>
+      <div class="aff-group">
+        ${choices.length === 0 ? html`<p class="aff-hint">
+              No choices yet — add them in Game Master.
+            </p>` : html`<div class="chip-row">
+              ${choices.map(
+        (c) => html`<button
+                  type="button"
+                  class="chip ${active === c.name ? "active" : ""}"
+                  aria-pressed=${active === c.name ? "true" : "false"}
+                  @click=${() => onChange(active === c.name ? "" : c.name)}
+                >
+                  ${c.name}
+                </button>`
+      )}
+            </div>`}
+      </div>
+    `;
+    }
+    _affiliationChips(affiliations) {
+      const html = window.McPanel.html;
+      const rows = (affiliations || []).filter(
+        (a) => (a.affiliation_name || "").trim()
+      );
+      if (!rows.length) return html`<span class="poster-missing">—</span>`;
+      return html`${rows.map(
+        (a) => html`<span class="chip-static"
+        ><span class="chip-cat">${(a.category_name || "Category").trim()}</span
+        >${(a.affiliation_name || "").trim()}</span
+      >`
+      )}`;
     }
     async _syncNow() {
       try {
@@ -662,16 +827,27 @@
         await this._loadRoster();
         await this._loadEvents();
         await this._loadTeams();
+        await this._loadCatalog();
       } catch (err) {
         this._feedback("Set active failed: " + this._formatErr(err), "err");
       }
     }
     _beginEdit(p) {
       this._editId = String(p.id ?? "");
-      this._editName = p.name || "";
+      this._editName = (p.name || "").slice(0, PLAYER_NAME_MAX);
       this._editEmail = p.email || "";
       this._editTeamId = p.team_id ? String(p.team_id) : "";
       this._editActive = p.active !== false;
+      const map = {};
+      const prev = {};
+      for (const cat of this._catalog.categories || []) {
+        const assigned = playerAssignmentForCategory(p.affiliations, cat);
+        map[cat.id] = assigned;
+        const match = findChoiceExact(cat.affiliations || [], assigned);
+        if (match) prev[cat.id] = match.id;
+      }
+      this._editAffByCat = map;
+      this._editPrevAff = prev;
     }
     _cancelEdit() {
       this._editId = "";
@@ -679,12 +855,18 @@
       this._editEmail = "";
       this._editTeamId = "";
       this._editActive = true;
+      this._editAffByCat = {};
+      this._editPrevAff = {};
     }
     async _saveEdit() {
       if (!this._editId) return;
       const name = this._editName.trim();
       if (!name) {
         this._feedback("Enter a name", "warn");
+        return;
+      }
+      if (name.length > PLAYER_NAME_MAX) {
+        this._feedback(`Name must be at most ${PLAYER_NAME_MAX} characters`, "warn");
         return;
       }
       const payload = {
@@ -698,11 +880,19 @@
       if (this._editTeamId) payload.team_id = this._editTeamId;
       else payload.clear_team = true;
       try {
+        const affiliations = await this._resolveAffiliationsPayload(
+          { ...this._editAffByCat },
+          this._editPrevAff
+        );
+        if (Object.keys(affiliations).length) {
+          payload.affiliations = affiliations;
+        }
         await this.hass.callService("registration", "update_player", payload);
         this._feedback(`Updated ${name}`, "ok");
         this._cancelEdit();
         await this.hass.callService("registration", "sync_now", {});
         await this._loadRoster();
+        await this._loadCatalog();
       } catch (err) {
         this._feedback("Update failed: " + this._formatErr(err), "err");
       }
@@ -732,6 +922,10 @@
         this._feedback("Enter a name", "warn");
         return;
       }
+      if (payload.name.length > PLAYER_NAME_MAX) {
+        this._feedback(`Name must be at most ${PLAYER_NAME_MAX} characters`, "warn");
+        return;
+      }
       this._checkName(payload.name);
       if (this._nameStatus === "taken") {
         this._feedback("Pick an unused name", "warn");
@@ -745,12 +939,19 @@
         return;
       }
       try {
+        const affiliations = await this._resolveAffiliationsPayload({
+          ...this._fAffByCat
+        });
+        if (Object.keys(affiliations).length) {
+          payload.affiliations = affiliations;
+        }
         await this.hass.callService("registration", "register_player", payload);
         this._highlightName = payload.name;
         this._feedback(`Registered ${payload.name}`, "ok");
         this._clearForm();
         await this.hass.callService("registration", "sync_now", {});
         await this._loadRoster();
+        await this._loadCatalog();
         const match = this._roster.find(
           (p) => (p.name || "").trim().toLowerCase() === this._highlightName.trim().toLowerCase()
         );
@@ -942,12 +1143,16 @@
             <input
               id="f-name"
               type="text"
+              maxlength=${PLAYER_NAME_MAX}
               autocomplete="off"
               .value=${this._fName}
               @input=${(e) => {
         this._onNameInput(e.target.value);
       }}
             />
+            <p class="name-hint">
+              Max ${PLAYER_NAME_MAX} characters (${this._fName.length}/${PLAYER_NAME_MAX})
+            </p>
             <div
               id="name-status"
               class="name-status ${this._nameStatus === "available" ? "status-ok" : this._nameStatus === "taken" ? "status-err" : ""}"
@@ -964,6 +1169,18 @@
         this._fEmail = e.target.value;
       }}
             />
+            ${(this._catalog.categories || []).map(
+        (cat) => this._affChips(
+          cat,
+          this._fAffByCat[cat.id] || "",
+          (v) => {
+            this._fAffByCat = { ...this._fAffByCat, [cat.id]: v };
+          }
+        )
+      )}
+            ${(this._catalog.categories || []).length === 0 ? html`<p class="aff-hint">
+                  No affiliation categories yet — add them in Game Master.
+                </p>` : ""}
             <div class="form-actions">
               <button class="btn-create" @click=${() => this._savePlayer()}>
                 Create player
@@ -979,9 +1196,13 @@
                   <input
                     id="edit-name"
                     type="text"
+                    maxlength=${PLAYER_NAME_MAX}
                     .value=${this._editName}
                     @input=${(e) => {
-        this._editName = e.target.value;
+        this._editName = e.target.value.slice(
+          0,
+          PLAYER_NAME_MAX
+        );
       }}
                   />
                   <label for="edit-email">Email</label>
@@ -1008,6 +1229,18 @@
                         </option>`
       )}
                   </select>
+                  ${(this._catalog.categories || []).map(
+        (cat) => this._affChips(
+          cat,
+          this._editAffByCat[cat.id] || "",
+          (v) => {
+            this._editAffByCat = {
+              ...this._editAffByCat,
+              [cat.id]: v
+            };
+          }
+        )
+      )}
                   <label class="check-row">
                     <input
                       type="checkbox"
@@ -1027,6 +1260,7 @@
                     </button>
                   </div>
                 ` : ""}
+
             ${this._feedbackTemplate()}
           </div>
 
@@ -1054,6 +1288,7 @@
                           <th>PDN</th>
                           <th>Name</th>
                           <th>Team</th>
+                          <th>Affiliations</th>
                           <th>Status</th>
                           <th>Created</th>
                           <th>Email</th>
@@ -1069,6 +1304,7 @@
                               <td>${p.pdn_code ?? ""}</td>
                               <td>${p.name ?? ""}</td>
                               <td>${this._teamOf(p)}</td>
+                              <td>${this._affiliationChips(p.affiliations)}</td>
                               <td>${this._activeOf(p)}</td>
                               <td>${this._formatCreated(p.created_at)}</td>
                               <td>${p.email ?? ""}</td>

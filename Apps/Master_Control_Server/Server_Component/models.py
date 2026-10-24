@@ -1,9 +1,9 @@
 """Pydantic models for Master Control Server.
 
 Player fields follow Central's PlayerResponse (pdn_code, email, team_id,
-team_name, active) with ``role`` / ``mode`` as HA-facing aliases derived from
-team_name. NeoCorp/faction/neo_id remain optional empty fields for older HA
-consumers until affiliation APIs land.
+team_name, active, affiliations) with ``role`` / ``mode`` as HA-facing aliases
+derived from team_name. Legacy neocorp/faction/neo_id remain optional overlays
+derived from affiliation category names when present.
 """
 from __future__ import annotations
 
@@ -12,11 +12,23 @@ from typing import Any
 from pydantic import BaseModel, Field
 
 
+PLAYER_NAME_MAX_LEN = 32
+
+
 class Pagination(BaseModel):
     """Central pagination echo (page / per_page)."""
 
     page: int = 1
     per_page: int = 20
+
+
+class PlayerAffiliation(BaseModel):
+    """One assigned affiliation within a category (Central PlayerAffiliation)."""
+
+    category_id: str
+    category_name: str = ""
+    affiliation_id: str
+    affiliation_name: str = ""
 
 
 class Player(BaseModel):
@@ -33,7 +45,8 @@ class Player(BaseModel):
     team_id: str | None = None
     team_name: str = ""
     active: bool = True
-    # Legacy optional fields — empty until Central affiliations API ships
+    affiliations: list[PlayerAffiliation] = Field(default_factory=list)
+    # Legacy overlays — derived from Allegiance/NeoCorp + Faction categories
     neocorp: str = ""
     faction: str = ""
     neo_id: str = ""
@@ -43,20 +56,42 @@ class PlayerWrite(BaseModel):
     """Create / update payload from Registration (HA → MCS).
 
     Central create accepts JSON ``name`` + optional ``email``. Update also
-    accepts ``team_id`` and ``active``. Legacy role / neocorp / faction /
-    neo_id fields are accepted but ignored on write.
+    accepts ``team_id``, ``active``, and ``affiliations``. Name is capped at
+    32 characters for PDN / other device displays (Central allows more).
     """
 
-    name: str = ""
+    name: str = Field(default="", max_length=PLAYER_NAME_MAX_LEN)
     email: str | None = None
     team_id: str | None = None
     active: bool | None = None
     clear_email: bool = False
     clear_team: bool = False
+    affiliations: dict[str, str | None] | None = None
     role: str = ""
     neocorp: str = ""
     faction: str = ""
     neo_id: str = ""
+
+
+class AffiliationCategory(BaseModel):
+    id: str
+    event_id: str = ""
+    name: str
+
+
+class AffiliationCategoryWrite(BaseModel):
+    name: str = Field(..., min_length=1, max_length=256)
+
+
+class AffiliationChoice(BaseModel):
+    id: str
+    event_id: str = ""
+    category_id: str = ""
+    name: str
+
+
+class AffiliationChoiceWrite(BaseModel):
+    name: str = Field(..., min_length=1, max_length=256)
 
 
 class Roster(BaseModel):
@@ -164,10 +199,23 @@ class DeviceLogsResponse(BaseModel):
 
 
 class ConfigUpdate(BaseModel):
-    """Payload for POST /config pushed by the Registration HA integration."""
+    """Payload for POST /config pushed by Home Assistant (peer snapshot).
+
+    Central URLs keep existing overwrite semantics (empty string leaves current).
+    Peer fields are stored for fan-out to LXC companions; empty leaves current.
+    """
 
     central_primary: str = ""
     central_secondary: str = ""
+    # Venue peer snapshot (HA → MCS hub → LXC fan-out)
+    mcs_url: str = ""
+    gbn_url: str = ""
+    net_time_url: str = ""
+    net_time_token: str = ""
+    alleycattv_url: str = ""
+    host_clock_url: str = ""
+    mqtt_host: str = ""
+    mqtt_port: str = ""
 
 
 class HealthResponse(BaseModel):

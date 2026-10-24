@@ -1,8 +1,10 @@
 """Normalize Central Server player records to Mission Control fields.
 
 Central PlayerResponse: id, event_id, pdn_code, name, email, created_at,
-team_id, team_name, active. ``role`` / ``mode`` are HA-facing aliases derived
-from team_name when it matches hunter/bounty; otherwise unassigned.
+team_id, team_name, active, affiliations[]. ``role`` / ``mode`` are HA-facing
+aliases derived from team_name when it matches hunter/bounty; otherwise
+unassigned. Legacy neocorp/faction are derived from Allegiance/NeoCorp and
+Faction affiliation categories when present.
 """
 from __future__ import annotations
 
@@ -11,6 +13,8 @@ from typing import Any
 _VALID_MODES = frozenset({"unassigned", "hunter", "bounty"})
 _ROLE_FROM_HUNTER = {1: "hunter", 2: "bounty"}
 _VALID_NEOCORPS = frozenset({"freelancer", "helix", "endline", "reboot"})
+_ALLEGIANCE_CATEGORY_NAMES = frozenset({"allegiance", "neocorp"})
+_FACTION_CATEGORY_NAMES = frozenset({"faction"})
 
 
 def _first(*values: Any) -> Any:
@@ -61,20 +65,87 @@ def normalize_role(raw: dict[str, Any]) -> str:
     return normalize_mode(raw)
 
 
+def _normalize_affiliations(raw: dict[str, Any]) -> list[dict[str, str]]:
+    """Pass through Central affiliations array as MCS PlayerAffiliation dicts."""
+    raw_list = raw.get("affiliations")
+    if not isinstance(raw_list, list):
+        return []
+    out: list[dict[str, str]] = []
+    for item in raw_list:
+        if not isinstance(item, dict):
+            continue
+        category_id = _first(item.get("category_id"), item.get("categoryId"))
+        affiliation_id = _first(
+            item.get("affiliation_id"), item.get("affiliationId")
+        )
+        if category_id is None or affiliation_id is None:
+            continue
+        out.append(
+            {
+                "category_id": str(category_id),
+                "category_name": str(
+                    _first(item.get("category_name"), item.get("categoryName"))
+                    or ""
+                ),
+                "affiliation_id": str(affiliation_id),
+                "affiliation_name": str(
+                    _first(
+                        item.get("affiliation_name"), item.get("affiliationName")
+                    )
+                    or ""
+                ),
+            }
+        )
+    return out
+
+
+def _derive_neocorp_faction(
+    affiliations: list[dict[str, str]], raw: dict[str, Any]
+) -> tuple[str, str]:
+    """Derive legacy neocorp/faction from affiliations, else legacy fields."""
+    neocorp = ""
+    faction = ""
+    for row in affiliations:
+        cat = (row.get("category_name") or "").strip().lower()
+        name = (row.get("affiliation_name") or "").strip()
+        if not name:
+            continue
+        if cat in _ALLEGIANCE_CATEGORY_NAMES and not neocorp:
+            lowered = name.lower()
+            # Prefer slug when it matches known NeoCorp assets; else keep display
+            if lowered in _VALID_NEOCORPS:
+                neocorp = lowered
+            elif " " in name:
+                # "Helix Industries" → try first token
+                first = name.split()[0].lower()
+                neocorp = first if first in _VALID_NEOCORPS else lowered
+            else:
+                neocorp = lowered
+        elif cat in _FACTION_CATEGORY_NAMES and not faction:
+            faction = name
+
+    if not neocorp:
+        value = _first(
+            raw.get("neocorp"),
+            raw.get("allegiance"),
+            raw.get("NeoCorp"),
+            raw.get("Allegiance"),
+        )
+        if value is not None:
+            lowered = str(value).strip().lower()
+            neocorp = lowered if lowered in _VALID_NEOCORPS else lowered
+
+    if not faction:
+        faction = str(_first(raw.get("faction"), raw.get("Faction")) or "")
+
+    return neocorp, faction
+
+
 def normalize_neocorp(raw: dict[str, Any]) -> str:
-    """Resolve NeoCorp from allegiance / neocorp when present (usually empty)."""
-    value = _first(
-        raw.get("neocorp"),
-        raw.get("allegiance"),
-        raw.get("NeoCorp"),
-        raw.get("Allegiance"),
-    )
-    if value is None:
-        return ""
-    lowered = str(value).strip().lower()
-    if lowered in _VALID_NEOCORPS:
-        return lowered
-    return lowered
+    """Resolve NeoCorp from affiliations or legacy allegiance / neocorp."""
+    affiliations = _normalize_affiliations(raw)
+    neocorp, _faction = _derive_neocorp_faction(affiliations, raw)
+    return neocorp
 
 
 def normalize_player(raw: dict[str, Any]) -> dict[str, Any]:
@@ -85,7 +156,8 @@ def normalize_player(raw: dict[str, Any]) -> dict[str, Any]:
         raise ValueError("player record missing id or name")
 
     mode = normalize_mode(raw)
-    faction = _first(raw.get("faction"), raw.get("Faction")) or ""
+    affiliations = _normalize_affiliations(raw)
+    neocorp, faction = _derive_neocorp_faction(affiliations, raw)
     neo_id = _first(raw.get("neo_id"), raw.get("neoId"), raw.get("NeoId")) or ""
     pdn = _first(raw.get("pdn_code"), raw.get("pdn"), raw.get("PDN")) or ""
     email = _first(raw.get("email"), raw.get("Email")) or ""
@@ -111,7 +183,8 @@ def normalize_player(raw: dict[str, Any]) -> dict[str, Any]:
         "role": mode,
         "created_at": str(created_at),
         "email": str(email),
-        "neocorp": normalize_neocorp(raw),
+        "affiliations": affiliations,
+        "neocorp": neocorp,
         "faction": str(faction),
         "neo_id": str(neo_id),
         "event_id": event_id,
@@ -142,11 +215,13 @@ def to_central_update_body(
     team_id: str | None = None,
     clear_team: bool = False,
     active: bool | None = None,
+    affiliations: dict[str, str | None] | None = None,
 ) -> dict[str, Any]:
     """Build Central JSON body for PATCH /players/{id}.
 
     Omitted fields are left out so Central preserves them. ``clear_email`` /
-    ``clear_team`` send JSON null.
+    ``clear_team`` send JSON null. ``affiliations`` is category UUID →
+    affiliation UUID or null to clear.
     """
     body: dict[str, Any] = {}
     if name is not None and name.strip():
@@ -161,6 +236,10 @@ def to_central_update_body(
         body["team_id"] = str(team_id).strip()
     if active is not None:
         body["active"] = bool(active)
+    if affiliations is not None:
+        body["affiliations"] = {
+            str(k): (None if v is None else str(v)) for k, v in affiliations.items()
+        }
     return body
 
 

@@ -25,15 +25,19 @@ Registration never stores the MCS token in its own config entry.
 
 | Service | MCS call |
 |---|---|
-| `registration.sync_now` | Push `/config` + refresh coordinator (`GET /players`) |
-| `registration.register_player` | `POST /players` JSON (`name`, optional `email`) |
+| `registration.sync_now` | Push `/config` + refresh coordinator (`GET /players`) + affiliation catalog |
+| `registration.register_player` | `POST /players` JSON (`name` ≤ 32 chars, optional `email`, optional `affiliations`) |
 | `registration.create_event` | `POST /events` (+ optional set-active) |
 | `registration.update_event` | `PATCH /events/{event_id}` |
-| `registration.set_active_event` | `PUT /events/{event_id}/active` on MCS, then `PUT /api/events/active` on GBN (id + name) |
-| `registration.update_player` | `PUT /players/{id}` → Central PATCH (`name`/`email`/`team_id`/`active`) |
+| `registration.set_active_event` | `PUT /events/{event_id}/active` on MCS, then `PUT /api/events/active` on GBN (id + name); clears/refetches affiliation catalog |
+| `registration.update_player` | `PUT /players/{id}` → Central PATCH (`name`/`email`/`team_id`/`active`/`affiliations`) |
 | `registration.delete_player` | `DELETE /players/{id}` → soft-deactivate (`active: false`) |
+| `registration.create_affiliation_category` | `POST /affiliation-categories` |
+| `registration.rename_affiliation_category` | `PATCH /affiliation-categories/{id}` |
+| `registration.create_affiliation` | `POST /affiliation-categories/{id}/affiliations` |
+| `registration.rename_affiliation` | `PATCH …/affiliations/{id}` |
 
-Register payload: `name` + optional `email`. Affiliations (NeoCorp/Faction) wait on Central’s affiliation management API.
+Register payload: `name` (max 32 characters for device displays) + optional `email` + optional `affiliations` map (category UUID → affiliation UUID). Catalog is **per active event**; HA keeps an event-keyed cache for panels (GBN polls the same WS).
 
 **409** errors from Central (especially `No active event`) are raised as `HomeAssistantError` so the panel can show them.
 
@@ -43,10 +47,11 @@ Register payload: `name` + optional `email`. Affiliations (NeoCorp/Faction) wait
 
 | Type | Purpose |
 |---|---|
-| `registration/get_roster` | Coordinator-cached players |
+| `registration/get_roster` | Coordinator-cached players (incl. `affiliations[]`) |
 | `registration/get_events` | MCS event list (`ready: true` when Central list is up) |
 | `registration/get_active_event` | Active event from MCS (Central `game-state` backed) |
 | `registration/get_teams` | Teams for active (or given) event |
+| `registration/get_affiliation_catalog` | Event-keyed categories + choices for Registration + GBN |
 
 ---
 

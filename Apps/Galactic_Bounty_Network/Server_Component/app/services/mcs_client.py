@@ -11,23 +11,21 @@ from typing import Any, Optional
 
 import httpx
 
-from app.config import MCS_BASE, MCS_TOKEN
-from app.models import IntakePlayer, NeoCorp, PosterStatus, Role
+from app.models import IntakePlayer, PosterStatus, Role
+from app.runtime_config import mcs_base as _mcs_base
+from app.runtime_config import mcs_token as _mcs_token
 
 _LOGGER = logging.getLogger(__name__)
 
 
 def _auth_headers() -> dict[str, str]:
-    if not MCS_TOKEN:
+    token = _mcs_token()
+    if not token:
         return {}
-    return {"Authorization": f"Bearer {MCS_TOKEN}"}
+    return {"Authorization": f"Bearer {token}"}
 
-
-def _norm_neocorp(value: Any) -> NeoCorp:
-    v = str(value or "freelancer").strip().lower()
-    if v in ("reboot", "helix", "endline", "freelancer"):
-        return v  # type: ignore[return-value]
-    return "freelancer"
+def _norm_neocorp(value: Any) -> str:
+    return str(value or "").strip()
 
 
 def _norm_role(raw: dict[str, Any]) -> Role:
@@ -67,10 +65,11 @@ def _player_from_dict(raw: dict[str, Any]) -> IntakePlayer:
 async def lookup_by_id(player_id: str) -> Optional[IntakePlayer]:
     """Resolve a player from MCS ``GET /players/{id}``."""
     pid = (player_id or "").strip()
-    if not pid or not MCS_BASE:
+    base = _mcs_base()
+    if not pid or not base:
         return None
 
-    url = f"{MCS_BASE.rstrip('/')}/players/{pid}"
+    url = f"{base.rstrip('/')}/players/{pid}"
     try:
         async with httpx.AsyncClient(timeout=8.0) as client:
             resp = await client.get(url, headers=_auth_headers())
@@ -90,10 +89,11 @@ async def lookup_by_id(player_id: str) -> Optional[IntakePlayer]:
 
 async def list_players() -> list[IntakePlayer]:
     """Fetch the full roster from MCS ``GET /players``."""
-    if not MCS_BASE:
+    base = _mcs_base()
+    if not base:
         return []
 
-    url = f"{MCS_BASE.rstrip('/')}/players"
+    url = f"{base.rstrip('/')}/players"
     try:
         async with httpx.AsyncClient(timeout=8.0) as client:
             resp = await client.get(url, headers=_auth_headers())
@@ -119,10 +119,11 @@ async def lookup_by_mac(mac: str) -> Optional[IntakePlayer]:
     normalized = (mac or "").strip().lower()
     if not normalized:
         return None
-    if not MCS_BASE:
+    base = _mcs_base()
+    if not base:
         _LOGGER.debug("MAC lookup skipped — GBN_MCS_BASE not set (%s)", normalized)
         return None
-    _LOGGER.info("MAC lookup not implemented yet (mcs=%s mac=%s)", MCS_BASE, normalized)
+    _LOGGER.info("MAC lookup not implemented yet (mcs=%s mac=%s)", base, normalized)
     return None
 
 
@@ -155,8 +156,9 @@ async def get_active_event() -> Optional[dict[str, Any]]:
         remember_active_event,
     )
 
-    if MCS_BASE:
-        url = f"{MCS_BASE.rstrip('/')}/events/active"
+    base = _mcs_base()
+    if base:
+        url = f"{base.rstrip('/')}/events/active"
         try:
             async with httpx.AsyncClient(timeout=8.0) as client:
                 resp = await client.get(url, headers=_auth_headers())

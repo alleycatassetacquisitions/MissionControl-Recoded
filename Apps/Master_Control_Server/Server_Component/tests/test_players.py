@@ -244,3 +244,132 @@ def test_delete_player_soft_deactivates(client: TestClient, auth_headers: dict):
 def test_post_player_requires_auth(client: TestClient):
     resp = client.post("/players", json={"name": "X"})
     assert resp.status_code == 401
+
+
+def test_post_player_rejects_name_over_32(client: TestClient, auth_headers: dict):
+    resp = client.post(
+        "/players",
+        headers=auth_headers,
+        json={"name": "a" * 33},
+    )
+    assert resp.status_code == 422  # pydantic max_length
+
+
+def test_post_player_accepts_name_32(client: TestClient, auth_headers: dict):
+    name = "a" * 32
+    with patch(
+        "main.create_player",
+        new=AsyncMock(
+            return_value=(
+                200,
+                {
+                    "id": "n32",
+                    "name": name,
+                    "pdn_code": "1111",
+                    "created_at": "2026-01-01T00:00:00Z",
+                    "active": True,
+                    "affiliations": [],
+                },
+            )
+        ),
+    ):
+        resp = client.post(
+            "/players",
+            headers=auth_headers,
+            json={"name": name},
+        )
+    assert resp.status_code == 201
+    assert resp.json()["name"] == name
+
+
+def test_post_player_create_then_patch_affiliations(
+    client: TestClient, auth_headers: dict
+):
+    created = {
+        "id": "p9",
+        "name": "Nova",
+        "pdn_code": "2222",
+        "created_at": "2026-01-01T00:00:00Z",
+        "active": True,
+        "affiliations": [],
+    }
+    updated = {
+        **created,
+        "affiliations": [
+            {
+                "category_id": "c1",
+                "category_name": "Allegiance",
+                "affiliation_id": "a1",
+                "affiliation_name": "Helix Industries",
+            }
+        ],
+    }
+    with (
+        patch(
+            "main.create_player",
+            new=AsyncMock(return_value=(200, created)),
+        ),
+        patch(
+            "main.update_player",
+            new=AsyncMock(return_value=(200, updated)),
+        ) as mock_update,
+    ):
+        resp = client.post(
+            "/players",
+            headers=auth_headers,
+            json={"name": "Nova", "affiliations": {"c1": "a1"}},
+        )
+    assert resp.status_code == 201
+    assert resp.json()["affiliations"][0]["affiliation_name"] == "Helix Industries"
+    assert mock_update.await_args.args[3] == {"affiliations": {"c1": "a1"}}
+
+
+def test_put_player_affiliations_only(client: TestClient, auth_headers: dict):
+    updated = {
+        "id": "p1",
+        "name": "Alice",
+        "pdn_code": "1234",
+        "created_at": "2026-01-01T00:00:00Z",
+        "active": True,
+        "affiliations": [
+            {
+                "category_id": "c1",
+                "category_name": "Faction",
+                "affiliation_id": "a2",
+                "affiliation_name": "Corvid Alliance",
+            }
+        ],
+    }
+    with patch(
+        "main.update_player",
+        new=AsyncMock(return_value=(200, updated)),
+    ) as mock_update:
+        resp = client.put(
+            "/players/p1",
+            headers=auth_headers,
+            json={"affiliations": {"c1": "a2"}},
+        )
+    assert resp.status_code == 200
+    assert resp.json()["faction"] == "Corvid Alliance"
+    assert mock_update.await_args.args[3] == {"affiliations": {"c1": "a2"}}
+
+
+def test_list_affiliation_categories(client: TestClient, auth_headers: dict):
+    with patch(
+        "main.list_affiliation_categories",
+        new=AsyncMock(
+            return_value=(
+                200,
+                [
+                    {
+                        "id": "c1",
+                        "event_id": "e1",
+                        "name": "Allegiance",
+                    }
+                ],
+            )
+        ),
+    ):
+        resp = client.get("/affiliation-categories", headers=auth_headers)
+    assert resp.status_code == 200
+    assert resp.json()[0]["name"] == "Allegiance"

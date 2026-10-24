@@ -89,6 +89,22 @@ def _device_logs_url(base_or_full: str) -> str:
     return _service_base(base_or_full) + "/device-logs"
 
 
+def _affiliation_categories_url(base_or_full: str) -> str:
+    return _service_base(base_or_full) + "/affiliation-categories"
+
+
+def _affiliation_category_url(base_or_full: str, category_id: str) -> str:
+    return f"{_affiliation_categories_url(base_or_full).rstrip('/')}/{category_id}"
+
+
+def _affiliations_url(base_or_full: str, category_id: str) -> str:
+    return f"{_affiliation_category_url(base_or_full, category_id)}/affiliations"
+
+
+def _affiliation_url(base_or_full: str, category_id: str, affiliation_id: str) -> str:
+    return f"{_affiliations_url(base_or_full, category_id).rstrip('/')}/{affiliation_id}"
+
+
 def _iter_central_bases(primary_url: str, secondary_url: str) -> list[str]:
     return [u for u in (primary_url, secondary_url) if u]
 
@@ -536,6 +552,118 @@ async def update_team(
         if status and status < 500:
             return status, resp_body
     return last_status, last_body
+
+
+# ---------------------------------------------------------------------------
+# Affiliations (active-event scoped on Central — live proxy only)
+# ---------------------------------------------------------------------------
+
+
+async def _failover_request(
+    method: str,
+    primary_url: str,
+    secondary_url: str,
+    url_builder,
+    *,
+    json_body: dict[str, Any] | None = None,
+) -> tuple[int, Any | None]:
+    """Run method against primary then secondary using url_builder(base)."""
+    last_status = 0
+    last_body: Any | None = None
+    for base in _iter_central_bases(primary_url, secondary_url):
+        status, resp_body = await _request(
+            method, url_builder(base), json_body=json_body
+        )
+        last_status, last_body = status, resp_body
+        if status and status < 500:
+            return status, resp_body
+    return last_status, last_body
+
+
+async def list_affiliation_categories(
+    primary_url: str, secondary_url: str
+) -> tuple[int, Any | None]:
+    """GET /affiliation-categories → Central (active event)."""
+    return await _failover_request(
+        "GET",
+        primary_url,
+        secondary_url,
+        _affiliation_categories_url,
+    )
+
+
+async def create_affiliation_category(
+    primary_url: str, secondary_url: str, body: dict[str, Any]
+) -> tuple[int, Any | None]:
+    """POST /affiliation-categories → Central."""
+    return await _failover_request(
+        "POST",
+        primary_url,
+        secondary_url,
+        _affiliation_categories_url,
+        json_body=body,
+    )
+
+
+async def rename_affiliation_category(
+    primary_url: str,
+    secondary_url: str,
+    category_id: str,
+    body: dict[str, Any],
+) -> tuple[int, Any | None]:
+    """PATCH /affiliation-categories/{id} → Central."""
+    return await _failover_request(
+        "PATCH",
+        primary_url,
+        secondary_url,
+        lambda base: _affiliation_category_url(base, category_id),
+        json_body=body,
+    )
+
+
+async def list_affiliations(
+    primary_url: str, secondary_url: str, category_id: str
+) -> tuple[int, Any | None]:
+    """GET /affiliation-categories/{id}/affiliations → Central."""
+    return await _failover_request(
+        "GET",
+        primary_url,
+        secondary_url,
+        lambda base: _affiliations_url(base, category_id),
+    )
+
+
+async def create_affiliation(
+    primary_url: str,
+    secondary_url: str,
+    category_id: str,
+    body: dict[str, Any],
+) -> tuple[int, Any | None]:
+    """POST /affiliation-categories/{id}/affiliations → Central."""
+    return await _failover_request(
+        "POST",
+        primary_url,
+        secondary_url,
+        lambda base: _affiliations_url(base, category_id),
+        json_body=body,
+    )
+
+
+async def rename_affiliation(
+    primary_url: str,
+    secondary_url: str,
+    category_id: str,
+    affiliation_id: str,
+    body: dict[str, Any],
+) -> tuple[int, Any | None]:
+    """PATCH …/affiliations/{id} → Central."""
+    return await _failover_request(
+        "PATCH",
+        primary_url,
+        secondary_url,
+        lambda base: _affiliation_url(base, category_id, affiliation_id),
+        json_body=body,
+    )
 
 
 # ---------------------------------------------------------------------------

@@ -8,7 +8,9 @@ from __future__ import annotations
 import hashlib
 import random
 
-from app.models import FlavorResponse, NeoCorp, PosterStats, Role
+from app.models import FlavorResponse, PosterStats, Role
+
+_KNOWN_CORPS = frozenset({"reboot", "helix", "endline", "freelancer"})
 
 _BOUNTY_CRIMES = [
     "Data siphon from NeoCorp vaults",
@@ -104,12 +106,20 @@ def _rng_for(name: str, neocorp: str, role: str) -> random.Random:
 
 def generate_flavor(
     name: str,
-    neocorp: NeoCorp = "freelancer",
+    neocorp: str = "freelancer",
     role: Role = "bounty",
 ) -> FlavorResponse:
     """Generate mock poster flavor (deterministic per name+neocorp+role)."""
     clean = (name or "UNKNOWN").strip() or "UNKNOWN"
-    corp: NeoCorp = neocorp if neocorp in _BOUNTY_BASE else "freelancer"
+    raw = (neocorp or "").strip().lower()
+    first = raw.split()[0] if raw else ""
+    corp = (
+        raw
+        if raw in _KNOWN_CORPS
+        else first
+        if first in _KNOWN_CORPS
+        else "freelancer"
+    )
     player_role: Role = role if role in ("hunter", "bounty") else "bounty"
     rng = _rng_for(clean, corp, player_role)
 

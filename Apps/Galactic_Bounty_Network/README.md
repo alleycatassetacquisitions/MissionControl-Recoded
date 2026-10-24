@@ -12,7 +12,7 @@ posters every 30 seconds.
 
 **HA shape:** install-only config entry + `/api/gbn/proxy` HTTP views. Panel
 never `fetch()`es a LAN URL. Player roster is owned by **Master Control
-Server** — GBN stores `player_id` and overlays live name/role/neocorp/faction.
+Server** — GBN stores `player_id` and overlays live name/role/affiliations (plus legacy neocorp/faction).
 
 ---
 
@@ -20,11 +20,12 @@ Server** — GBN stores `player_id` and overlays live name/role/neocorp/faction.
 
 | Piece | Owner |
 |---|---|
-| Player records (name, role, neocorp, faction) | Master Control Server |
+| Player records (name, role, affiliations) | Master Control Server / Central |
+| Affiliation catalog (per active event) | Central via MCS; Game Master HA event-keyed cache (`game_master/get_affiliation_catalog`); MCS `POST /config` also updates GBN MCS peer URL/token |
 | Active Event (authoritative) | Central via MCS; Registration sets it |
 | Active Event cache for kiosks | GBN (`data/active_event.json`; Registration `PUT` + MCS read) |
 | Poster CRUD + video + flavor | GBN server (per Event) |
-| Poster chrome templates (headline / labels) | GBN server (`poster_templates.json`) |
+| Poster chrome templates (headline / labels / accent) | GBN server (`poster_templates.json`) |
 | Poster HTML / poster-cycle / active-players kiosk | GBN server |
 | Capture UI panel | GBN HA panel via proxy |
 | Registration Poster column | Registration panel → GBN proxy |
@@ -45,7 +46,7 @@ Chrome (headline, optional subtitle, amount label, list label) is selected at in
 
 Built-ins cannot be overwritten; **Save as new** always forks (Create poster does **not** auto-save templates). Chrome is **snapshotted** onto each poster at create time. Custom templates keep that snapshot; built-in hunter/bounty chrome follows live MCS role overlays on read.
 
-Panel field **Allegiance/NeoCorp** is the affiliation dropdown (values still `reboot` / `helix` / `endline` / `freelancer`). Capture chrome lives under **Customize poster look** (collapsed for Hunter/Bounty).
+Subject affiliations are **select-only** per category from the active event’s Game Master catalog (Allegiance, Faction, or any operator-defined category) — not a baked-in NeoCorp list. Create/rename choices in Game Master; intake does not create novel Central choices. Capture chrome (incl. **accent color** for titles/borders) lives under **Customize poster look** (collapsed for Hunter/Bounty).
 
 ### Event-scoped storage
 
