@@ -4,7 +4,8 @@
  *
  * Registration owns event create/set-active and players.
  * This panel reads game-state, toggles scoring / delayed scores, and owns
- * the affiliation catalog (categories + choices) for the active event.
+ * the affiliation catalog (categories + choices) and HA-only defaults for
+ * the active event.
  *
  * Websocket:
  *  - game_master/get_game_state, set_scoring, set_delayed_scores
@@ -13,9 +14,10 @@
  * HA services:
  *  - game_master.create_affiliation_category / rename_affiliation_category
  *  - game_master.create_affiliation / rename_affiliation
+ *  - game_master.set_default_affiliation
  */
 
-import { AffCatalog, emptyCatalog } from "../shared/affiliations";
+import { AffCatalog, AffCategory, emptyCatalog } from "../shared/affiliations";
 
 type GmEvent = {
   id?: string;
@@ -273,9 +275,40 @@ class GameMasterPanel extends window.McPanel.Base {
         .chip:hover {
           background: rgba(0, 229, 255, 0.08);
         }
+        .chip.default {
+          background: var(--primary-color, #00e5ff);
+          color: #041016;
+          font-weight: 600;
+        }
         .chip:disabled {
           opacity: 0.45;
           cursor: not-allowed;
+        }
+        .default-row {
+          display: flex;
+          flex-wrap: wrap;
+          align-items: center;
+          gap: 8px;
+          margin-bottom: 10px;
+        }
+        .default-row label {
+          margin: 0;
+          text-transform: none;
+          letter-spacing: 0;
+          font-size: 13px;
+          color: var(--primary-text-color, #e8f6ff);
+        }
+        .default-row select {
+          flex: 1;
+          min-width: 140px;
+          box-sizing: border-box;
+          padding: 6px 10px;
+          background: var(--secondary-background-color, #0d1418);
+          color: var(--primary-text-color, #e8f6ff);
+          border: 1px solid var(--divider-color, #1f3a44);
+          border-radius: 4px;
+          font: inherit;
+          font-size: 13px;
         }
         .small-btn {
           margin: 0;
@@ -336,7 +369,7 @@ class GameMasterPanel extends window.McPanel.Base {
       const result = await this.hass!.callWS<AffCatalog>({
         type: "game_master/get_affiliation_catalog",
       });
-      const next = {
+      const next: AffCatalog = {
         event_id: result?.event_id ?? null,
         categories: result?.categories ?? [],
       };
@@ -454,6 +487,25 @@ class GameMasterPanel extends window.McPanel.Base {
     }
   }
 
+  async _setDefault(categoryId: string, affiliationId: string) {
+    this._busy = true;
+    try {
+      await this.hass!.callService("game_master", "set_default_affiliation", {
+        category_id: categoryId,
+        affiliation_id: affiliationId,
+      });
+      await this._loadCatalog();
+      this._feedback(
+        affiliationId ? "Default affiliation saved" : "Default affiliation cleared",
+        "ok"
+      );
+    } catch (err) {
+      this._feedback("Set default failed: " + this._formatErr(err), "err");
+    } finally {
+      this._busy = false;
+    }
+  }
+
   _catalogSection() {
     const html = window.McPanel.html;
     const cats = this._catalog.categories || [];
@@ -464,8 +516,9 @@ class GameMasterPanel extends window.McPanel.Base {
         <div class="catalog-block">
           <p class="meta">
             Categories and choices for the active event (cleared when the
-            event changes). Registration assigns them to players; GBN only
-            selects from them.
+            event changes). Set a default per category to prefill Registration
+            when creating a player (HA-only; not written to Central). GBN
+            selects from the catalog only.
           </p>
           <label for="cat-create">New category</label>
           <div class="input-row">
@@ -505,11 +558,12 @@ class GameMasterPanel extends window.McPanel.Base {
     `;
   }
 
-  _categoryCard(cat: AffCatalog["categories"][number]) {
+  _categoryCard(cat: AffCategory) {
     const html = window.McPanel.html;
     const catId = String(cat.id);
     const renamingCat = this._renameCatId === catId;
     const choices = cat.affiliations || [];
+    const defaultId = String(cat.default_affiliation_id || "");
     return html`
       <div class="cat-card">
         <div class="cat-head">
@@ -555,6 +609,7 @@ class GameMasterPanel extends window.McPanel.Base {
           : html`<div class="chip-row">
               ${choices.map((c) => {
                 const key = `${catId}:${c.id}`;
+                const isDefault = defaultId === String(c.id);
                 if (this._renameChoiceKey === key) {
                   return html`<div class="input-row" style="width:100%">
                     <input
@@ -585,8 +640,10 @@ class GameMasterPanel extends window.McPanel.Base {
                 }
                 return html`<button
                   type="button"
-                  class="chip"
-                  title="Click to rename"
+                  class="chip ${isDefault ? "default" : ""}"
+                  title=${isDefault
+                    ? "Default for new players — click to rename"
+                    : "Click to rename"}
                   ?disabled=${this._busy}
                   @click=${() => {
                     this._cancelRenames();
@@ -594,9 +651,33 @@ class GameMasterPanel extends window.McPanel.Base {
                     this._renameChoiceName = c.name || "";
                   }}
                 >
-                  ${c.name}
+                  ${c.name}${isDefault ? " ★" : ""}
                 </button>`;
               })}
+            </div>
+            <div class="default-row">
+              <label for=${`def-${catId}`}>Default for new players</label>
+              <select
+                id=${`def-${catId}`}
+                .value=${defaultId}
+                ?disabled=${this._busy}
+                @change=${(e: Event) => {
+                  this._setDefault(
+                    catId,
+                    (e.target as HTMLSelectElement).value
+                  );
+                }}
+              >
+                <option value="">None</option>
+                ${choices.map(
+                  (c) => html`<option
+                    value=${c.id}
+                    ?selected=${defaultId === String(c.id)}
+                  >
+                    ${c.name}
+                  </option>`
+                )}
+              </select>
             </div>`}
         <div class="input-row">
           <input

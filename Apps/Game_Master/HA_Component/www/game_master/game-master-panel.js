@@ -231,9 +231,40 @@
         .chip:hover {
           background: rgba(0, 229, 255, 0.08);
         }
+        .chip.default {
+          background: var(--primary-color, #00e5ff);
+          color: #041016;
+          font-weight: 600;
+        }
         .chip:disabled {
           opacity: 0.45;
           cursor: not-allowed;
+        }
+        .default-row {
+          display: flex;
+          flex-wrap: wrap;
+          align-items: center;
+          gap: 8px;
+          margin-bottom: 10px;
+        }
+        .default-row label {
+          margin: 0;
+          text-transform: none;
+          letter-spacing: 0;
+          font-size: 13px;
+          color: var(--primary-text-color, #e8f6ff);
+        }
+        .default-row select {
+          flex: 1;
+          min-width: 140px;
+          box-sizing: border-box;
+          padding: 6px 10px;
+          background: var(--secondary-background-color, #0d1418);
+          color: var(--primary-text-color, #e8f6ff);
+          border: 1px solid var(--divider-color, #1f3a44);
+          border-radius: 4px;
+          font: inherit;
+          font-size: 13px;
         }
         .small-btn {
           margin: 0;
@@ -394,6 +425,24 @@
         this._busy = false;
       }
     }
+    async _setDefault(categoryId, affiliationId) {
+      this._busy = true;
+      try {
+        await this.hass.callService("game_master", "set_default_affiliation", {
+          category_id: categoryId,
+          affiliation_id: affiliationId
+        });
+        await this._loadCatalog();
+        this._feedback(
+          affiliationId ? "Default affiliation saved" : "Default affiliation cleared",
+          "ok"
+        );
+      } catch (err) {
+        this._feedback("Set default failed: " + this._formatErr(err), "err");
+      } finally {
+        this._busy = false;
+      }
+    }
     _catalogSection() {
       const html = window.McPanel.html;
       const cats = this._catalog.categories || [];
@@ -404,8 +453,9 @@
         <div class="catalog-block">
           <p class="meta">
             Categories and choices for the active event (cleared when the
-            event changes). Registration assigns them to players; GBN only
-            selects from them.
+            event changes). Set a default per category to prefill Registration
+            when creating a player (HA-only; not written to Central). GBN
+            selects from the catalog only.
           </p>
           <label for="cat-create">New category</label>
           <div class="input-row">
@@ -445,6 +495,7 @@
       const catId = String(cat.id);
       const renamingCat = this._renameCatId === catId;
       const choices = cat.affiliations || [];
+      const defaultId = String(cat.default_affiliation_id || "");
       return html`
       <div class="cat-card">
         <div class="cat-head">
@@ -486,6 +537,7 @@
         ${choices.length === 0 ? html`<p class="meta" style="margin-bottom:10px">No choices yet.</p>` : html`<div class="chip-row">
               ${choices.map((c) => {
         const key = `${catId}:${c.id}`;
+        const isDefault = defaultId === String(c.id);
         if (this._renameChoiceKey === key) {
           return html`<div class="input-row" style="width:100%">
                     <input
@@ -514,8 +566,8 @@
         }
         return html`<button
                   type="button"
-                  class="chip"
-                  title="Click to rename"
+                  class="chip ${isDefault ? "default" : ""}"
+                  title=${isDefault ? "Default for new players \u2014 click to rename" : "Click to rename"}
                   ?disabled=${this._busy}
                   @click=${() => {
           this._cancelRenames();
@@ -523,9 +575,33 @@
           this._renameChoiceName = c.name || "";
         }}
                 >
-                  ${c.name}
+                  ${c.name}${isDefault ? " \u2605" : ""}
                 </button>`;
       })}
+            </div>
+            <div class="default-row">
+              <label for=${`def-${catId}`}>Default for new players</label>
+              <select
+                id=${`def-${catId}`}
+                .value=${defaultId}
+                ?disabled=${this._busy}
+                @change=${(e) => {
+        this._setDefault(
+          catId,
+          e.target.value
+        );
+      }}
+              >
+                <option value="">None</option>
+                ${choices.map(
+        (c) => html`<option
+                    value=${c.id}
+                    ?selected=${defaultId === String(c.id)}
+                  >
+                    ${c.name}
+                  </option>`
+      )}
+              </select>
             </div>`}
         <div class="input-row">
           <input
