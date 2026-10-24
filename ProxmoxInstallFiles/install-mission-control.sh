@@ -358,7 +358,8 @@ lines = [
     f"cc_master_control_server: {u('mcs')}",
     f"cc_master_control_server_token: {t('mcs')}",
     f"cc_central_primary: {cpri or 'https://your-cloud-player-api.example.com'}",
-    f"cc_central_secondary: {csec or 'http://192.168.1.234:8090'}",
+    # Empty secondary is valid (no LAN mirror). Quote so YAML keeps "".
+    f"cc_central_secondary: {json.dumps(csec or '')}",
     f"cc_alleycattv: {u('alleycattv')}",
     f"cc_gbn: {u('gbn')}",
     f"cc_proxmox: https://{host_ip}:8006",

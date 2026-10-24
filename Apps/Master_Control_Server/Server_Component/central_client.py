@@ -431,14 +431,23 @@ async def fetch_game_state(
     primary_url: str,
     secondary_url: str,
 ) -> tuple[int, Any | None]:
-    """GET /game-state → Central."""
+    """GET /game-state → Central.
+
+    Fall through to secondary on transport failure (status 0), 5xx, or 404 so a
+    bad/missing primary does not brick the venue when secondary is healthy.
+    Other 4xx still return immediately (auth/client errors are definitive).
+    """
     last_status = 0
     last_body: Any | None = None
-    for base in _iter_central_bases(primary_url, secondary_url):
+    bases = _iter_central_bases(primary_url, secondary_url)
+    for index, base in enumerate(bases):
         status, resp_body = await _request("GET", _game_state_url(base))
         last_status, last_body = status, resp_body
-        if status and status < 500:
-            return status, resp_body
+        if not status or status >= 500 or status == 404:
+            if index + 1 < len(bases):
+                continue
+            return last_status, last_body
+        return status, resp_body
     return last_status, last_body
 
 

@@ -99,7 +99,7 @@ The Proxmox companion that is the LAN NTP authority for venues (chrony on UDP 12
 
 The Proxmox companion that is the only Central HTTP adapter. It owns Mission Control’s Player and Event JSON, proxies Central game-state / scoring / teams / device crash logs, and derives HA `mode`/`role` from Central `team_name` when helpful.
 
-MCS is also the **venue peer-config hub**: on Core Configurator Save, Registration pushes one peer snapshot to MCS `POST /config` (Central URLs plus companion URLs/tokens). MCS fans out HTTP `POST /config` to LXC companions (GBN, Net Time). AlleycatTV Pis get year-1 network config via retained MQTT from the AlleycatTV HA integration (HA is the only MQTT publisher). MAC/IP rediscovery for Pis is out of year 1.
+MCS is also the **venue peer-config hub**: on Core Configurator Save **and** on `registration.sync_now`, Registration pushes one peer snapshot to MCS `POST /config` (Central URLs plus companion URLs/tokens). MCS fans out HTTP `POST /config` to LXC companions (GBN, Net Time). Fan-out is soft-fail (MCS still returns 204); inspect peers and last results with Bearer `GET /config/status`. Empty Central secondary from HA clears MCS secondary (omit the field to leave it unchanged). AlleycatTV Pis get year-1 network config via retained MQTT from the AlleycatTV HA integration (HA is the only MQTT publisher). MAC/IP rediscovery for Pis is out of year 1.
 
 Registration is its Home Assistant face for players/events. **Game Master** is the face for gameplay toggles (scoring live/off, delayed scores) and affiliation catalog CRUD. Bug Buster reads device logs through MCS. GBN overlays Player data from MCS. Home Assistant does not talk to the Central Server itself.
 

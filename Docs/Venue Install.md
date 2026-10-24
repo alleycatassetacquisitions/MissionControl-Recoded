@@ -113,9 +113,11 @@ Do **not** run that last `bash /root/...` line in Windows PowerShell — `/root/
 5. Creates **MCS**, **AlleycatTV**, **GBN**, **Net Time** LXCs (captures URLs/tokens).
 6. Installs the **venue update agent** on the Proxmox host (`:8722`).
 7. Creates a Proxmox API token (`hass@pve!missioncontrol`, role `PVEVMUser`) unless `PROXMOX_TOKEN_SECRET` is already set.
-8. Prompts for **Central** primary/secondary URLs (or use `CENTRAL_PRIMARY` / `CENTRAL_SECONDARY` env).
+8. Prompts for **Central** primary/secondary URLs (or use `CENTRAL_PRIMARY` / `CENTRAL_SECONDARY` env). Secondary is optional — press Enter to leave it empty when there is no LAN mirror (do not keep a dead IP).
 9. Copies all `custom_components` / `www` / themes / **mc-shell** (custom-sidebar + card-mod) into HA, writes `secrets.yaml`, merges configuration seed, force-reseeds Core Configurator.
 10. Best-effort **Mosquitto** + **MQTT**, **Alleycat** default theme, **HACS** component (when HA can reach GitHub), sidebar title **Mission Control**.
+
+After HA is up, Registration auto-pushes the peer snapshot to MCS on Core Configurator Save (peer keys) and on `registration.sync_now`; MCS fans out to GBN / Net Time. See [`Master Control Server Config Steps.md`](Master%20Control%20Server%20Config%20Steps.md#peer-push--fan-out-smoke-test-on-proxmox-host).
 
 State is stored at `/root/mission-control-install-state.json`.
 

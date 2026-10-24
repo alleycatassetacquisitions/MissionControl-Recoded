@@ -17,6 +17,10 @@ On the **Net Time** card:
 
 NTP itself is always UTC. The timezone setting affects operator display / Offline Sync interpretation; SNTP clients still receive UTC.
 
+## Runtime config from MCS (peer fan-out)
+
+When Registration pushes a peer snapshot to MCS, MCS may `POST /config` to Net Time with `{"host_clock_url":"http://<proxmox>:8721"}` (Bearer = Net Time API token). That updates `NET_TIME_HOST_CLOCK_URL` in memory and persists `/etc/net-time.env`. Deploy/update code into **`/opt/net_time`** (underscore — matches systemd `WorkingDirectory`); a hyphenated `/opt/net-time` path will not be what the unit runs.
+
 ## Install (new Proxmox CT)
 
 Run on the **Proxmox node shell** (Datacenter → the host → **Shell**).

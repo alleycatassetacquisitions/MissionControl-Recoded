@@ -201,12 +201,14 @@ class DeviceLogsResponse(BaseModel):
 class ConfigUpdate(BaseModel):
     """Payload for POST /config pushed by Home Assistant (peer snapshot).
 
-    Central URLs keep existing overwrite semantics (empty string leaves current).
-    Peer fields are stored for fan-out to LXC companions; empty leaves current.
+    central_primary: empty/omitted leaves the current value.
+    central_secondary: omitted leaves current; "" clears a dead secondary;
+    non-empty overwrites. HA peer snapshot always sends this field.
+    Peer fields: empty leaves current; non-empty overwrites for fan-out.
     """
 
     central_primary: str = ""
-    central_secondary: str = ""
+    central_secondary: str | None = None
     # Venue peer snapshot (HA → MCS hub → LXC fan-out)
     mcs_url: str = ""
     gbn_url: str = ""
@@ -222,3 +224,25 @@ class HealthResponse(BaseModel):
     status: str
     central_primary: str = ""
     central_secondary: str = ""
+
+
+class ConfigStatusPeers(BaseModel):
+    """Peer snapshot with secrets redacted."""
+
+    mcs_url: str = ""
+    gbn_url: str = ""
+    net_time_url: str = ""
+    net_time_token: str = ""  # "set" or ""
+    alleycattv_url: str = ""
+    host_clock_url: str = ""
+    mqtt_host: str = ""
+    mqtt_port: str = ""
+
+
+class ConfigStatusResponse(BaseModel):
+    """GET /config/status — Central URLs, redacted peers, last fan-out results."""
+
+    central_primary: str = ""
+    central_secondary: str = ""
+    peers: ConfigStatusPeers
+    last_fanout: dict[str, Any] = {}

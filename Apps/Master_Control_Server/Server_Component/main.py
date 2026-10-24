@@ -7,7 +7,8 @@ Design contracts:
     fans out peer config to LXC companions (GBN, Net Time).
   - Env vars (CENTRAL_PRIMARY_URL, CENTRAL_SECONDARY_URL) are first-boot
     defaults only. HA overwrites them on every setup.
-  - MCS_API_TOKEN guards /players, /events, /game-state, /device-logs, /config.
+  - MCS_API_TOKEN guards /players, /events, /game-state, /device-logs, /config,
+    /config/status.
   - Players are game records, not Home Assistant devices.
   - Central create/update are application/json; delete is soft-deactivate.
   - Active event comes from Central GET /game-state.
@@ -54,6 +55,8 @@ from models import (
     AffiliationCategoryWrite,
     AffiliationChoice,
     AffiliationChoiceWrite,
+    ConfigStatusPeers,
+    ConfigStatusResponse,
     ConfigUpdate,
     DeviceLog,
     DeviceLogsResponse,
@@ -79,6 +82,12 @@ from player_normalize import (
     to_central_update_body,
 )
 
+# Ensure app INFO/WARNING reach journalctl under systemd/uvicorn.
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(levelname)s:%(name)s:%(message)s",
+    force=True,
+)
 _LOGGER = logging.getLogger(__name__)
 
 # ---------------------------------------------------------------------------
@@ -327,6 +336,33 @@ async def health() -> HealthResponse:
     )
 
 
+def _redacted_peers() -> ConfigStatusPeers:
+    token = (_peers.get("net_time_token") or "").strip()
+    return ConfigStatusPeers(
+        mcs_url=_peers.get("mcs_url") or "",
+        gbn_url=_peers.get("gbn_url") or "",
+        net_time_url=_peers.get("net_time_url") or "",
+        net_time_token="set" if token else "",
+        alleycattv_url=_peers.get("alleycattv_url") or "",
+        host_clock_url=_peers.get("host_clock_url") or "",
+        mqtt_host=_peers.get("mqtt_host") or "",
+        mqtt_port=_peers.get("mqtt_port") or "",
+    )
+
+
+@app.get("/config/status", response_model=ConfigStatusResponse, tags=["ops"])
+async def config_status(
+    _token: Annotated[str, Depends(_verify_token)],
+) -> ConfigStatusResponse:
+    """Inspect Central URLs, redacted peers, and last soft-fail fan-out results."""
+    return ConfigStatusResponse(
+        central_primary=_config["central_primary"] or "",
+        central_secondary=_config["central_secondary"] or "",
+        peers=_redacted_peers(),
+        last_fanout=dict(_last_fanout),
+    )
+
+
 @app.post(
     "/config",
     status_code=status.HTTP_204_NO_CONTENT,
@@ -339,8 +375,9 @@ async def update_config(
     """Accept Central URLs + venue peer snapshot; fan-out to LXC companions."""
     if update.central_primary:
         _config["central_primary"] = update.central_primary
-    if update.central_secondary:
-        _config["central_secondary"] = update.central_secondary
+    # None = omit (leave current); "" = clear dead mirror; non-empty = set.
+    if update.central_secondary is not None:
+        _config["central_secondary"] = update.central_secondary.strip()
 
     peer_touched = False
     for key in _PEER_KEYS:
@@ -361,11 +398,12 @@ async def update_config(
     )
 
     if peer_touched or _peers.get("gbn_url") or _peers.get("net_time_url"):
-        global _last_fanout
-        _last_fanout = await fanout_peers(
+        results = await fanout_peers(
             api_token=_config["api_token"],
             peers=dict(_peers),
         )
+        _last_fanout.clear()
+        _last_fanout.update(results)
         _LOGGER.info("MCS peer fan-out results: %s", _last_fanout)
 
 

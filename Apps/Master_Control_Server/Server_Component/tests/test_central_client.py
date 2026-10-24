@@ -249,6 +249,44 @@ async def test_fetch_game_state():
 
 
 @pytest.mark.asyncio
+async def test_fetch_game_state_falls_through_on_primary_404():
+    """Primary 404 should try secondary (bad primary must not brick the venue)."""
+    secondary_payload = {
+        "active_event": {
+            "id": "e2",
+            "name": "Backup",
+            "venue_name": None,
+            "created_at": "2026-01-01T00:00:00Z",
+        },
+        "scoring": {"enabled": False, "started_at": None},
+        "accepting_delayed_scores": False,
+        "server_time_utc": "2026-01-01T02:00:00Z",
+    }
+    call_count = 0
+
+    async def side_effect(method, url, **kwargs):
+        nonlocal call_count
+        call_count += 1
+        if "primary" in url:
+            return _mock_response(None, status_code=404, text="not found")
+        return _mock_response(secondary_payload, status_code=200)
+
+    mock_client = MagicMock()
+    mock_client.request = side_effect
+    mock_cm = MagicMock()
+    mock_cm.__aenter__ = AsyncMock(return_value=mock_client)
+    mock_cm.__aexit__ = AsyncMock(return_value=False)
+
+    with patch("central_client.httpx.AsyncClient", return_value=mock_cm):
+        status, body = await fetch_game_state(
+            "http://primary.example.com", "http://secondary.example.com"
+        )
+    assert call_count == 2
+    assert status == 200
+    assert body["active_event"]["id"] == "e2"
+
+
+@pytest.mark.asyncio
 async def test_set_scoring():
     patcher, mock_client = _patch_client(
         request=_mock_response(

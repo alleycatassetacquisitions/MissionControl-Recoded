@@ -21,7 +21,8 @@ Server** — GBN stores `player_id` and overlays live name/role/affiliations (pl
 | Piece | Owner |
 |---|---|
 | Player records (name, role, affiliations) | Master Control Server / Central |
-| Affiliation catalog (per active event) | Central via MCS; Game Master HA event-keyed cache (`game_master/get_affiliation_catalog`); MCS `POST /config` also updates GBN MCS peer URL/token |
+| Affiliation catalog (per active event) | Central via MCS; Game Master HA event-keyed cache (`game_master/get_affiliation_catalog`) |
+| MCS peer URL/token (runtime) | MCS fan-out `POST /config` with `mcs_base`, `mcs_token`, `public_base` (Bearer = MCS token). Applied via `runtime_config`; empty fields leave current. |
 | Active Event (authoritative) | Central via MCS; Registration sets it |
 | Active Event cache for kiosks | GBN (`data/active_event.json`; Registration `PUT` + MCS read) |
 | Poster CRUD + video + flavor | GBN server (per Event) |

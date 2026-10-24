@@ -576,30 +576,31 @@ print(secret)
 }
 
 mc_prompt_central_urls() {
-  # Prompt once when Central URLs were not passed via env (venue operators).
-  if [[ -n "${CENTRAL_PRIMARY:-}" && -n "${CENTRAL_SECONDARY:-}" ]]; then
+  # Prompt once when Central primary was not passed via env (venue operators).
+  # Secondary may be empty (no LAN mirror) — never force 192.168.1.234.
+  if [[ "${SKIP_CENTRAL_PROMPT:-0}" == "1" ]]; then
+    CENTRAL_PRIMARY="${CENTRAL_PRIMARY:-https://your-cloud-player-api.example.com}"
+    CENTRAL_SECONDARY="${CENTRAL_SECONDARY-}"
     export CENTRAL_PRIMARY CENTRAL_SECONDARY
     return 0
   fi
-  if [[ "${SKIP_CENTRAL_PROMPT:-0}" == "1" ]]; then
-    CENTRAL_PRIMARY="${CENTRAL_PRIMARY:-https://your-cloud-player-api.example.com}"
-    CENTRAL_SECONDARY="${CENTRAL_SECONDARY:-http://192.168.1.234:8090}"
+  if [[ -n "${CENTRAL_PRIMARY:-}" ]]; then
+    # Primary from env; honor secondary as-is (including intentionally empty).
+    CENTRAL_SECONDARY="${CENTRAL_SECONDARY-}"
     export CENTRAL_PRIMARY CENTRAL_SECONDARY
     return 0
   fi
   echo "" >&2
   echo "Central Server URLs (Registration pushes these to MCS on every HA start)." >&2
-  if [[ -z "${CENTRAL_PRIMARY:-}" ]]; then
-    read -r -p "  Central primary URL: " CENTRAL_PRIMARY </dev/tty || true
-  fi
-  if [[ -z "${CENTRAL_SECONDARY:-}" ]]; then
-    read -r -p "  Central secondary URL (LAN mirror, or Enter to skip): " CENTRAL_SECONDARY </dev/tty || true
-  fi
+  echo "Secondary is optional — Enter skips (leave empty when there is no LAN mirror)." >&2
+  read -r -p "  Central primary URL: " CENTRAL_PRIMARY </dev/tty || true
+  read -r -p "  Central secondary URL (LAN mirror, or Enter to skip): " CENTRAL_SECONDARY </dev/tty || true
   CENTRAL_PRIMARY="${CENTRAL_PRIMARY:-https://your-cloud-player-api.example.com}"
-  CENTRAL_SECONDARY="${CENTRAL_SECONDARY:-http://192.168.1.234:8090}"
+  # Trim; keep empty when operator skips — do not substitute a dead default.
+  CENTRAL_SECONDARY="$(echo -n "${CENTRAL_SECONDARY:-}" | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')"
   export CENTRAL_PRIMARY CENTRAL_SECONDARY
   mc_say "Central primary=${CENTRAL_PRIMARY}"
-  mc_say "Central secondary=${CENTRAL_SECONDARY}"
+  mc_say "Central secondary=${CENTRAL_SECONDARY:-"(empty)"}"
 }
 
 mc_ha_force_cc_reseed() {

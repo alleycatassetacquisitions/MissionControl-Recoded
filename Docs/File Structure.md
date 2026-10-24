@@ -287,7 +287,7 @@ Home Assistant gameplay panel: active-event status from MCS `GET /game-state`, t
 
 ### Master Control Server
 
-Proxmox companion FastAPI service. The only Central HTTP adapter. Players (JSON create/PATCH; soft-deactivate), events list + game-state active, teams, scoring/delayed-scores, device logs (`GET /device-logs`), and `POST /config`. Not a Home Assistant process.
+Proxmox companion FastAPI service. The only Central HTTP adapter. Players (JSON create/PATCH; soft-deactivate), events list + game-state active, teams, scoring/delayed-scores, device logs (`GET /device-logs`). Venue peer-config hub: `POST /config` (Central + peer snapshot; soft-fail fan-out to GBN/Net Time) and Bearer `GET /config/status`. Not a Home Assistant process.
 
 **Path:** `Apps\Master_Control_Server\`  
 **On LXC:** `/opt/mcs/` (uvicorn via systemd `mcs`)  
@@ -295,7 +295,7 @@ Proxmox companion FastAPI service. The only Central HTTP adapter. Players (JSON 
 
 ### Net Time
 
-LAN NTP authority (chrony) plus management API for Attempt Online Sync, timezone, and Offline Sync. Privileged Proxmox LXC plus a **host clock agent** on the Proxmox node (Offline Sync fallback). Core Configurator holds URL + token; the `net_time` HA integration proxies websocket commands used by the Core Configurator Net Time card (timezone dropdown, local wall-time status).
+LAN NTP authority (chrony) plus management API for Attempt Online Sync, timezone, and Offline Sync. Privileged Proxmox LXC plus a **host clock agent** on the Proxmox node (Offline Sync fallback). Core Configurator holds URL + token; the `net_time` HA integration proxies websocket commands used by the Core Configurator Net Time card (timezone dropdown, local wall-time status). MCS peer fan-out can update `host_clock_url` via Bearer `POST /config` (DEST `/opt/net_time`, underscore).
 
 **Path:** `Apps\Net_Time\`  
 **On LXC:** `/opt/net_time/` (uvicorn via systemd `net-time`) + chrony  

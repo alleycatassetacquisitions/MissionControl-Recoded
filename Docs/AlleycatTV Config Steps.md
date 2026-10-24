@@ -98,6 +98,8 @@ Seed via [`HomeAssist/secrets.yaml.example`](../HomeAssist/secrets.yaml.example)
 
 AlleycatTV and AlleycatTV Content panels **read** this URL (and Live RTSP) from Core Configurator only — they have no server-IP / RTSP settings UI.
 
+On Core Configurator Save for `alleycattv` or `master_control_server` (and on AlleycatTV setup), the HA integration publishes a **retained** MQTT config to `mc/tv/cmd/all/config` (`server_url`, `mqtt_host`, `mqtt_port`) so Pis pick up year-1 network settings without a separate MCS MQTT client.
+
 ---
 
 ## C. Deploy AlleycatTV onto Home Assistant
