@@ -350,7 +350,7 @@ Merge from [`HomeAssist/configuration.yaml`](../HomeAssist/configuration.yaml): 
 
 1. Settings → Devices & services → Add **Galactic Bounty Network**.
 2. Sidebar **Galactic Bounty Network**: roster pick → Generate → record/upload → create poster.
-3. Hunter/Bounty auto-select built-in poster templates; other roles pick or **Save as new** (Create poster also persists custom chrome). Affiliation control is labeled **Allegiance/NeoCorp**.
+3. Hunter/Bounty auto-select built-in poster templates; other roles pick from the dropdown. **Manage templates** creates/edits/deletes customs (Create poster does not auto-save templates). Affiliation control is labeled **Allegiance/NeoCorp**.
 4. Poster HTML overlays live MCS name/role/neocorp/faction on every read; chrome comes from the poster snapshot (or role built-in).
 5. Registration **Poster** column shows thumb + open link via `/api/gbn/proxy`.
 6. Smoke: `GET http://<gbn-ip>:8100/api/poster-templates` returns hunter + bounty (not 404).

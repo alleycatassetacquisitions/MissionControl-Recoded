@@ -33,6 +33,32 @@ const ACCENT_OPTIONS = [
   ["white", "White"],
 ];
 
+const ACCENT_HEX = {
+  blue: "#5ec8ff",
+  green: "#5eff9a",
+  red: "#ff5e6e",
+  yellow: "#ffe15e",
+  purple: "#b85eff",
+  gold: "#ffc857",
+  cyan: "#5effef",
+  orange: "#ff9a5e",
+  pink: "#ff5ec8",
+  white: "#e8f4ff",
+};
+
+function _emptyChrome(extra = {}) {
+  return {
+    template_id: "",
+    headline: "",
+    subtitle: "",
+    amount_label: "",
+    list_label: "",
+    list_empty: "",
+    accent: "blue",
+    ...extra,
+  };
+}
+
 class GbnPanel extends window.McPanel.Base {
   constructor() {
     super();
@@ -53,10 +79,11 @@ class GbnPanel extends window.McPanel.Base {
     this._comboOpen = false;
     this._templates = [];
     this._activeTemplateId = "";
+    this._activeChrome = _emptyChrome();
+    this._tmplEditId = "";
     this._activeEventId = null;
     this._activeEventName = "";
     this._eventMedia = [];
-    this._lookManuallyToggled = false;
     this._catalog = emptyCatalog();
     this._affValues = {};
     this._affOpen = "";
@@ -248,37 +275,42 @@ class GbnPanel extends window.McPanel.Base {
   }
 
   _readChromeFromForm() {
-    const root = this.shadowRoot;
+    const selId = this.shadowRoot?.getElementById("fld-template")?.value || "";
     return {
-      template_id: root.getElementById("fld-template")?.value || "",
-      headline: (root.getElementById("fld-headline")?.value || "").trim(),
-      subtitle: (root.getElementById("fld-subtitle")?.value || "").trim(),
-      amount_label: (root.getElementById("fld-amount-label")?.value || "").trim(),
-      list_label: (root.getElementById("fld-list-label")?.value || "").trim(),
-      list_empty: (root.getElementById("fld-list-empty")?.value || "").trim(),
-      accent: root.getElementById("fld-accent")?.value || "blue",
+      ...this._activeChrome,
+      template_id: selId || this._activeChrome.template_id || "",
     };
   }
 
   _applyChromeToForm(chrome) {
-    const root = this.shadowRoot;
     if (!chrome) return;
-    const set = (id, val) => {
-      const el = root.getElementById(id);
-      if (el) el.value = val ?? "";
-    };
-    if (chrome.template_id != null) {
-      const sel = root.getElementById("fld-template");
-      if (sel) sel.value = chrome.template_id;
-      this._activeTemplateId = chrome.template_id || "";
-    }
-    set("fld-headline", chrome.headline);
-    set("fld-subtitle", chrome.subtitle);
-    set("fld-amount-label", chrome.amount_label);
-    set("fld-list-label", chrome.list_label);
-    set("fld-list-empty", chrome.list_empty);
-    set("fld-accent", chrome.accent || "blue");
+    const tid = chrome.template_id != null ? chrome.template_id : this._activeTemplateId;
+    this._activeChrome = _emptyChrome({
+      template_id: tid || "",
+      headline: chrome.headline ?? "",
+      subtitle: chrome.subtitle ?? "",
+      amount_label: chrome.amount_label ?? "",
+      list_label: chrome.list_label ?? "",
+      list_empty: chrome.list_empty ?? "",
+      accent: chrome.accent || "blue",
+    });
+    this._activeTemplateId = tid || "";
+    const sel = this.shadowRoot?.getElementById("fld-template");
+    if (sel && tid != null) sel.value = tid;
     this._updateRoleUi();
+  }
+
+  _chromeFromTemplate(tmpl) {
+    if (!tmpl) return _emptyChrome();
+    return _emptyChrome({
+      template_id: tmpl.id,
+      headline: tmpl.headline || "",
+      subtitle: tmpl.subtitle || "",
+      amount_label: tmpl.amount_label || "",
+      list_label: tmpl.list_label || "",
+      list_empty: tmpl.list_empty || "",
+      accent: tmpl.accent || "blue",
+    });
   }
 
   _onTemplateSelected() {
@@ -286,18 +318,11 @@ class GbnPanel extends window.McPanel.Base {
     this._activeTemplateId = id;
     const tmpl = this._templateById(id);
     if (!tmpl) {
+      this._activeChrome = _emptyChrome({ template_id: id });
       this._updateRoleUi();
       return;
     }
-    this._applyChromeToForm({
-      template_id: tmpl.id,
-      headline: tmpl.headline,
-      subtitle: tmpl.subtitle,
-      amount_label: tmpl.amount_label,
-      list_label: tmpl.list_label,
-      list_empty: tmpl.list_empty,
-      accent: tmpl.accent || "blue",
-    });
+    this._applyChromeToForm(this._chromeFromTemplate(tmpl));
   }
 
   _autoSelectTemplateForPlayer() {
@@ -305,51 +330,35 @@ class GbnPanel extends window.McPanel.Base {
     if (role === "hunter" || role === "bounty") {
       const tmpl = this._templateById(role);
       if (tmpl) {
-        this._applyChromeToForm({
-          template_id: tmpl.id,
-          headline: tmpl.headline,
-          subtitle: tmpl.subtitle,
-          amount_label: tmpl.amount_label,
-          list_label: tmpl.list_label,
-          list_empty: tmpl.list_empty,
-          accent: tmpl.accent || "blue",
-        });
+        this._applyChromeToForm(this._chromeFromTemplate(tmpl));
       } else if (role === "hunter") {
-        this._applyChromeToForm({
-          template_id: "hunter",
-          headline: "GUN FOR HIRE",
-          subtitle: "",
-          amount_label: "RATE",
-          list_label: "REASONS TO HIRE",
-          list_empty: "Details pending",
-          accent: "blue",
-        });
+        this._applyChromeToForm(
+          _emptyChrome({
+            template_id: "hunter",
+            headline: "GUN FOR HIRE",
+            amount_label: "RATE",
+            list_label: "REASONS TO HIRE",
+            list_empty: "Details pending",
+          })
+        );
       } else {
-        this._applyChromeToForm({
-          template_id: "bounty",
-          headline: "WANTED",
-          subtitle: "DEAD OR ALIVE",
-          amount_label: "REWARD",
-          list_label: "WANTED FOR",
-          list_empty: "Charges pending",
-          accent: "blue",
-        });
+        this._applyChromeToForm(
+          _emptyChrome({
+            template_id: "bounty",
+            headline: "WANTED",
+            subtitle: "DEAD OR ALIVE",
+            amount_label: "REWARD",
+            list_label: "WANTED FOR",
+            list_empty: "Charges pending",
+          })
+        );
       }
       return;
     }
-    // Neither — operator must pick; clear to prompt
     this._activeTemplateId = "";
     const sel = this.shadowRoot.getElementById("fld-template");
     if (sel) sel.value = "";
-    this._applyChromeToForm({
-      template_id: "",
-      headline: "",
-      subtitle: "",
-      amount_label: "",
-      list_label: "",
-      list_empty: "",
-      accent: "blue",
-    });
+    this._applyChromeToForm(_emptyChrome());
     this._feedback("Player is neither Hunter nor Bounty — pick a poster template", "warn");
   }
 
@@ -362,6 +371,142 @@ class GbnPanel extends window.McPanel.Base {
     });
     this._activeTemplateId = tmpl.id;
     this._fillTemplateSelect();
+  }
+
+  _readChromeFromPopup() {
+    const root = this.shadowRoot;
+    return {
+      name: (root.getElementById("tmpl-name")?.value || "").trim(),
+      headline: (root.getElementById("tmpl-headline")?.value || "").trim(),
+      subtitle: (root.getElementById("tmpl-subtitle")?.value || "").trim(),
+      amount_label: (root.getElementById("tmpl-amount-label")?.value || "").trim(),
+      list_label: (root.getElementById("tmpl-list-label")?.value || "").trim(),
+      list_empty: (root.getElementById("tmpl-list-empty")?.value || "").trim(),
+      accent: root.getElementById("tmpl-accent")?.value || "blue",
+    };
+  }
+
+  _fillPopupTemplateSelect() {
+    const sel = this.shadowRoot?.getElementById("tmpl-edit-select");
+    if (!sel) return;
+    const prev = this._tmplEditId;
+    sel.innerHTML = `<option value="">— New template —</option>`;
+    for (const t of this._templates) {
+      const opt = document.createElement("option");
+      opt.value = t.id;
+      opt.textContent = t.builtin ? `${t.name} (built-in)` : t.name;
+      sel.appendChild(opt);
+    }
+    if (prev && [...sel.options].some((o) => o.value === prev)) {
+      sel.value = prev;
+    } else {
+      sel.value = "";
+    }
+  }
+
+  _loadTemplateIntoPopup(id) {
+    const root = this.shadowRoot;
+    this._tmplEditId = id || "";
+    const tmpl = id ? this._templateById(id) : null;
+    const set = (elId, val) => {
+      const el = root.getElementById(elId);
+      if (el) el.value = val ?? "";
+    };
+    if (tmpl) {
+      set("tmpl-name", tmpl.name || "");
+      set("tmpl-headline", tmpl.headline || "");
+      set("tmpl-subtitle", tmpl.subtitle || "");
+      set("tmpl-amount-label", tmpl.amount_label || "");
+      set("tmpl-list-label", tmpl.list_label || "");
+      set("tmpl-list-empty", tmpl.list_empty || "");
+      set("tmpl-accent", tmpl.accent || "blue");
+    } else {
+      set("tmpl-name", "");
+      set("tmpl-headline", "");
+      set("tmpl-subtitle", "");
+      set("tmpl-amount-label", "REWARD");
+      set("tmpl-list-label", "WANTED FOR");
+      set("tmpl-list-empty", "Charges pending");
+      set("tmpl-accent", "blue");
+    }
+    const sel = root.getElementById("tmpl-edit-select");
+    if (sel) sel.value = this._tmplEditId;
+    this._syncPopupBuiltinUi();
+    this._updateTemplatePreview();
+  }
+
+  _syncPopupBuiltinUi() {
+    const root = this.shadowRoot;
+    const tmpl = this._templateById(this._tmplEditId);
+    const builtin = !!(tmpl && tmpl.builtin);
+    const isNew = !this._tmplEditId;
+    const btnSave = root.getElementById("btn-tmpl-save");
+    const btnDup = root.getElementById("btn-tmpl-duplicate");
+    const btnDel = root.getElementById("btn-tmpl-delete");
+    const note = root.getElementById("tmpl-builtin-note");
+    if (btnSave) {
+      btnSave.disabled = builtin;
+      btnSave.textContent = isNew ? "Create template" : "Save changes";
+    }
+    if (btnDup) btnDup.hidden = isNew;
+    if (btnDel) {
+      btnDel.hidden = isNew || builtin;
+      btnDel.disabled = builtin;
+    }
+    if (note) {
+      note.hidden = !builtin;
+      note.textContent = builtin
+        ? "Built-in templates cannot be overwritten or deleted — use Duplicate to fork."
+        : "";
+    }
+  }
+
+  _updateTemplatePreview() {
+    const root = this.shadowRoot;
+    const preview = root?.getElementById("tmpl-preview");
+    if (!preview) return;
+    const chrome = this._readChromeFromPopup();
+    const accent = ACCENT_HEX[chrome.accent] || ACCENT_HEX.blue;
+    const headline = chrome.headline || "HEADLINE";
+    const subtitle = chrome.subtitle || "";
+    const amountLabel = chrome.amount_label || "REWARD";
+    const listLabel = chrome.list_label || "WANTED FOR";
+    const listEmpty = chrome.list_empty || "Charges pending";
+    preview.style.setProperty("--tmpl-accent", accent);
+    preview.innerHTML = `
+      <div class="tmpl-preview-inner">
+        <div class="tmpl-preview-headline">${this._esc(headline)}</div>
+        ${subtitle ? `<div class="tmpl-preview-sub">${this._esc(subtitle)}</div>` : ""}
+        <div class="tmpl-preview-photo"></div>
+        <div class="tmpl-preview-amount">
+          <span class="tmpl-preview-amount-label">${this._esc(amountLabel)}</span>
+          <span class="tmpl-preview-amount-val">₩1,000,000</span>
+        </div>
+        <div class="tmpl-preview-list-label">${this._esc(listLabel)}</div>
+        <div class="tmpl-preview-list-empty">${this._esc(listEmpty)}</div>
+      </div>
+    `;
+  }
+
+  _esc(s) {
+    return String(s ?? "")
+      .replace(/&/g, "&amp;")
+      .replace(/</g, "&lt;")
+      .replace(/>/g, "&gt;")
+      .replace(/"/g, "&quot;");
+  }
+
+  _openTemplateManager() {
+    const root = this.shadowRoot;
+    this._fillPopupTemplateSelect();
+    const startId = this._activeTemplateId || "";
+    this._loadTemplateIntoPopup(startId);
+    root.getElementById("template-dialog").style.display = "flex";
+  }
+
+  _closeTemplateManager() {
+    const dlg = this.shadowRoot?.getElementById("template-dialog");
+    if (dlg) dlg.style.display = "none";
   }
 
   /**
@@ -399,36 +544,125 @@ class GbnPanel extends window.McPanel.Base {
       return null;
     }
     this._mergeTemplateIntoList(body);
-    // Refresh from server so list matches disk; keep selection on new id
     this._activeTemplateId = body.id;
     await this._loadTemplates();
-    this._applyChromeToForm({
-      template_id: body.id,
-      headline: body.headline,
-      subtitle: body.subtitle,
-      amount_label: body.amount_label,
-      list_label: body.list_label,
-      list_empty: body.list_empty,
-      accent: body.accent || "blue",
-    });
+    this._applyChromeToForm(this._chromeFromTemplate(body));
     return body;
   }
 
-  async _saveTemplateAsNew() {
-    const chrome = this._readChromeFromForm();
+  async _updateTemplateFromChrome(templateId, chrome, name) {
+    const headline = (chrome?.headline || "").trim();
+    if (!headline) {
+      this._feedback("Headline required to save a template", "warn");
+      return null;
+    }
+    const { ok, status, body } = await this._api(
+      `/api/poster-templates/${encodeURIComponent(templateId)}`,
+      {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          name: (name || headline).trim().slice(0, 80) || "Custom poster",
+          headline,
+          subtitle: (chrome.subtitle || "").trim(),
+          amount_label: (chrome.amount_label || "").trim() || "REWARD",
+          list_label: (chrome.list_label || "").trim() || "WANTED FOR",
+          list_empty: (chrome.list_empty || "").trim() || "Charges pending",
+          accent: chrome.accent || "blue",
+        }),
+      }
+    );
+    if (!ok || !body || typeof body !== "object" || !body.id) {
+      this._feedback(
+        `Update template failed (${status}): ${JSON.stringify(body)}`,
+        "err"
+      );
+      return null;
+    }
+    this._mergeTemplateIntoList(body);
+    this._activeTemplateId = body.id;
+    await this._loadTemplates();
+    this._applyChromeToForm(this._chromeFromTemplate(body));
+    return body;
+  }
+
+  async _saveTemplateFromPopup() {
+    const chrome = this._readChromeFromPopup();
     if (!chrome.headline) {
       return this._feedback("Headline required to save a template", "warn");
     }
-    const name = window.prompt(
-      "Name for the new template:",
-      chrome.headline.slice(0, 40) || "Custom poster"
-    );
-    if (!name || !name.trim()) return;
+    const name = chrome.name || chrome.headline.slice(0, 40) || "Custom poster";
+    const existing = this._templateById(this._tmplEditId);
+    if (existing?.builtin) {
+      return this._feedback("Built-in templates cannot be overwritten — use Duplicate", "warn");
+    }
     try {
-      const body = await this._createTemplateFromChrome(chrome, name.trim());
-      if (body) this._feedback(`Template saved: ${body.name}`, "ok");
+      let body;
+      if (existing && !existing.builtin) {
+        body = await this._updateTemplateFromChrome(existing.id, chrome, name);
+      } else {
+        body = await this._createTemplateFromChrome(chrome, name);
+      }
+      if (body) {
+        this._feedback(`Template saved: ${body.name}`, "ok");
+        this._fillPopupTemplateSelect();
+        this._loadTemplateIntoPopup(body.id);
+      }
     } catch (err) {
       this._feedback(`Save template failed: ${this._errText(err)}`, "err");
+    }
+  }
+
+  async _duplicateTemplateFromPopup() {
+    const chrome = this._readChromeFromPopup();
+    if (!chrome.headline) {
+      return this._feedback("Headline required to duplicate a template", "warn");
+    }
+    const baseName = chrome.name || chrome.headline.slice(0, 40) || "Custom poster";
+    const name = `${baseName} copy`.slice(0, 80);
+    try {
+      const body = await this._createTemplateFromChrome(chrome, name);
+      if (body) {
+        this._feedback(`Template duplicated: ${body.name}`, "ok");
+        this._fillPopupTemplateSelect();
+        this._loadTemplateIntoPopup(body.id);
+      }
+    } catch (err) {
+      this._feedback(`Duplicate failed: ${this._errText(err)}`, "err");
+    }
+  }
+
+  async _deleteTemplateFromPopup() {
+    const id = this._tmplEditId;
+    const tmpl = this._templateById(id);
+    if (!tmpl || tmpl.builtin) {
+      return this._feedback("Built-in templates cannot be deleted", "warn");
+    }
+    if (!window.confirm(`Delete template “${tmpl.name}”? This cannot be undone.`)) {
+      return;
+    }
+    try {
+      const { ok, status, body } = await this._api(
+        `/api/poster-templates/${encodeURIComponent(id)}`,
+        { method: "DELETE" }
+      );
+      if (!ok) {
+        return this._feedback(
+          `Delete failed (${status}): ${JSON.stringify(body)}`,
+          "err"
+        );
+      }
+      this._templates = this._templates.filter((t) => t.id !== id);
+      if (this._activeTemplateId === id) {
+        this._activeTemplateId = "";
+        this._applyChromeToForm(_emptyChrome());
+      }
+      this._fillTemplateSelect();
+      this._fillPopupTemplateSelect();
+      this._loadTemplateIntoPopup("");
+      this._feedback(`Deleted template: ${tmpl.name}`, "ok");
+    } catch (err) {
+      this._feedback(`Delete failed: ${this._errText(err)}`, "err");
     }
   }
 
@@ -442,20 +676,6 @@ class GbnPanel extends window.McPanel.Base {
     const headline = chrome.headline || "—";
     const accent = chrome.accent || "blue";
     summary.textContent = `Using: ${name} · ${headline} · ${accent}`;
-  }
-
-  _syncLookDisclosure() {
-    const root = this.shadowRoot;
-    const details = root?.getElementById("look-details");
-    if (!details) return;
-    const role = this._getRole();
-    // Neither starts expanded; hunter/bounty stay collapsed unless operator opened it.
-    if (role === "neither") {
-      details.open = true;
-    } else if (!this._lookManuallyToggled) {
-      details.open = false;
-    }
-    this._updateLookSummary();
   }
 
   _updateRoleUi() {
@@ -483,12 +703,12 @@ class GbnPanel extends window.McPanel.Base {
     if (hint) {
       if (role === "neither") {
         hint.textContent =
-          "Neither Hunter nor Bounty — select a template or edit chrome and Save as new.";
+          "Neither Hunter nor Bounty — select a template (manage templates to create or edit).";
       } else {
-        hint.textContent = `Auto-selected ${role} template — edit chrome and Save as new to fork.`;
+        hint.textContent = `Auto-selected ${role} template — use Manage templates to fork or edit customs.`;
       }
     }
-    this._syncLookDisclosure();
+    this._updateLookSummary();
   }
 
   _posterUrlForPlayer(playerId) {
@@ -555,7 +775,6 @@ class GbnPanel extends window.McPanel.Base {
   async _selectPlayerById(id) {
     const player = this._players.find((p) => String(p.id) === id) || null;
     this._selected = player;
-    this._lookManuallyToggled = false;
     this._setComboOpen(false);
     const root = this.shadowRoot;
     const input = root.getElementById("player-combo-input");
@@ -1228,12 +1447,12 @@ class GbnPanel extends window.McPanel.Base {
     if (this._getRole() === "neither") {
       if (!chrome.template_id || !selectedTmpl) {
         return this._feedback(
-          "Select a poster template, or Save as new template before Create",
+          "Select a poster template before Create (or manage templates to make one)",
           "warn"
         );
       }
     } else if (!chrome.template_id && !chrome.headline) {
-      return this._feedback("Select a poster template (or set a headline) first", "warn");
+      return this._feedback("Select a poster template first", "warn");
     }
 
     const { snaps, neocorp, faction } = await this._syncAffiliationsFromValues();
@@ -1384,6 +1603,9 @@ class GbnPanel extends window.McPanel.Base {
           background: var(--card-background-color, #111); padding: 1rem;
           width: min(420px, 90vw); border: 1px solid var(--divider-color);
         }
+        .dialog-inner.wide {
+          width: min(720px, 94vw); max-height: 90vh; overflow: auto;
+        }
         .hint { font-size: 0.7rem; opacity: 0.65; margin-top: 0.35rem; }
         .event-chip {
           font-size: 0.8rem; margin: 0 0 0.75rem; padding: 0.4rem 0.6rem;
@@ -1391,18 +1613,58 @@ class GbnPanel extends window.McPanel.Base {
         }
         .event-chip.ok { border-color: #6dffb0; color: #6dffb0; }
         .event-chip.warn { border-color: #ffd166; color: #ffd166; }
-        details.look {
-          margin-bottom: 0.75rem;
-          border: 1px solid var(--divider-color, #1f3a44);
-          border-radius: 3px; padding: 0.35rem 0.55rem 0.55rem;
+        .tmpl-row {
+          display: grid; grid-template-columns: 1fr auto; gap: 0.5rem;
+          align-items: end; margin-bottom: 0.35rem;
         }
-        details.look > summary {
-          cursor: pointer; list-style: none;
-          font-size: 0.8rem; letter-spacing: 0.08em; text-transform: uppercase;
-          color: var(--ac-cyan, #00e5ff); padding: 0.35rem 0;
-        }
-        details.look > summary::-webkit-details-marker { display: none; }
+        .tmpl-row button { width: auto; white-space: nowrap; }
         #look-summary { font-size: 0.75rem; opacity: 0.75; margin: 0 0 0.35rem; }
+        .tmpl-dialog-grid {
+          display: grid; grid-template-columns: 1fr 1fr; gap: 1rem;
+          margin-top: 0.5rem;
+        }
+        @media (max-width: 640px) {
+          .tmpl-dialog-grid { grid-template-columns: 1fr; }
+        }
+        #tmpl-preview {
+          --tmpl-accent: #5ec8ff;
+          background: #0a0e12;
+          border: 2px solid var(--tmpl-accent);
+          border-radius: 3px;
+          min-height: 280px;
+          padding: 0.75rem;
+        }
+        .tmpl-preview-inner { text-align: center; }
+        .tmpl-preview-headline {
+          font-size: 1.35rem; font-weight: 700; letter-spacing: 0.12em;
+          color: var(--tmpl-accent); text-transform: uppercase;
+        }
+        .tmpl-preview-sub {
+          font-size: 0.75rem; letter-spacing: 0.16em; opacity: 0.85;
+          margin-top: 0.2rem; text-transform: uppercase;
+        }
+        .tmpl-preview-photo {
+          margin: 0.75rem auto; width: 70%; aspect-ratio: 3/4;
+          background: linear-gradient(160deg, #1a2430, #0d1218);
+          border: 1px solid color-mix(in srgb, var(--tmpl-accent) 45%, transparent);
+        }
+        .tmpl-preview-amount { margin-top: 0.55rem; }
+        .tmpl-preview-amount-label {
+          display: block; font-size: 0.65rem; letter-spacing: 0.14em;
+          color: var(--tmpl-accent); text-transform: uppercase;
+        }
+        .tmpl-preview-amount-val {
+          font-size: 1.05rem; font-weight: 600; color: #ffe15e;
+        }
+        .tmpl-preview-list-label {
+          margin-top: 0.55rem; font-size: 0.65rem; letter-spacing: 0.12em;
+          color: var(--tmpl-accent); text-transform: uppercase;
+        }
+        .tmpl-preview-list-empty {
+          font-size: 0.8rem; opacity: 0.7; margin-top: 0.25rem;
+        }
+        #tmpl-builtin-note { color: #ffd166; margin-top: 0.5rem; }
+        button:disabled { opacity: 0.45; cursor: not-allowed; }
         .media-table { width: 100%; border-collapse: collapse; font-size: 0.85rem; }
         .media-table th, .media-table td {
           text-align: left; padding: 0.4rem 0.35rem;
@@ -1469,47 +1731,14 @@ class GbnPanel extends window.McPanel.Base {
           <section class="card">
             <h2>Poster copy</h2>
             <p id="look-summary">Using: —</p>
-            <details class="look" id="look-details">
-              <summary>Customize poster look</summary>
-              <label for="fld-template">Poster template</label>
+            <label for="fld-template">Poster template</label>
+            <div class="tmpl-row">
               <select id="fld-template">
                 <option value="">— Select template —</option>
               </select>
-              <p class="hint" id="template-hint">Hunter/Bounty auto-select; other roles pick a template.</p>
-              <div class="row">
-                <div>
-                  <label for="fld-headline">Headline title</label>
-                  <input id="fld-headline" placeholder="WANTED / GUN FOR HIRE / …" />
-                </div>
-                <div>
-                  <label for="fld-subtitle">Subtitle (optional)</label>
-                  <input id="fld-subtitle" placeholder="DEAD OR ALIVE" />
-                </div>
-              </div>
-              <div class="row">
-                <div>
-                  <label for="fld-amount-label">Amount label</label>
-                  <input id="fld-amount-label" placeholder="REWARD / RATE" />
-                </div>
-                <div>
-                  <label for="fld-list-label">List label</label>
-                  <input id="fld-list-label" placeholder="WANTED FOR / REASONS TO HIRE" />
-                </div>
-              </div>
-              <label for="fld-list-empty">Empty-list placeholder</label>
-              <input id="fld-list-empty" placeholder="Charges pending" />
-              <label for="fld-accent">Accent color (titles &amp; borders)</label>
-              <select id="fld-accent">
-                ${ACCENT_OPTIONS.map(
-                  ([slug, label]) =>
-                    `<option value="${slug}"${slug === "blue" ? " selected" : ""}>${label}</option>`
-                ).join("")}
-              </select>
-              <div class="actions" style="margin-top:0.5rem">
-                <button type="button" id="btn-template-save">Save as new template</button>
-              </div>
-              <p class="hint">Required before Create if you changed chrome for a non-Hunter/Bounty player.</p>
-            </details>
+              <button type="button" id="btn-manage-templates">Manage templates</button>
+            </div>
+            <p class="hint" id="template-hint">Hunter/Bounty auto-select; other roles pick a template.</p>
             <label id="lbl-amount-field" for="fld-bounty">REWARD (₩)</label>
             <input id="fld-bounty" type="number" min="0" step="10000" value="1000000" />
             <label id="lbl-list-field" for="fld-crimes">WANTED FOR (one per line)</label>
@@ -1605,6 +1834,56 @@ class GbnPanel extends window.McPanel.Base {
           </div>
         </div>
       </div>
+
+      <div class="dialog" id="template-dialog">
+        <div class="dialog-inner wide">
+          <h2 style="margin-top:0">Manage poster templates</h2>
+          <label for="tmpl-edit-select">Template</label>
+          <select id="tmpl-edit-select">
+            <option value="">— New template —</option>
+          </select>
+          <p class="hint" id="tmpl-builtin-note" hidden></p>
+          <div class="tmpl-dialog-grid">
+            <div>
+              <label for="tmpl-name">Name</label>
+              <input id="tmpl-name" placeholder="Custom poster" />
+              <label for="tmpl-headline">Headline title</label>
+              <input id="tmpl-headline" placeholder="WANTED / GUN FOR HIRE / …" />
+              <label for="tmpl-subtitle">Subtitle (optional)</label>
+              <input id="tmpl-subtitle" placeholder="DEAD OR ALIVE" />
+              <div class="row" style="grid-template-columns:1fr 1fr">
+                <div>
+                  <label for="tmpl-amount-label">Amount label</label>
+                  <input id="tmpl-amount-label" placeholder="REWARD / RATE" />
+                </div>
+                <div>
+                  <label for="tmpl-list-label">List label</label>
+                  <input id="tmpl-list-label" placeholder="WANTED FOR / REASONS TO HIRE" />
+                </div>
+              </div>
+              <label for="tmpl-list-empty">Empty-list placeholder</label>
+              <input id="tmpl-list-empty" placeholder="Charges pending" />
+              <label for="tmpl-accent">Accent color (titles &amp; borders)</label>
+              <select id="tmpl-accent">
+                ${ACCENT_OPTIONS.map(
+                  ([slug, label]) =>
+                    `<option value="${slug}"${slug === "blue" ? " selected" : ""}>${label}</option>`
+                ).join("")}
+              </select>
+            </div>
+            <div>
+              <label>Preview</label>
+              <div id="tmpl-preview"></div>
+            </div>
+          </div>
+          <div class="actions">
+            <button type="button" class="primary" id="btn-tmpl-save">Create template</button>
+            <button type="button" id="btn-tmpl-duplicate" hidden>Duplicate</button>
+            <button type="button" class="danger" id="btn-tmpl-delete" hidden>Delete</button>
+            <button type="button" id="btn-tmpl-close">Close</button>
+          </div>
+        </div>
+      </div>
     `;
 
     const root = this.shadowRoot;
@@ -1628,28 +1907,29 @@ class GbnPanel extends window.McPanel.Base {
     root.getElementById("fld-upload").onchange = (ev) => this._onUpload(ev);
     root.getElementById("fld-template").onchange = () => {
       this._onTemplateSelected();
-      this._updateLookSummary();
     };
-    root.getElementById("btn-template-save").onclick = () => this._saveTemplateAsNew();
-    const lookDetails = root.getElementById("look-details");
-    if (lookDetails) {
-      lookDetails.addEventListener("toggle", () => {
-        this._lookManuallyToggled = true;
-      });
-    }
+    root.getElementById("btn-manage-templates").onclick = () => this._openTemplateManager();
+    root.getElementById("tmpl-edit-select").onchange = () => {
+      this._loadTemplateIntoPopup(root.getElementById("tmpl-edit-select").value || "");
+    };
     for (const id of [
-      "fld-headline",
-      "fld-subtitle",
-      "fld-amount-label",
-      "fld-list-label",
-      "fld-list-empty",
-      "fld-accent",
+      "tmpl-name",
+      "tmpl-headline",
+      "tmpl-subtitle",
+      "tmpl-amount-label",
+      "tmpl-list-label",
+      "tmpl-list-empty",
+      "tmpl-accent",
     ]) {
       const el = root.getElementById(id);
       if (!el) continue;
-      el.oninput = () => this._updateRoleUi();
-      el.onchange = () => this._updateLookSummary();
+      el.oninput = () => this._updateTemplatePreview();
+      el.onchange = () => this._updateTemplatePreview();
     }
+    root.getElementById("btn-tmpl-save").onclick = () => this._saveTemplateFromPopup();
+    root.getElementById("btn-tmpl-duplicate").onclick = () => this._duplicateTemplateFromPopup();
+    root.getElementById("btn-tmpl-delete").onclick = () => this._deleteTemplateFromPopup();
+    root.getElementById("btn-tmpl-close").onclick = () => this._closeTemplateManager();
     this._fillTemplateSelect();
     this._paintActiveEvent();
     this._paintEventMedia();

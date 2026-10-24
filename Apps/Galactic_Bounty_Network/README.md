@@ -43,11 +43,11 @@ Chrome (headline, optional subtitle, amount label, list label) is selected at in
 |---|---|
 | Hunter | Auto-select built-in `hunter` (`GUN FOR HIRE` / `RATE` / `REASONS TO HIRE`) |
 | Bounty | Auto-select built-in `bounty` (`WANTED` / `DEAD OR ALIVE` / `REWARD` / `WANTED FOR`) |
-| Neither | Operator picks a template or edits chrome and **Save as new** before Create |
+| Neither | Operator picks a template before Create |
 
-Built-ins cannot be overwritten; **Save as new** always forks (Create poster does **not** auto-save templates). Chrome is **snapshotted** onto each poster at create time. Custom templates keep that snapshot; built-in hunter/bounty chrome follows live MCS role overlays on read.
+**Manage templates** (one-click popup on the GBN panel) creates, edits, duplicates, and deletes custom chrome presets (live preview of headline / labels / accent). Built-ins cannot be overwritten or deleted — **Duplicate** forks them. Create poster does **not** auto-save templates. Chrome is **snapshotted** onto each poster at create time. Custom templates keep that snapshot; built-in hunter/bounty chrome follows live MCS role overlays on read.
 
-Subject affiliations are **select-only** per category from the active event’s Game Master catalog (Allegiance, Faction, or any operator-defined category) — not a baked-in NeoCorp list. Create/rename choices in Game Master; intake does not create novel Central choices. Capture chrome (incl. **accent color** for titles/borders) lives under **Customize poster look** (collapsed for Hunter/Bounty).
+Subject affiliations are **select-only** per category from the active event’s Game Master catalog (Allegiance, Faction, or any operator-defined category) — not a baked-in NeoCorp list. Create/rename choices in Game Master; intake does not create novel Central choices.
 
 ### Event-scoped storage
 

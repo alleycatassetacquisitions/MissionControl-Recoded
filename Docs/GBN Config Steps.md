@@ -102,9 +102,10 @@ Restart HA (Registration custom component change needs a restart). Hard-refresh 
 2. In **Registration**, set an **active Event** before capture — this also pushes the Event id/name to GBN for AlleycatTV kiosks.
 3. Sidebar **Galactic Bounty Network**: confirm the active-event chip → pick a Registration roster player → Generate → record/upload → create poster.
 4. **Subject:** affiliation control is labeled **Allegiance/NeoCorp** (same values as before).
-5. **Poster copy** + **Customize poster look:**
-   - Hunter / Bounty: look section starts collapsed (auto-selected built-in).
-   - Other roles: look section starts open — pick a template, or edit chrome and **Save as new template** before Create (Create does **not** auto-save templates).
+5. **Poster copy** + **Manage templates:**
+   - Hunter / Bounty: auto-selected built-in template.
+   - Other roles: pick a template from the dropdown before Create.
+   - **Manage templates** opens a popup to create/edit/duplicate/delete customs (live chrome preview). Built-ins cannot be overwritten — use Duplicate to fork. Create does **not** auto-save templates.
    - Chrome is snapshotted onto the poster at create time.
 6. **Event media** card: shows **Event name** (e.g. Development Event) with UUID muted; clip counts / sizes; **Export clips** (zip of `{player_id}.*` only); **Delete** an event’s media + posters.
 7. Open `/poster/player/{id}` on the GBN public URL (or via the success link). The path stays player-scoped; GBN resolves the clip against the **active Event** on disk (`media/events/{event_id}/videos/…`).
@@ -112,7 +113,7 @@ Restart HA (Registration custom component change needs a restart). Hard-refresh 
 
 Panel API traffic goes through `/api/gbn/proxy/...` only — no browser LAN fetch.
 
-Templates API (proxied): `GET/POST /api/gbn/proxy/api/poster-templates`.  
+Templates API (proxied): `GET/POST/PUT/DELETE /api/gbn/proxy/api/poster-templates` (PUT/DELETE non-builtin only).  
 Event media (proxied): `GET /api/gbn/proxy/api/events/media?ensure_event_id=&ensure_event_name=`, export/delete under `/api/events/{id}/…`.  
 Active Event (proxied): `GET/PUT /api/gbn/proxy/api/events/active`.
 
@@ -171,7 +172,7 @@ Display machine: open `http://<gbn-ip>:8100/active-players` (iframe paths are sa
 - [ ] Active event set in Registration; `GET /api/events/active` returns that id/name (`source` may be `registration`, `mcs`, or `gbn_cache`)
 - [ ] GBN panel shows active-event chip; Event media shows **Event name** (not only UUID) with ACTIVE badge
 - [ ] Create poster in HA panel for a known MCS player (clips land under `media/events/{id}/videos/`)
-- [ ] Hunter / Bounty auto-select built-in templates; neither-role player Save as new before Create, then see the custom template in the dropdown
+- [ ] Hunter / Bounty auto-select built-in templates; neither-role player picks a template (create via Manage templates if needed) before Create
 - [ ] Custom headline / amount / list labels appear on `/poster/player/{id}`
 - [ ] Event media: sizes refresh, Export clips downloads a zip, Delete removes that event folder
 - [ ] Change player name in Registration → reload poster page → name updates (MCS overlay)
