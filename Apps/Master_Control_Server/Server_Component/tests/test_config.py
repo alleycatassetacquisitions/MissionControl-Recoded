@@ -87,3 +87,53 @@ def test_config_no_body_fields_defaults_to_empty_strings(
     assert resp.status_code == 204
     # Empty-string default does not overwrite
     assert _config["central_primary"] == "http://existing.example.com"
+
+
+def test_config_stores_peer_snapshot(client: TestClient, auth_headers: dict, monkeypatch):
+    """Non-empty peer fields are stored; fan-out is invoked."""
+    from main import _peers
+
+    calls: list[dict] = []
+
+    async def _fake_fanout(*, api_token: str, peers: dict):
+        calls.append({"api_token": api_token, "peers": dict(peers)})
+        return {"gbn": {"ok": True, "status": 204}}
+
+    monkeypatch.setattr("main.fanout_peers", _fake_fanout)
+    resp = client.post(
+        "/config",
+        json={
+            "mcs_url": "http://10.10.50.110:8700",
+            "gbn_url": "http://10.10.50.112:8100",
+            "net_time_url": "http://10.10.50.113:8720",
+            "net_time_token": "nt-secret",
+            "alleycattv_url": "http://10.10.50.114:8000",
+            "host_clock_url": "http://10.10.50.205:8721",
+        },
+        headers=auth_headers,
+    )
+    assert resp.status_code == 204
+    assert _peers["mcs_url"] == "http://10.10.50.110:8700"
+    assert _peers["gbn_url"] == "http://10.10.50.112:8100"
+    assert _peers["host_clock_url"] == "http://10.10.50.205:8721"
+    assert len(calls) == 1
+    assert calls[0]["peers"]["gbn_url"] == "http://10.10.50.112:8100"
+
+
+def test_config_empty_peer_does_not_overwrite(
+    client: TestClient, auth_headers: dict, monkeypatch
+):
+    from main import _peers
+
+    _peers["gbn_url"] = "http://original-gbn:8100"
+
+    async def _fake_fanout(*, api_token: str, peers: dict):
+        return {}
+
+    monkeypatch.setattr("main.fanout_peers", _fake_fanout)
+    client.post(
+        "/config",
+        json={"gbn_url": "", "central_primary": "http://p.example"},
+        headers=auth_headers,
+    )
+    assert _peers["gbn_url"] == "http://original-gbn:8100"

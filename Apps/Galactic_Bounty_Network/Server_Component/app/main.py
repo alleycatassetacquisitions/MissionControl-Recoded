@@ -33,12 +33,14 @@ from app.event_stores import EventPosterStores
 from app.models import ActivePlayersState
 from app.routers import (
     active_players,
+    config as config_routes,
     events_media,
     flavor,
     intake,
     posters,
     templates as template_routes,
 )
+from app.runtime_config import load_persisted
 from app.template_store import TemplateStore
 
 logging.basicConfig(
@@ -82,11 +84,13 @@ app.include_router(template_routes.router)
 app.include_router(active_players.router)
 app.include_router(flavor.router)
 app.include_router(intake.router)
+app.include_router(config_routes.router)
 
 
 @app.on_event("startup")
 async def startup() -> None:
     DATA_DIR.mkdir(parents=True, exist_ok=True)
+    load_persisted()
     Path(DATA_DIR, "events").mkdir(parents=True, exist_ok=True)
     for sub in MEDIA_SUBDIRS:
         Path(MEDIA_BASE, sub).mkdir(parents=True, exist_ok=True)

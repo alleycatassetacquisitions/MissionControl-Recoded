@@ -3,22 +3,26 @@
 Design contracts:
   - Net Time is a Proxmox companion. It is NOT a Home Assistant process.
   - chrony serves NTP/SNTP on UDP 123; this API manages status, timezone, Offline Sync.
-  - NET_TIME_API_TOKEN guards /status, /sync, /timezone. /health is open.
+  - NET_TIME_API_TOKEN guards /status, /sync, /timezone, /config. /health is open.
   - Offline Sync may set the Proxmox host clock via NET_TIME_HOST_CLOCK_URL when the
     LXC cannot call settimeofday (normal on Proxmox).
+  - POST /config (MCS peer fan-out) updates host_clock_url at runtime and persists
+    /etc/net-time.env.
 """
 from __future__ import annotations
 
 import logging
 import os
 from datetime import datetime, timezone
+from pathlib import Path
 from typing import Annotated
 
 from fastapi import Depends, FastAPI, HTTPException, Security, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 
-from chrony_ops import ChronyOps, SystemChronyOps
+from chrony_ops import ChronyOps, SystemChronyOps, get_host_clock_url, set_host_clock_url
 from models import (
+    ConfigUpdate,
     HealthResponse,
     StatusResponse,
     SyncRequest,
@@ -84,9 +88,62 @@ def _parse_iso8601(value: str) -> datetime:
         ) from err
 
 
+_ETC_ENV = Path("/etc/net-time.env")
+
+
+def _persist_env(*, host_clock_url: str | None = None, api_token: str | None = None) -> None:
+    """Best-effort merge into /etc/net-time.env."""
+    try:
+        existing: dict[str, str] = {}
+        order: list[str] = []
+        if _ETC_ENV.is_file():
+            for line in _ETC_ENV.read_text(encoding="utf-8").splitlines():
+                if not line.strip() or line.strip().startswith("#") or "=" not in line:
+                    continue
+                key, _, value = line.partition("=")
+                key = key.strip()
+                if key not in existing:
+                    order.append(key)
+                existing[key] = value
+        if host_clock_url is not None:
+            if "NET_TIME_HOST_CLOCK_URL" not in existing:
+                order.append("NET_TIME_HOST_CLOCK_URL")
+            existing["NET_TIME_HOST_CLOCK_URL"] = host_clock_url
+        if api_token is not None:
+            if "NET_TIME_API_TOKEN" not in existing:
+                order.append("NET_TIME_API_TOKEN")
+            existing["NET_TIME_API_TOKEN"] = api_token
+        text = "".join(f"{k}={existing[k]}\n" for k in order)
+        _ETC_ENV.write_text(text, encoding="utf-8")
+        _LOGGER.info("Net Time updated %s", _ETC_ENV)
+    except Exception as exc:  # noqa: BLE001
+        _LOGGER.warning("Net Time env persist skipped: %s", exc)
+
+
 @app.get("/health", response_model=HealthResponse, tags=["ops"])
 def health() -> HealthResponse:
     return HealthResponse()
+
+
+@app.post("/config", status_code=status.HTTP_204_NO_CONTENT, tags=["ops"])
+def config_endpoint(
+    body: ConfigUpdate,
+    _: Annotated[str, Depends(_verify_token)],
+) -> None:
+    """Accept host_clock_url (+ optional token) from MCS peer fan-out."""
+    if body.host_clock_url:
+        applied = set_host_clock_url(body.host_clock_url)
+        _persist_env(host_clock_url=applied)
+        _LOGGER.info("Net Time host_clock_url=%r", applied)
+    if body.api_token:
+        _config["api_token"] = body.api_token.strip()
+        _persist_env(api_token=_config["api_token"])
+        _LOGGER.info("Net Time api_token rotated via /config")
+    if not body.host_clock_url and not body.api_token:
+        _LOGGER.debug(
+            "Net Time /config no-op (host_clock_url effective=%r)",
+            get_host_clock_url(),
+        )
 
 
 @app.get("/status", response_model=StatusResponse, tags=["ops"])

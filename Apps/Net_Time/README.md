@@ -7,6 +7,8 @@ LAN time authority for Mission Control venues. Runs on Proxmox as:
 
 Core Configurator holds the URL + token and exposes **Attempt Online Sync**, a **timezone dropdown**, and **Offline Sync** (manual date/time). The status line shows wall time in the configured timezone (NTP itself remains UTC).
 
+MCS peer fan-out can update `NET_TIME_HOST_CLOCK_URL` at runtime via Bearer `POST /config` (persists `/etc/net-time.env`).
+
 PDN/FDN client sync is owned by those firmware teams. This app ships the server and operator controls only. Point devices at the Net Time LXC IP on **UDP 123** (SNTP); time is always **UTC**.
 
 ## PDN / FDN — grab time (SNTP)

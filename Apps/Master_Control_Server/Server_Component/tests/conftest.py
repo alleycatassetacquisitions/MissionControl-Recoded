@@ -17,7 +17,7 @@ if str(_root) not in sys.path:
 import pytest
 from fastapi.testclient import TestClient
 
-from main import app, _active_event, _config
+from main import app, _active_event, _config, _last_fanout, _peers
 
 # Token used in every test that needs auth.
 TEST_TOKEN = "test-secret-token"
@@ -29,6 +29,9 @@ def reset_config():
     _config["central_primary"] = "http://primary.example.com"
     _config["central_secondary"] = "http://secondary.example.com"
     _config["api_token"] = TEST_TOKEN
+    for key in list(_peers.keys()):
+        _peers[key] = ""
+    _last_fanout.clear()
     _active_event.update(
         {"id": None, "name": None, "venue_name": None, "created_at": None, "set_at": None}
     )
@@ -37,6 +40,9 @@ def reset_config():
     _config["central_primary"] = ""
     _config["central_secondary"] = ""
     _config["api_token"] = ""
+    for key in list(_peers.keys()):
+        _peers[key] = ""
+    _last_fanout.clear()
     _active_event.update(
         {"id": None, "name": None, "venue_name": None, "created_at": None, "set_at": None}
     )

@@ -69,8 +69,8 @@ If the GitHub repo is **private**, `git clone` will ask for a username/password 
 
 1. Seed or edit Core Configurator with MCS URL + token (and Central primary/secondary URLs).
 2. Deploy Registration + Shared HA Helpers + Core Configurator to HA — see [`Home Assistant Config Steps.md`](Home%20Assistant%20Config%20Steps.md#deploy-mission-control-files-onto-ha) and [`File Structure.md` — On Home Assistant](File%20Structure.md#on-home-assistant).
-3. Add the Registration integration (install-only — no token form). Registration pushes Central URLs to MCS via `POST /config` and polls `GET /players`.
-4. Operators create/activate an **event**, then register players (name + optional email) from the Registration panel. MCS proxies Central JSON create/PATCH and soft-deactivates via `active: false`. Use **Game Master** for scoring live/off and delayed scores. Bug Buster reads Central crash logs via MCS `GET /device-logs`.
+3. Add the Registration integration (install-only — no token form). Registration pushes Central URLs **plus** a venue peer snapshot to MCS via `POST /config` (on setup and whenever Core Configurator Save changes MCS/Central/GBN/Net Time/AlleycatTV/Proxmox). MCS fans out companion `POST /config` to GBN and Net Time. AlleycatTV HA publishes retained Pi `config` over MQTT separately. Registration polls `GET /players`.
+4. Operators create/activate an **event**, then register players (name + optional email + tags) from the Registration panel. MCS proxies Central JSON create/PATCH and soft-deactivates via `active: false`. Use **Game Master** for scoring live/off, delayed scores, and affiliation catalog CRUD. Bug Buster reads Central crash logs via MCS `GET /device-logs`.
 
 ## Updating MCS code later
 
