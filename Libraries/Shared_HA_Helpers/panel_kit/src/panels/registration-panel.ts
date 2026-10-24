@@ -20,8 +20,9 @@
  *  - registration.create_event / update_event / set_active_event
  *  - registration.update_player / delete_player (soft-deactivate)
  *
- * Affiliations: chips attach/remove a player's tag per category (one active
- * chip per category). Categories/choices are managed in Game Master.
+ * Affiliations: dropdowns (one selection per category). Faction allows
+ * create-on-type via Game Master. Roster table still shows tag chips.
+ * Categories/choices/defaults are managed in Game Master (HA-only defaults).
  */
 
 import {
@@ -29,8 +30,11 @@ import {
   AffCategory,
   PlayerAffiliation,
   buildAffiliationsPayload,
+  defaultsByCategoryId,
   emptyCatalog,
+  ensureAffiliationChoice,
   findChoiceExact,
+  isFactionCategory,
   playerAssignmentForCategory,
 } from "../shared/affiliations";
 
@@ -99,10 +103,7 @@ class RegistrationPanel extends window.McPanel.Base {
       _teams: { state: true },
       _catalog: { state: true },
       _fAffByCat: { state: true },
-      _editAffByCat: { state: true },
       _editId: { state: true },
-      _editName: { state: true },
-      _editEmail: { state: true },
       _editTeamId: { state: true },
       _editActive: { state: true },
     };
@@ -131,10 +132,7 @@ class RegistrationPanel extends window.McPanel.Base {
   declare _teams: RegTeam[];
   declare _catalog: AffCatalog;
   declare _fAffByCat: Record<string, string>;
-  declare _editAffByCat: Record<string, string>;
   declare _editId: string;
-  declare _editName: string;
-  declare _editEmail: string;
   declare _editTeamId: string;
   declare _editActive: boolean;
 
@@ -166,10 +164,7 @@ class RegistrationPanel extends window.McPanel.Base {
     this._teams = [];
     this._catalog = emptyCatalog();
     this._fAffByCat = {};
-    this._editAffByCat = {};
     this._editId = "";
-    this._editName = "";
-    this._editEmail = "";
     this._editTeamId = "";
     this._editActive = true;
   }
@@ -379,7 +374,8 @@ class RegistrationPanel extends window.McPanel.Base {
           color: var(--secondary-text-color, #7aa8b8);
           margin: 12px 0 6px;
         }
-        .form-col input {
+        .form-col input,
+        .form-col select {
           width: 100%;
           box-sizing: border-box;
           padding: 10px 12px;
@@ -563,8 +559,17 @@ class RegistrationPanel extends window.McPanel.Base {
     selected: Record<string, string>,
     previous?: Record<string, string>
   ): Promise<Record<string, string | null>> {
-    // Select-only: chips only offer existing choices (catalog lives in Game Master).
     await this._loadCatalog();
+    // Faction only: create missing typed choices via Game Master.
+    for (const cat of this._catalog.categories || []) {
+      if (!isFactionCategory(cat.name)) continue;
+      const typed = (selected[cat.id] || "").trim();
+      if (!typed) continue;
+      if (findChoiceExact(cat.affiliations || [], typed)) continue;
+      if (!this.hass) continue;
+      await ensureAffiliationChoice(this.hass, cat.id, typed);
+      await this._loadCatalog();
+    }
     return buildAffiliationsPayload(
       this._catalog.categories || [],
       selected,
@@ -585,11 +590,20 @@ class RegistrationPanel extends window.McPanel.Base {
     return payload;
   }
 
+  /** Prefill create-mode affiliation dropdowns from HA catalog defaults. */
+  _applyCreateDefaults() {
+    this._fAffByCat = defaultsByCategoryId(this._catalog.categories || []);
+  }
+
   _clearForm() {
     this._fName = "";
     this._fEmail = "";
-    this._fAffByCat = {};
     this._nameStatus = "";
+    this._editId = "";
+    this._editTeamId = "";
+    this._editActive = true;
+    this._editPrevAff = {};
+    this._applyCreateDefaults();
     if (this._checkTimer) {
       clearTimeout(this._checkTimer);
       this._checkTimer = null;
@@ -609,8 +623,11 @@ class RegistrationPanel extends window.McPanel.Base {
       return;
     }
     const needle = trimmed.toLowerCase();
+    const editingId = this._editId ? String(this._editId) : "";
     const clash = this._roster.find(
-      (p) => (p.name || "").trim().toLowerCase() === needle
+      (p) =>
+        (p.name || "").trim().toLowerCase() === needle &&
+        (!editingId || String(p.id ?? "") !== editingId)
     );
     this._nameStatus = clash ? "taken" : "available";
   }
@@ -708,16 +725,21 @@ class RegistrationPanel extends window.McPanel.Base {
       const result = await this.hass!.callWS<AffCatalog>({
         type: "game_master/get_affiliation_catalog",
       });
-      const next = {
+      const next: AffCatalog = {
         event_id: result?.event_id ?? null,
         categories: result?.categories ?? [],
       };
-      if (prevEvent && next.event_id && String(prevEvent) !== String(next.event_id)) {
-        this._fAffByCat = {};
-        this._editAffByCat = {};
-        this._editPrevAff = {};
-      }
+      const eventChanged =
+        Boolean(prevEvent) &&
+        Boolean(next.event_id) &&
+        String(prevEvent) !== String(next.event_id);
       this._catalog = next;
+      if (eventChanged) {
+        this._editPrevAff = {};
+        if (!this._editId) this._applyCreateDefaults();
+      } else if (!this._editId && Object.keys(this._fAffByCat).length === 0) {
+        this._applyCreateDefaults();
+      }
     } catch (_) {
       this._catalog = emptyCatalog();
     }
@@ -828,34 +850,71 @@ class RegistrationPanel extends window.McPanel.Base {
     return html`<a href=${href} target="_blank" rel="noopener">open</a>`;
   }
 
-  /** Chip select/deselect for one category — one active chip per category. */
-  _affChips(
+  /** Dropdown (or Faction combobox) for one category — one selection each. */
+  _affField(
     cat: AffCategory,
     value: string,
     onChange: (v: string) => void
   ) {
     const html = window.McPanel.html;
     const choices = cat.affiliations || [];
+    const label = cat.name || "Affiliation";
+    const listId = `aff-list-${cat.id}`;
+    if (isFactionCategory(cat.name)) {
+      return html`
+        <label for=${`aff-${cat.id}`}>${label}</label>
+        <div class="aff-group">
+          ${choices.length === 0
+            ? html`<p class="aff-hint">
+                No factions yet — type a name to create one, or add them in Game
+                Master.
+              </p>`
+            : ""}
+          <input
+            id=${`aff-${cat.id}`}
+            type="text"
+            list=${listId}
+            autocomplete="off"
+            placeholder=${choices.length ? "Select or type a new faction…" : "Type a new faction…"}
+            .value=${value}
+            @input=${(e: Event) => {
+              onChange((e.target as HTMLInputElement).value);
+            }}
+          />
+          <datalist id=${listId}>
+            ${choices.map(
+              (c) => html`<option value=${c.name || ""}></option>`
+            )}
+          </datalist>
+          <p class="aff-hint">Pick from the list or type a new faction name.</p>
+        </div>
+      `;
+    }
     const active = findChoiceExact(choices, value)?.name || "";
     return html`
-      <label>${cat.name || "Affiliation"}</label>
+      <label for=${`aff-${cat.id}`}>${label}</label>
       <div class="aff-group">
         ${choices.length === 0
           ? html`<p class="aff-hint">
               No choices yet — add them in Game Master.
             </p>`
-          : html`<div class="chip-row">
+          : html`<select
+              id=${`aff-${cat.id}`}
+              .value=${active}
+              @change=${(e: Event) => {
+                onChange((e.target as HTMLSelectElement).value);
+              }}
+            >
+              <option value="">Select…</option>
               ${choices.map(
-                (c) => html`<button
-                  type="button"
-                  class="chip ${active === c.name ? "active" : ""}"
-                  aria-pressed=${active === c.name ? "true" : "false"}
-                  @click=${() => onChange(active === c.name ? "" : c.name)}
+                (c) => html`<option
+                  value=${c.name || ""}
+                  ?selected=${active === c.name}
                 >
                   ${c.name}
-                </button>`
+                </option>`
               )}
-            </div>`}
+            </select>`}
       </div>
     `;
   }
@@ -988,10 +1047,11 @@ class RegistrationPanel extends window.McPanel.Base {
 
   _beginEdit(p: RegPlayer) {
     this._editId = String(p.id ?? "");
-    this._editName = (p.name || "").slice(0, PLAYER_NAME_MAX);
-    this._editEmail = p.email || "";
+    this._fName = (p.name || "").slice(0, PLAYER_NAME_MAX);
+    this._fEmail = p.email || "";
     this._editTeamId = p.team_id ? String(p.team_id) : "";
     this._editActive = p.active !== false;
+    this._nameStatus = "";
     const map: Record<string, string> = {};
     const prev: Record<string, string> = {};
     for (const cat of this._catalog.categories || []) {
@@ -1000,23 +1060,18 @@ class RegistrationPanel extends window.McPanel.Base {
       const match = findChoiceExact(cat.affiliations || [], assigned);
       if (match) prev[cat.id] = match.id;
     }
-    this._editAffByCat = map;
+    this._fAffByCat = map;
     this._editPrevAff = prev;
+    this._checkName(this._fName);
   }
 
   _cancelEdit() {
-    this._editId = "";
-    this._editName = "";
-    this._editEmail = "";
-    this._editTeamId = "";
-    this._editActive = true;
-    this._editAffByCat = {};
-    this._editPrevAff = {};
+    this._clearForm();
   }
 
   async _saveEdit() {
     if (!this._editId) return;
-    const name = this._editName.trim();
+    const name = this._fName.trim();
     if (!name) {
       this._feedback("Enter a name", "warn");
       return;
@@ -1025,19 +1080,24 @@ class RegistrationPanel extends window.McPanel.Base {
       this._feedback(`Name must be at most ${PLAYER_NAME_MAX} characters`, "warn");
       return;
     }
+    this._checkName(name);
+    if (this._nameStatus === "taken") {
+      this._feedback("Pick an unused name", "warn");
+      return;
+    }
     const payload: Record<string, unknown> = {
       player_id: this._editId,
       name,
       active: this._editActive,
     };
-    const email = this._editEmail.trim();
+    const email = this._fEmail.trim();
     if (email) payload.email = email;
     else payload.clear_email = true;
     if (this._editTeamId) payload.team_id = this._editTeamId;
     else payload.clear_team = true;
     try {
       const affiliations = await this._resolveAffiliationsPayload(
-        { ...this._editAffByCat },
+        { ...this._fAffByCat },
         this._editPrevAff
       );
       if (Object.keys(affiliations).length) {
@@ -1045,10 +1105,11 @@ class RegistrationPanel extends window.McPanel.Base {
       }
       await this.hass!.callService("registration", "update_player", payload);
       this._feedback(`Updated ${name}`, "ok");
-      this._cancelEdit();
+      this._clearForm();
       await this.hass!.callService("registration", "sync_now", {});
       await this._loadRoster();
       await this._loadCatalog();
+      if (!this._editId) this._applyCreateDefaults();
     } catch (err) {
       this._feedback("Update failed: " + this._formatErr(err), "err");
     }
@@ -1110,6 +1171,7 @@ class RegistrationPanel extends window.McPanel.Base {
       await this.hass!.callService("registration", "sync_now", {});
       await this._loadRoster();
       await this._loadCatalog();
+      if (!this._editId) this._applyCreateDefaults();
       const match = this._roster.find(
         (p) =>
           (p.name || "").trim().toLowerCase() ===
@@ -1332,7 +1394,9 @@ class RegistrationPanel extends window.McPanel.Base {
                     `}
             </div>
 
-            <h2 class="form-title">Register player</h2>
+            <h2 class="form-title">
+              ${this._editId ? "Edit player" : "Register player"}
+            </h2>
             <label for="f-name">Name</label>
             <input
               id="f-name"
@@ -1371,57 +1435,11 @@ class RegistrationPanel extends window.McPanel.Base {
                 this._fEmail = (e.target as HTMLInputElement).value;
               }}
             />
-            ${(this._catalog.categories || []).map((cat) =>
-              this._affChips(
-                cat,
-                this._fAffByCat[cat.id] || "",
-                (v) => {
-                  this._fAffByCat = { ...this._fAffByCat, [cat.id]: v };
-                }
-              )
-            )}
-            ${(this._catalog.categories || []).length === 0
-              ? html`<p class="aff-hint">
-                  No affiliation categories yet — add them in Game Master.
-                </p>`
-              : ""}
-            <div class="form-actions">
-              <button class="btn-create" @click=${() => this._savePlayer()}>
-                Create player
-              </button>
-              <button class="btn-ghost" @click=${() => this._syncNow()}>
-                Refresh table
-              </button>
-            </div>
-
             ${this._editId
               ? html`
-                  <h2 class="form-title" style="margin-top:28px">Edit player</h2>
-                  <label for="edit-name">Name</label>
-                  <input
-                    id="edit-name"
-                    type="text"
-                    maxlength=${PLAYER_NAME_MAX}
-                    .value=${this._editName}
-                    @input=${(e: Event) => {
-                      this._editName = (e.target as HTMLInputElement).value.slice(
-                        0,
-                        PLAYER_NAME_MAX
-                      );
-                    }}
-                  />
-                  <label for="edit-email">Email</label>
-                  <input
-                    id="edit-email"
-                    type="email"
-                    .value=${this._editEmail}
-                    @input=${(e: Event) => {
-                      this._editEmail = (e.target as HTMLInputElement).value;
-                    }}
-                  />
-                  <label for="edit-team">Team</label>
+                  <label for="f-team">Team</label>
                   <select
-                    id="edit-team"
+                    id="f-team"
                     .value=${this._editTeamId}
                     @change=${(e: Event) => {
                       this._editTeamId = (e.target as HTMLSelectElement).value;
@@ -1430,43 +1448,57 @@ class RegistrationPanel extends window.McPanel.Base {
                     <option value="">Unassigned</option>
                     ${this._teams.map(
                       (t) =>
-                        html`<option value=${t.id ?? ""}>
+                        html`<option
+                          value=${t.id ?? ""}
+                          ?selected=${this._editTeamId === String(t.id ?? "")}
+                        >
                           ${t.name || t.id}
                         </option>`
                     )}
                   </select>
-                  ${(this._catalog.categories || []).map((cat) =>
-                    this._affChips(
-                      cat,
-                      this._editAffByCat[cat.id] || "",
-                      (v) => {
-                        this._editAffByCat = {
-                          ...this._editAffByCat,
-                          [cat.id]: v,
-                        };
-                      }
-                    )
-                  )}
-                  <label class="check-row">
-                    <input
-                      type="checkbox"
-                      .checked=${this._editActive}
-                      @change=${(e: Event) => {
-                        this._editActive = (e.target as HTMLInputElement).checked;
-                      }}
-                    />
-                    Active registration
-                  </label>
-                  <div class="form-actions">
+                `
+              : ""}
+            ${(this._catalog.categories || []).map((cat) =>
+              this._affField(cat, this._fAffByCat[cat.id] || "", (v) => {
+                this._fAffByCat = { ...this._fAffByCat, [cat.id]: v };
+              })
+            )}
+            ${(this._catalog.categories || []).length === 0
+              ? html`<p class="aff-hint">
+                  No affiliation categories yet — add them in Game Master.
+                </p>`
+              : ""}
+            ${this._editId
+              ? html`<label class="check-row">
+                  <input
+                    type="checkbox"
+                    .checked=${this._editActive}
+                    @change=${(e: Event) => {
+                      this._editActive = (e.target as HTMLInputElement).checked;
+                    }}
+                  />
+                  Active registration
+                </label>`
+              : ""}
+            <div class="form-actions">
+              ${this._editId
+                ? html`
                     <button class="btn-create" @click=${() => this._saveEdit()}>
                       Save player
                     </button>
                     <button class="btn-ghost" @click=${() => this._cancelEdit()}>
                       Cancel
                     </button>
-                  </div>
-                `
-              : ""}
+                  `
+                : html`
+                    <button class="btn-create" @click=${() => this._savePlayer()}>
+                      Create player
+                    </button>
+                    <button class="btn-ghost" @click=${() => this._syncNow()}>
+                      Refresh table
+                    </button>
+                  `}
+            </div>
 
             ${this._feedbackTemplate()}
           </div>

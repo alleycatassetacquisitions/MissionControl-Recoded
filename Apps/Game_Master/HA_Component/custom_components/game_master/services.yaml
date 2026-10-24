@@ -60,3 +60,21 @@ rename_affiliation:
       required: true
       selector:
         text:
+
+set_default_affiliation:
+  name: Set Default Affiliation
+  description: >
+    Set (or clear) the HA-only default choice for a category on the active
+    event. Prefills Registration when creating a player; not written to Central.
+  fields:
+    category_id:
+      name: Category ID
+      required: true
+      selector:
+        text:
+    affiliation_id:
+      name: Affiliation ID
+      description: Choice id to use as default; empty clears the default.
+      required: false
+      selector:
+        text:

@@ -110,7 +110,7 @@ MCS proxies Central affiliation catalog routes live (no durable affiliation cach
 
 ### Registration
 
-The Mission Control dashboard for venue **events** (create / edit / set-active) and **player** registration (name ≤ 32 characters + optional email, team assign, event affiliations as **tags** attach/remove, soft-deactivate). It talks to MCS (services + panel), not to the Central Server on its own. Gameplay scoring toggles and affiliation **catalog** CRUD are on **Game Master**, not here. Registration’s Tags UI selects/deselects existing choices (chip per category); it does not create categories or choices.
+The Mission Control dashboard for venue **events** (create / edit / set-active) and **player** registration (name ≤ 32 characters + optional email, team assign, event affiliations via dropdowns, soft-deactivate). It talks to MCS (services + panel), not to the Central Server on its own. Gameplay scoring toggles and affiliation **catalog** CRUD (plus HA-only defaults) are on **Game Master**, not here. Registration’s form uses one dropdown per category; **Faction** may create a new choice on type. Edit player switches the same form into edit mode (does not stack below Register). Roster still shows affiliation tags as chips.
 
 - **Code:** `registration`
 
@@ -164,7 +164,7 @@ Players are **not** Home Assistant devices. Registration exposes connectivity an
 
 ### Game Master
 
-The Mission Control dashboard for **gameplay** controls on the active event: scoring on/off (“game live”), accept delayed scores, and (later) hours of operation / special-event triggers. It also owns the **affiliation catalog** (create/rename categories and choices) with an event-keyed HA cache cleared when the active event changes. Panels (Game Master, Registration tags, GBN) poll `game_master/get_affiliation_catalog`. It talks to MCS only. Changing which event is active stays on Registration.
+The Mission Control dashboard for **gameplay** controls on the active event: scoring on/off (“game live”), accept delayed scores, and (later) hours of operation / special-event triggers. It also owns the **affiliation catalog** (create/rename categories and choices) and **HA-only default choice per category** (prefill Registration create; never written to Central), with an event-keyed HA cache cleared when the active event changes. Panels (Game Master, Registration, GBN) poll `game_master/get_affiliation_catalog`. It talks to MCS only. Changing which event is active stays on Registration.
 
 ### Affiliation
 
@@ -177,7 +177,7 @@ Event
            └── Player affiliation  (0 or 1 choice per category)
 ```
 
-Creating an event does **not** copy categories/choices. Names have no gameplay or scoring meaning. Mission Control registers/assigns via MCS → Central. **Game Master** owns catalog CRUD; **Registration** attaches choices as tags (UI only); GBN selects from the catalog at intake (no create-on-type). The HA catalog cache is not an MCS durable store.
+Creating an event does **not** copy categories/choices. Names have no gameplay or scoring meaning. Mission Control registers/assigns via MCS → Central. **Game Master** owns catalog CRUD and optional HA-only defaults per category; **Registration** assigns choices via dropdowns (Faction may create-on-type); GBN selects from the catalog at intake (no create-on-type). The HA catalog cache and defaults store are not MCS durable stores and are not pushed to Central.
 
 **Allegiance** is **not** a Central type — it is a common **category name** in Neo-themed seed/events. **Faction** is another common category name. Casual “sub affiliation” means an affiliation **choice** under a category.
 

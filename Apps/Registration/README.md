@@ -32,10 +32,8 @@ Registration never stores the MCS token in its own config entry.
 | `registration.set_active_event` | `PUT /events/{event_id}/active` on MCS, then `PUT /api/events/active` on GBN (id + name); clears/refetches affiliation catalog |
 | `registration.update_player` | `PUT /players/{id}` → Central PATCH (`name`/`email`/`team_id`/`active`/`affiliations`) |
 | `registration.delete_player` | `DELETE /players/{id}` → soft-deactivate (`active: false`) |
-| `registration.create_affiliation_category` | `POST /affiliation-categories` |
-| `registration.rename_affiliation_category` | `PATCH /affiliation-categories/{id}` |
-| `registration.create_affiliation` | `POST /affiliation-categories/{id}/affiliations` |
-| `registration.rename_affiliation` | `PATCH …/affiliations/{id}` |
+
+Affiliation **catalog** CRUD and HA-only defaults live on **Game Master** (`game_master.create_affiliation_*`, `set_default_affiliation`). Registration reads the catalog via `game_master/get_affiliation_catalog`.
 
 Register payload: `name` (max 32 characters for device displays) + optional `email` + optional `affiliations` map (category UUID → affiliation UUID). Catalog is **per active event**; HA keeps an event-keyed cache for panels (GBN polls the same WS).
 
@@ -51,7 +49,8 @@ Register payload: `name` (max 32 characters for device displays) + optional `ema
 | `registration/get_events` | MCS event list (`ready: true` when Central list is up) |
 | `registration/get_active_event` | Active event from MCS (Central `game-state` backed) |
 | `registration/get_teams` | Teams for active (or given) event |
-| `registration/get_affiliation_catalog` | Event-keyed categories + choices for Registration + GBN |
+
+Affiliation catalog: `game_master/get_affiliation_catalog` (includes HA-only `default_affiliation_id` per category).
 
 ---
 
@@ -60,8 +59,9 @@ Register payload: `name` (max 32 characters for device displays) + optional `ema
 Sidebar panel (`www/registration/registration-panel.js`):
 
 - **Events strip** — create / edit / set-active + Active indicator (set-active also notifies GBN for poster-cycle)
-- Register form: **Name** + **Email**
-- Roster: **PDN**, Name, **Team**, **Status**, Created, Email, Poster (active-event thumbs via GBN proxy); **Edit** + **Deactivate**
+- **Register / Edit player** — same form switches mode; Name + Email + affiliation dropdowns (Faction creatable); edit adds Team + Active
+- Create mode prefills category defaults from Game Master when set
+- Roster: **PDN**, Name, **Team**, Affiliations (chips), **Status**, Created, Email, Poster; **Edit** + **Deactivate**
 - Reads via websocket; writes via HA services only
 
 Load order in `configuration.yaml` `frontend.extra_module_url` (panel kit only — full shell order including custom-sidebar is in [`HomeAssist/configuration.yaml`](../../HomeAssist/configuration.yaml)):

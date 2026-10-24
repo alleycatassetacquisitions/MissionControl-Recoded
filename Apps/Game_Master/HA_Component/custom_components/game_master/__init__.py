@@ -23,7 +23,13 @@ try:
 except ImportError:
     async_request = None  # type: ignore[assignment]
 
-from .affiliations import clear_catalog, refresh_catalog
+from .affiliations import (
+    async_load_defaults,
+    clear_catalog,
+    get_enriched_catalog,
+    refresh_catalog,
+    set_default_affiliation,
+)
 from .const import (
     DOMAIN,
     EXTRA_MCS_TOKEN,
@@ -59,6 +65,12 @@ _RENAME_AFFILIATION_SCHEMA = vol.Schema(
         vol.Required("category_id"): cv.string,
         vol.Required("affiliation_id"): cv.string,
         vol.Required("name"): cv.string,
+    }
+)
+_SET_DEFAULT_AFFILIATION_SCHEMA = vol.Schema(
+    {
+        vol.Required("category_id"): cv.string,
+        vol.Optional("affiliation_id", default=""): cv.string,
     }
 )
 
@@ -180,6 +192,18 @@ def _register_services(hass: HomeAssistant) -> None:
         )
         await refresh_catalog(hass)
 
+    async def _set_default_affiliation(call: ServiceCall) -> None:
+        category_id = call.data["category_id"]
+        affiliation_id = str(call.data.get("affiliation_id") or "")
+        try:
+            await set_default_affiliation(
+                hass,
+                category_id=category_id,
+                affiliation_id=affiliation_id,
+            )
+        except ValueError as err:
+            raise HomeAssistantError(str(err)) from err
+
     hass.services.async_register(
         DOMAIN,
         "create_affiliation_category",
@@ -204,6 +228,12 @@ def _register_services(hass: HomeAssistant) -> None:
         _rename_affiliation,
         schema=_RENAME_AFFILIATION_SCHEMA,
     )
+    hass.services.async_register(
+        DOMAIN,
+        "set_default_affiliation",
+        _set_default_affiliation,
+        schema=_SET_DEFAULT_AFFILIATION_SCHEMA,
+    )
     hass.data.setdefault(DOMAIN, {})["services_registered"] = True
 
 
@@ -215,6 +245,7 @@ async def async_setup(hass: HomeAssistant, config: dict) -> bool:
                 DOMAIN, context={"source": SOURCE_IMPORT}, data={}
             )
         )
+    await async_load_defaults(hass)
     _register_ws(hass)
     _register_services(hass)
     return True
@@ -222,6 +253,7 @@ async def async_setup(hass: HomeAssistant, config: dict) -> bool:
 
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     hass.data.setdefault(DOMAIN, {})[entry.entry_id] = {}
+    await async_load_defaults(hass)
     _register_ws(hass)
     _register_services(hass)
     return True
@@ -319,8 +351,8 @@ async def ws_set_delayed_scores(hass: HomeAssistant, connection, msg) -> None:
 )
 @websocket_api.async_response
 async def ws_get_affiliation_catalog(hass: HomeAssistant, connection, msg) -> None:
-    """Return event-keyed affiliation catalog (refresh from MCS when needed)."""
-    catalog = await refresh_catalog(hass)
+    """Return event-keyed affiliation catalog with HA-only defaults attached."""
+    catalog = await get_enriched_catalog(hass)
     connection.send_result(msg["id"], catalog)
 
 

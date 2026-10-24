@@ -4,6 +4,8 @@ Sidebar panel for **gameplay** controls: live scoring, delayed scores, and (late
 
 **Registration** owns event create / set-active and player registration. Game Master reads the active event from Central `GET /game-state` via MCS and does not change which event is selected.
 
+Game Master also owns the **affiliation catalog** (create/rename categories and choices) and **HA-only default choice per category** (`game_master.set_default_affiliation`). Defaults prefill Registration’s create-player form only; they are not written to Central.
+
 ## Architecture
 
 ```

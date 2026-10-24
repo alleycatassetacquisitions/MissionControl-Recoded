@@ -13,3 +13,8 @@ WS_GET_AFFILIATION_CATALOG = f"{DOMAIN}/get_affiliation_catalog"
 
 # Event-keyed affiliation catalog cache (Game Master owns CRUD).
 AFFILIATION_CATALOG_KEY = "affiliation_catalog"
+
+# HA-only defaults: event_id → category_id → affiliation_id (not sent to Central).
+AFFILIATION_DEFAULTS_KEY = "affiliation_defaults"
+AFFILIATION_DEFAULTS_STORE = f"{DOMAIN}.affiliation_defaults"
+AFFILIATION_DEFAULTS_VERSION = 1

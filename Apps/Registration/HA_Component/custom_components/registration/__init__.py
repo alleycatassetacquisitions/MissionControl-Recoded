@@ -501,12 +501,15 @@ async def _refresh_affiliation_catalog(
     """Delegate to Game Master catalog (owner). Keep a local mirror for legacy WS."""
     try:
         from custom_components.game_master.affiliations import (
+            defaults_memory,
+            enrich_catalog_with_defaults,
             refresh_catalog as gm_refresh,
         )
 
         result = await gm_refresh(hass, event_id=event_id)
-        hass.data.setdefault(DOMAIN, {})[AFFILIATION_CATALOG_KEY] = result
-        return result
+        enriched = enrich_catalog_with_defaults(result, defaults_memory(hass))
+        hass.data.setdefault(DOMAIN, {})[AFFILIATION_CATALOG_KEY] = enriched
+        return enriched
     except ImportError:
         _LOGGER.warning(
             "Registration: game_master not available — affiliation catalog empty"

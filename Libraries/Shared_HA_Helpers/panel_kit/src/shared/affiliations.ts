@@ -1,9 +1,10 @@
 /**
  * Shared affiliation catalog helpers for Game Master, Registration + GBN panels.
  *
- * Ownership: Game Master owns catalog CRUD (categories + choices).
- * Registration attaches/removes player tags; GBN is select-only.
- * Catalog is read via WS game_master/get_affiliation_catalog.
+ * Ownership: Game Master owns catalog CRUD (categories + choices) and
+ * HA-only per-category defaults (not written to Central).
+ * Registration attaches choices via dropdowns; Faction may create-on-type.
+ * GBN is select-only. Catalog is read via WS game_master/get_affiliation_catalog.
  *
  * Central model: Event → affiliation category → affiliation choice.
  * Allegiance / Faction are category *names*, not separate types.
@@ -15,6 +16,8 @@ export type AffCategory = {
   id: string;
   name: string;
   affiliations: AffChoice[];
+  /** HA-only default choice id for this category (create-player prefill). */
+  default_affiliation_id?: string | null;
 };
 
 export type AffCatalog = {
@@ -109,6 +112,30 @@ export function isFactionCategory(name: string): boolean {
   return (name || "").trim().toLowerCase() === "faction";
 }
 
+/** Display name of the HA-only default choice for a category, if still present. */
+export function defaultChoiceName(category: AffCategory): string {
+  const id = (category.default_affiliation_id || "").trim();
+  if (!id) return "";
+  const match = (category.affiliations || []).find(
+    (c) => String(c.id) === String(id)
+  );
+  return (match?.name || "").trim();
+}
+
+/**
+ * Prefill map of category id → choice name from catalog defaults (create mode).
+ */
+export function defaultsByCategoryId(
+  categories: AffCategory[]
+): Record<string, string> {
+  const out: Record<string, string> = {};
+  for (const cat of categories || []) {
+    const name = defaultChoiceName(cat);
+    if (name) out[cat.id] = name;
+  }
+  return out;
+}
+
 /**
  * Build Central affiliations map from category → selected choice id.
  * Empty selection omits the key (create) or can pass nulls via clearIds.
@@ -135,8 +162,7 @@ export function buildAffiliationsPayload(
 
 /**
  * Create a choice via Game Master and return it from the refreshed catalog.
- * Registration/GBN panels no longer call this (select-only); kept for
- * Game Master-owned flows.
+ * Registration uses this for Faction create-on-type; GBN stays select-only.
  */
 export async function ensureAffiliationChoice(
   hass: {
