@@ -759,7 +759,9 @@
           `/api/posters/by-player/${encodeURIComponent(playerId)}${evQ}`
         );
         if (status === 404 || !ok) {
+          this._existingPoster = null;
           root.getElementById("success-box").hidden = true;
+          this._syncSubmitButton();
           this._feedback("No existing poster \u2014 capture or upload a new clip", "ok");
           return;
         }
@@ -811,19 +813,31 @@
         link.href = url;
         link.textContent = url;
         root.getElementById("success-box").hidden = false;
-        if (body.video_url) {
+        if (body.video_url || body.has_video) {
           const review = root.getElementById("review-video");
           const live = root.getElementById("live-video");
-          review.src = body.video_url;
+          if (body.video_url) review.src = body.video_url;
           review.classList.remove("hidden");
           live.classList.add("hidden");
           this._blob = null;
-          this._setRecStatus("Existing clip loaded \u2014 retake or upload to replace");
+          this._setRecStatus(
+            "Existing clip loaded \u2014 edit text and Update, or retake/upload to replace"
+          );
         }
+        this._syncSubmitButton();
         this._feedback("Loaded existing poster for this player", "ok");
       } catch (err) {
         this._feedback(`Poster lookup failed: ${this._errText(err)}`, "warn");
       }
+    }
+    _canKeepExistingVideo() {
+      return !!(this._existingPoster && (this._existingPoster.has_video || this._existingPoster.video_url));
+    }
+    _syncSubmitButton() {
+      const btn = this.shadowRoot?.getElementById("btn-submit");
+      if (!btn) return;
+      const updating = this._canKeepExistingVideo() || !!this._existingPoster;
+      btn.textContent = updating ? "Update poster" : "Create poster";
     }
     _token() {
       return this.hass?.auth?.data?.access_token || "";
@@ -1217,6 +1231,7 @@
         review.play?.().catch(() => {
         });
         this._setRecStatus(`Captured ${(this._blob.size / 1024).toFixed(0)} KB`);
+        this._syncSubmitButton();
         this._feedback("Clip ready \u2014 review, retake, or create poster", "ok");
       };
       let left = 3;
@@ -1268,6 +1283,7 @@
       this._chunks = [];
       const upload = this.shadowRoot.getElementById("fld-upload");
       if (upload) upload.value = "";
+      this._syncSubmitButton();
       this._startCamera();
     }
     _onUpload(ev) {
@@ -1281,13 +1297,17 @@
       review.classList.remove("hidden");
       live.classList.add("hidden");
       this._setRecStatus(`Upload ready: ${file.name} (${(file.size / 1024).toFixed(0)} KB)`);
-      this._feedback("Upload loaded \u2014 create poster to save", "ok");
+      this._syncSubmitButton();
+      this._feedback("Upload loaded \u2014 create/update poster to save", "ok");
     }
     async _submit() {
       const root = this.shadowRoot;
       const name = root.getElementById("fld-name").value.trim();
       if (!name) return this._feedback("Name required", "warn");
-      if (!this._blob) return this._feedback("Record or upload a clip first", "warn");
+      const keepVideo = !this._blob && this._canKeepExistingVideo();
+      if (!this._blob && !keepVideo) {
+        return this._feedback("Record or upload a clip first", "warn");
+      }
       const crimes = root.getElementById("fld-crimes").value.split(/\n/).map((s) => s.trim()).filter(Boolean);
       const stats = {
         height: root.getElementById("fld-height").value.trim() || `5'10"`,
@@ -1340,11 +1360,13 @@
       form.append("list_empty", chrome.list_empty);
       form.append("accent", chrome.accent || "blue");
       form.append("event_id", this._activeEventId || "");
-      const safe = name.replace(/\s+/g, "_").toLowerCase();
-      const filename = this._blob instanceof File && this._blob.name ? this._blob.name : `${safe}.webm`;
-      form.append("video", this._blob, filename);
+      if (this._blob) {
+        const safe = name.replace(/\s+/g, "_").toLowerCase();
+        const filename = this._blob instanceof File && this._blob.name ? this._blob.name : `${safe}.webm`;
+        form.append("video", this._blob, filename);
+      }
       try {
-        this._feedback("Uploading poster\u2026", "ok");
+        this._feedback(keepVideo ? "Updating poster text\u2026" : "Uploading poster\u2026", "ok");
         const headers = {};
         if (this._token()) headers.Authorization = `Bearer ${this._token()}`;
         const resp = await fetch(`/api/gbn/proxy/api/posters`, {
@@ -1359,12 +1381,27 @@
           return this._feedback(`Upload failed (${resp.status}): ${JSON.stringify(body)}`, "err");
         }
         this._existingPoster = body;
+        this._blob = null;
+        this._syncSubmitButton();
+        if (body.video_url) {
+          const review = root.getElementById("review-video");
+          const live = root.getElementById("live-video");
+          review.src = body.video_url;
+          review.classList.remove("hidden");
+          live.classList.add("hidden");
+          this._setRecStatus(
+            "Existing clip loaded \u2014 edit text and Update, or retake/upload to replace"
+          );
+        }
         const link = root.getElementById("poster-link");
         const url = await this._livePosterUrl(playerId, body.poster_url);
         link.href = url;
         link.textContent = url;
         root.getElementById("success-box").hidden = false;
-        this._feedback(`Poster saved for player ${playerId}`, "ok");
+        this._feedback(
+          keepVideo ? `Poster text updated for player ${playerId} (clip kept)` : `Poster saved for player ${playerId}`,
+          "ok"
+        );
         await this._loadEventMedia();
       } catch (err) {
         this._feedback(`Upload failed: ${this._errText(err)}`, "err");
@@ -1650,7 +1687,7 @@
               </label>
               <button type="button" class="primary" id="btn-submit">Create poster</button>
             </div>
-            <p class="hint">Upload a video file instead of recording. Retake clears upload and returns to camera.</p>
+            <p class="hint">Upload a video instead of recording. With an existing poster, edit text and Update without re-recording. Retake clears the local clip and returns to camera (server clip stays until you Update with a new one).</p>
             <div id="success-box" hidden>
               <strong>Poster live</strong>
               <div><a id="poster-link" href="#" target="_blank" rel="noopener"></a></div>
