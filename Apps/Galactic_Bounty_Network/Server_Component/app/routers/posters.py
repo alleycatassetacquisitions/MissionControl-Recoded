@@ -10,6 +10,7 @@ import logging
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import List
+from urllib.parse import quote
 
 from fastapi import APIRouter, File, Form, HTTPException, Query, Request, UploadFile
 from fastapi.responses import RedirectResponse
@@ -280,7 +281,12 @@ def _video_url_for(
     if not filename:
         return ""
     rel = video_url_path(resolved_eid, filename)
-    return f"{public_base_for(request)}/media/{rel}"
+    url = f"{public_base_for(request)}/media/{rel}"
+    # Stable player paths get overwritten in place — bust browser/kiosk cache.
+    stamp = (poster.updated_at or poster.created_at or "").strip()
+    if stamp:
+        url = f"{url}?v={quote(stamp, safe='')}"
+    return url
 
 
 def _to_public(
@@ -527,8 +533,13 @@ async def create_poster(
     accent: str = Form(""),
     affiliations: str = Form("[]"),
     event_id: str = Form(""),
-    video: UploadFile = File(...),
+    video: UploadFile | None = File(None),
 ) -> PosterPublic:
+    """Create or update a poster.
+
+    Video is required on first create. On update, omit ``video`` to keep the
+    existing clip and only refresh text/chrome/metadata.
+    """
     clean_name = name.strip()
     if not clean_name:
         raise HTTPException(status_code=400, detail="name is required")
@@ -536,21 +547,6 @@ async def create_poster(
     pid = player_id.strip()
     if not pid:
         raise HTTPException(status_code=400, detail="player_id is required")
-
-    filename = video.filename or "capture.webm"
-    ext = Path(filename).suffix.lower() or ".webm"
-    if ext not in ALLOWED_VIDEO_EXT:
-        raise HTTPException(
-            status_code=400,
-            detail=f"Unsupported video type {ext}. Allowed: {sorted(ALLOWED_VIDEO_EXT)}",
-        )
-
-    data = await video.read()
-    max_bytes = MAX_UPLOAD_MB * 1024 * 1024
-    if len(data) > max_bytes:
-        raise HTTPException(status_code=400, detail=f"Video exceeds {MAX_UPLOAD_MB}MB limit")
-    if not data:
-        raise HTTPException(status_code=400, detail="Empty video upload")
 
     event_id, store = await _active_store(
         request, fallback=(event_id or "").strip() or None
@@ -568,14 +564,39 @@ async def create_poster(
         created_at = stamp
         old_video = ""
 
-    video_name = video_filename_for_player(pid, ext)
-    dest = video_filesystem_path(video_name, event_id=event_id)
-    dest.parent.mkdir(parents=True, exist_ok=True)
-    dest.write_bytes(data)
+    data = b""
+    if video is not None:
+        data = await video.read()
 
-    if old_video and old_video != video_name:
-        _delete_video(old_video, event_id=event_id)
-    _delete_other_player_videos(pid, video_name, event_id=event_id)
+    if data:
+        filename = (video.filename if video else None) or "capture.webm"
+        ext = Path(filename).suffix.lower() or ".webm"
+        if ext not in ALLOWED_VIDEO_EXT:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Unsupported video type {ext}. Allowed: {sorted(ALLOWED_VIDEO_EXT)}",
+            )
+        max_bytes = MAX_UPLOAD_MB * 1024 * 1024
+        if len(data) > max_bytes:
+            raise HTTPException(
+                status_code=400, detail=f"Video exceeds {MAX_UPLOAD_MB}MB limit"
+            )
+
+        video_name = video_filename_for_player(pid, ext)
+        dest = video_filesystem_path(video_name, event_id=event_id)
+        dest.parent.mkdir(parents=True, exist_ok=True)
+        dest.write_bytes(data)
+
+        if old_video and old_video != video_name:
+            _delete_video(old_video, event_id=event_id)
+        _delete_other_player_videos(pid, video_name, event_id=event_id)
+    elif existing and old_video:
+        video_name = old_video
+    else:
+        raise HTTPException(
+            status_code=400,
+            detail="video is required when creating a new poster",
+        )
 
     normalized_role = _normalize_role(role)
     chrome = _resolve_chrome(
@@ -616,14 +637,16 @@ async def create_poster(
     )
     store.save(record)
     action = "Updated" if existing else "Created"
+    kept = " (kept video)" if existing and not data else ""
     _LOGGER.info(
-        "%s poster %s for %s event=%s (%s/%s)",
+        "%s poster %s for %s event=%s (%s/%s)%s",
         action,
         poster_id,
         clean_name,
         event_id,
         record.role,
         record.neocorp,
+        kept,
     )
     return _to_public(record, request, event_id=event_id)
 

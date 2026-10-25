@@ -62,7 +62,7 @@ Clips and poster metadata are stored **per active Event** (from MCS / Registrati
 | `data/poster_templates.json` | Chrome templates (global) |
 | `data/posters.json` + `media/videos/` | Legacy pre-event store (`GET /api/posters?include_legacy=true` only) |
 
-Create poster requires an active event (`409` if none). Public display URL stays `/poster/player/{id}` — GBN resolves video/metadata under the active Event folder. The panel **Event media** card shows Event **name** (UUID muted), sizes, export zip, and delete.
+Create/update requires an active event (`409` if none). Public display URL stays `/poster/player/{id}` — GBN resolves video/metadata under the active Event folder. Re-POST without a video file updates text/chrome and keeps the existing clip. Video URLs include an `?v=` stamp so browsers/kiosks pick up replacements immediately. The panel **Event media** card shows Event **name** (UUID muted), sizes, export zip, and delete.
 
 **Active Event resolution:** MCS `GET /events/active` when `GBN_MCS_*` is set; else disk cache. Registration pushes `PUT /api/events/active` on set-active / restore so AlleycatTV Pis do not need a desktop browser visit after GBN restart. Startup warms the cache from MCS or disk.
 
@@ -74,7 +74,7 @@ API:
 | `POST` | `/api/poster-templates` | Create custom |
 | `PUT` / `DELETE` | `/api/poster-templates/{id}` | Non-builtin only |
 | `GET` | `/api/posters` | Active-event posters only (`?event_id=` fallback; `?include_legacy=true` for old store) |
-| `POST` | `/api/posters` | Requires active event (or form `event_id`); stores under that event |
+| `POST` | `/api/posters` | Create/update; video required on first create, omit video to keep existing clip and update text/chrome only |
 | `GET` | `/api/events/active` | Active event id/name (MCS → cache) |
 | `PUT` | `/api/events/active` | Registration push: `{active_event_id, event_name}` |
 | `GET` | `/api/events/media` | Event folders: name, clip count + bytes (`?ensure_event_id=` / `ensure_event_name=`) |

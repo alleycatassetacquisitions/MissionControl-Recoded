@@ -641,3 +641,58 @@ def test_create_poster_uses_custom_template_id(client):
     assert created["headline"] == "FEATURED"
     assert created["amount_label"] == "FEE"
     assert created["list_label"] == "CREDITS"
+
+
+def test_update_poster_keeps_video_without_reupload(client):
+    created = _create_poster(
+        client,
+        player_id="keep-vid-1",
+        name="Original",
+        flavor_text="Old flavor",
+        crimes=["Old charge"],
+    )
+    assert created["has_video"] is True
+    old_video_path = created["video_url"].split("?")[0]
+    old_filename = created["video_url"].split("/videos/")[-1].split("?")[0]
+
+    fields = {
+        "name": "Updated Name",
+        "neocorp": "freelancer",
+        "faction": "",
+        "role": "bounty",
+        "player_id": "keep-vid-1",
+        "bounty_amount": "2500000",
+        "crimes": json.dumps(["New charge"]),
+        "stats": json.dumps({"height": "6'0\""}),
+        "flavor_text": "New flavor",
+        "headline": "UPDATED",
+        "amount_label": "BOUNTY",
+        "list_label": "CRIMES",
+    }
+    resp = client.post("/api/posters", data=fields)
+    assert resp.status_code == 200, resp.text
+    updated = resp.json()
+    assert updated["id"] == created["id"]
+    assert updated["name"] == "Updated Name"
+    assert updated["flavor_text"] == "New flavor"
+    assert updated["crimes"] == ["New charge"]
+    assert updated["bounty_amount"] == 2_500_000
+    assert updated["headline"] == "UPDATED"
+    assert updated["has_video"] is True
+    assert updated["video_url"].split("?")[0] == old_video_path
+    assert old_filename in updated["video_url"]
+    assert updated["updated_at"] != created["updated_at"] or updated["updated_at"]
+
+
+def test_create_poster_without_video_fails(client):
+    fields = {
+        "name": "No Clip",
+        "role": "bounty",
+        "player_id": "no-vid-1",
+        "bounty_amount": "1000000",
+        "crimes": "[]",
+        "stats": "{}",
+    }
+    resp = client.post("/api/posters", data=fields)
+    assert resp.status_code == 400
+    assert "video" in resp.text.lower()

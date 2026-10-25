@@ -68,9 +68,14 @@ async def log_requests(request: Request, call_next):
     start = time.perf_counter()
     response = await call_next(request)
     path = request.url.path
-    if path.startswith("/api/"):
+    if (
+        path.startswith("/api/")
+        or path.startswith("/poster")
+        or path.startswith("/media/")
+    ):
         response.headers["Cache-Control"] = "no-store, no-cache, must-be-revalidate"
         response.headers["Pragma"] = "no-cache"
+    if path.startswith("/api/"):
         ms = (time.perf_counter() - start) * 1000
         _LOGGER.info(
             "%s %s -> %s (%.0fms)", request.method, path, response.status_code, ms
