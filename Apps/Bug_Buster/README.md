@@ -15,10 +15,10 @@ integration.
 | Feature | Notes |
 |---|---|
 | Guest list (console picker) | Thin Proxmox API poll — vmid / node / kind / status |
-| Termproxy console | xterm.js via HA websocket |
-| MQTT spy | Debug-only subscribe (default `#`) |
+| Termproxy console | xterm.js via HA websocket; inline preview + **Pop out** overlay (reparents the live session) |
+| MQTT spy | Debug-only subscribe (default `#`); inline preview + **Pop out** for a larger live stream |
 | Companion health | `GET /health` on MCS, AlleycatTV, GBN via `shared_libraries.http` |
-| Device logs | WS `bug_buster/device_logs` → MCS `GET /device-logs` (Central crash logs; read-only) |
+| Device logs | WS `bug_buster/device_logs` → MCS `GET /device-logs` (Central crash logs; read-only); inline preview + **Pop out** |
 
 ## Credentials
 
