@@ -294,6 +294,17 @@ async def test_set_active_event_calls_mcs(hass: HomeAssistant, loaded_entry):
         )
         await hass.async_block_till_done()
 
-    assert mock_req.call_args.args[2] == "PUT"
-    assert mock_req.call_args.args[3] == "/events/e9/active"
-    assert mock_req.call_args.kwargs.get("json") == {"name": "Test Event 2027"}
+    # MCS set-active, then GBN push for /poster-cycle
+    assert mock_req.await_count >= 2
+    mcs_call = mock_req.await_args_list[0]
+    assert mcs_call.args[2] == "PUT"
+    assert mcs_call.args[3] == "/events/e9/active"
+    assert mcs_call.kwargs.get("json") == {"name": "Test Event 2027"}
+    gbn_call = mock_req.await_args_list[1]
+    assert gbn_call.args[1] == "gbn"
+    assert gbn_call.args[2] == "PUT"
+    assert gbn_call.args[3] == "/api/events/active"
+    assert gbn_call.kwargs.get("json") == {
+        "active_event_id": "e9",
+        "event_name": "Test Event 2027",
+    }

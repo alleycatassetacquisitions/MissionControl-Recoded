@@ -91,12 +91,18 @@ resolve_template() {
   if [[ -n "$match" ]]; then printf '%s' "$match"; return 0; fi
   pveam update >/dev/null || true
   match="$(pveam available 2>/dev/null | awk '{print $2}' | grep -F "${TEMPLATE_PREFIX}" | head -1 || true)"
-  [[ -n "$match" ]] || die "Template '${TEMPLATE_PREFIX}' not found."
-  pveam download "$TEMPLATE_STORAGE" "$match"
+  [[ -n "$match" ]] || die "Template '${TEMPLATE_PREFIX}' not found.
+
+Offline: pre-stage with pveam download ${TEMPLATE_STORAGE} <ubuntu-24.04-…tar.zst>
+See Docs/Venue Install.md (Offline — Linux CT template)."
+  filename="$match"
+  # pveam download prints progress on stdout — must not pollute TEMPLATE_REF capture
+  pveam download "$TEMPLATE_STORAGE" "$filename" >&2 \
+    || die "pveam download failed for $filename (check network / subscription mirror)"
   listed="$(pveam list "$TEMPLATE_STORAGE" 2>/dev/null | awk 'NR>1 {print $1}' || true)"
   match="$(printf '%s\n' "$listed" | grep -F "${TEMPLATE_PREFIX}" | head -1 || true)"
   if [[ -n "$match" ]]; then printf '%s' "$match"; return 0; fi
-  printf '%s:vztmpl/%s' "$TEMPLATE_STORAGE" "$match"
+  printf '%s:vztmpl/%s' "$TEMPLATE_STORAGE" "$filename"
 }
 
 wait_for_network() {
@@ -209,3 +215,10 @@ echo "  CTID:   $CTID"
 echo "  IP:     $IP"
 echo "  Health: curl -s ${PUBLIC}/health"
 echo "  Set Core Configurator key gbn to: ${PUBLIC}"
+
+echo "MC_OUT_URL=${PUBLIC}"
+echo "MC_OUT_CTID=${CTID}"
+echo "MC_OUT_NAME=${CT_NAME:-Galactic-Bounty-Network}"
+echo "MC_OUT_IP=${IP}"
+echo "MC_OUT_PORT=${GBN_PORT:-8100}"
+echo "MC_OUT_COMPONENT=gbn"

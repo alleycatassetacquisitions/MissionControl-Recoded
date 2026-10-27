@@ -9,6 +9,7 @@
 #
 # Optional environment overrides:
 #   VMID=101 STORAGE=local-lvm BRIDGE=vmbr0 START_VM=1 HAOS_VERSION=18.3
+#   HAOS_IMAGE=/path/to/haos_ova-XX.qcow2.xz   # offline: skip GitHub download
 # VMID is optional. If omitted (or already in use), the next free ID is used.
 
 set -euo pipefail
@@ -24,6 +25,7 @@ MEMORY_MB="${MEMORY_MB:-8192}"
 DISK_SIZE="${DISK_SIZE:-32G}"
 START_VM="${START_VM:-1}"
 HAOS_VERSION="${HAOS_VERSION:-}"
+HAOS_IMAGE="${HAOS_IMAGE:-}"
 SKIP_CONFIRM="${SKIP_CONFIRM:-0}"
 
 IMAGE_REPO="https://github.com/home-assistant/operating-system/releases/download"
@@ -112,14 +114,47 @@ storage_exists "$STORAGE" || die "Storage '$STORAGE' was not found. Check Datace
 
 VMID="$(choose_vmid)"
 
-if [[ -z "$HAOS_VERSION" ]]; then
-  say "Looking up the current Home Assistant OS (KVM/Proxmox) image"
-  HAOS_VERSION="$(fetch_haos_version)"
-fi
+WORKDIR="$(mktemp -d /var/tmp/haos-install.XXXXXX 2>/dev/null || mktemp -d /tmp/haos-install.XXXXXX)"
+cleanup() {
+  local ec=$?
+  if [[ "$ec" -eq 0 ]]; then
+    rm -rf "$WORKDIR"
+  else
+    printf '\nLeft files in %s (delete them after you are done troubleshooting).\n' "$WORKDIR" >&2
+  fi
+}
+trap cleanup EXIT
+cd "$WORKDIR"
 
-ARCHIVE="haos_ova-${HAOS_VERSION}.qcow2.xz"
-IMAGE="haos_ova-${HAOS_VERSION}.qcow2"
-URL="${IMAGE_REPO}/${HAOS_VERSION}/${ARCHIVE}"
+ARCHIVE=""
+IMAGE=""
+if [[ -n "$HAOS_IMAGE" ]]; then
+  [[ -f "$HAOS_IMAGE" ]] || die "HAOS_IMAGE not found: $HAOS_IMAGE"
+  HAOS_VERSION="${HAOS_VERSION:-local}"
+  say "Using offline HAOS image: $HAOS_IMAGE"
+  case "$HAOS_IMAGE" in
+    *.qcow2.xz)
+      ARCHIVE="$(basename "$HAOS_IMAGE")"
+      IMAGE="${ARCHIVE%.xz}"
+      cp -a "$HAOS_IMAGE" "$WORKDIR/$ARCHIVE"
+      ;;
+    *.qcow2)
+      IMAGE="$(basename "$HAOS_IMAGE")"
+      cp -a "$HAOS_IMAGE" "$WORKDIR/$IMAGE"
+      ;;
+    *)
+      die "HAOS_IMAGE must be a .qcow2 or .qcow2.xz file"
+      ;;
+  esac
+else
+  if [[ -z "$HAOS_VERSION" ]]; then
+    say "Looking up the current Home Assistant OS (KVM/Proxmox) image"
+    HAOS_VERSION="$(fetch_haos_version)"
+  fi
+  ARCHIVE="haos_ova-${HAOS_VERSION}.qcow2.xz"
+  IMAGE="haos_ova-${HAOS_VERSION}.qcow2"
+  URL="${IMAGE_REPO}/${HAOS_VERSION}/${ARCHIVE}"
+fi
 
 cat <<EOF
 
@@ -128,6 +163,7 @@ This will create a Home Assistant OS VM on this Proxmox node:
   VMID          $VMID
   Name          $VM_NAME
   HAOS          $HAOS_VERSION
+  Image         ${HAOS_IMAGE:-download from GitHub}
   CPU           ${CORES} cores (${CPU_TYPE})
   Memory        ${MEMORY_MB} MiB
   Disk          ${DISK_SIZE} on ${STORAGE}
@@ -142,30 +178,24 @@ if [[ "$SKIP_CONFIRM" != "1" ]]; then
   sleep 5
 fi
 
-WORKDIR="$(mktemp -d /var/tmp/haos-install.XXXXXX 2>/dev/null || mktemp -d /tmp/haos-install.XXXXXX)"
-cleanup() {
-  local ec=$?
-  if [[ "$ec" -eq 0 ]]; then
-    rm -rf "$WORKDIR"
-  else
-    printf '\nLeft files in %s (delete them after you are done troubleshooting).\n' "$WORKDIR" >&2
+if [[ -n "$ARCHIVE" && ! -f "$IMAGE" ]]; then
+  if [[ -z "$HAOS_IMAGE" ]]; then
+    say "Downloading $URL"
+    # Official KVM/Proxmox image from https://www.home-assistant.io/installation/alternative
+    if command -v wget >/dev/null 2>&1; then
+      wget -c --show-progress -O "$ARCHIVE" "$URL"
+    else
+      curl -fL --retry 3 -o "$ARCHIVE" "$URL"
+    fi
+    [[ -s "$ARCHIVE" ]] || die "Download failed or the file is empty: $URL
+
+Offline tip: copy a haos_ova-*.qcow2.xz onto this host and re-run with:
+  HAOS_IMAGE=/path/to/haos_ova-XX.qcow2.xz bash install-haos-proxmox.sh"
   fi
-}
-trap cleanup EXIT
-cd "$WORKDIR"
-
-say "Downloading $URL"
-# Official KVM/Proxmox image from https://www.home-assistant.io/installation/alternative
-if command -v wget >/dev/null 2>&1; then
-  wget -c --show-progress -O "$ARCHIVE" "$URL"
-else
-  curl -fL --retry 3 -o "$ARCHIVE" "$URL"
+  say "Extracting $ARCHIVE (this can take a minute)"
+  unxz -f "$ARCHIVE"
 fi
-[[ -s "$ARCHIVE" ]] || die "Download failed or the file is empty: $URL"
-
-say "Extracting $ARCHIVE (this can take a minute)"
-unxz -f "$ARCHIVE"
-[[ -s "$IMAGE" ]] || die "Extracted image missing: $IMAGE"
+[[ -s "$IMAGE" ]] || die "HAOS image missing: $IMAGE"
 
 say "Creating VM $VMID ($VM_NAME)"
 qm create "$VMID" \
@@ -180,7 +210,7 @@ qm create "$VMID" \
   --net0 "virtio,bridge=${BRIDGE},firewall=1" \
   --ostype l26 \
   --onboot 1 \
-  --agent 0 \
+  --agent 1 \
   --tablet 1 \
   --hotplug disk,network,usb
 
@@ -245,17 +275,66 @@ if [[ "$START_VM" == "1" ]]; then
   qm start "$VMID"
 fi
 
+HA_IP=""
+if [[ "$START_VM" == "1" ]]; then
+  say "Waiting briefly for QEMU guest agent / network (HAOS IP)…"
+  for _ in $(seq 1 45); do
+    raw="$(qm guest cmd "$VMID" network-get-interfaces 2>/dev/null || true)"
+    if [[ -n "$raw" ]]; then
+      HA_IP="$(python3 -c "
+import json,sys
+try:
+    data=json.load(sys.stdin)
+except Exception:
+    raise SystemExit
+if isinstance(data, dict) and 'result' in data:
+    data=data['result']
+if not isinstance(data, list):
+    raise SystemExit
+for iface in data:
+    name=str(iface.get('name') or '')
+    if name in ('lo','docker0') or name.startswith(('veth','br-')):
+        continue
+    for addr in iface.get('ip-addresses') or []:
+        if addr.get('ip-address-type')!='ipv4':
+            continue
+        a=str(addr.get('ip-address') or '')
+        if a.startswith(('127.','172.30.','172.17.')):
+            continue
+        print(a); raise SystemExit
+" <<<"$raw" 2>/dev/null || true)"
+      [[ -n "$HA_IP" ]] && break
+    fi
+    sleep 2
+  done
+fi
+
 cat <<EOF
 
 Done. VM $VMID ($VM_NAME) is ready.
 
-Wait 2–5 minutes for Home Assistant OS to boot, then open:
-  http://homeassistant.local
+EOF
+if [[ -n "$HA_IP" ]]; then
+  cat <<EOF
+Detected Home Assistant LAN IP: ${HA_IP}
+  http://${HA_IP}:8123
   http://homeassistant.local:8123
 
-If those do not resolve, open the VM console in Proxmox and use the IP it prints,
-or try http://homeassistant:8123
+EOF
+else
+  cat <<EOF
+Wait 2–5 minutes for Home Assistant OS to boot, then open:
+  http://homeassistant.local:8123
+If that does not resolve, open the VM console in Proxmox for the IP it prints.
 
+EOF
+fi
+cat <<EOF
 Onboarding: https://www.home-assistant.io/getting-started/onboarding/
 
 EOF
+
+echo "MC_OUT_VMID=${VMID}"
+echo "MC_OUT_NAME=${VM_NAME}"
+echo "MC_OUT_COMPONENT=haos"
+[[ -n "$HA_IP" ]] && echo "MC_OUT_IP=${HA_IP}"

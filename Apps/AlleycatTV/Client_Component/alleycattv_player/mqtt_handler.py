@@ -26,6 +26,7 @@ from typing import Any, Optional
 
 import paho.mqtt.client as mqtt
 
+import config as cfg
 from config import (
     CACHE_ENABLED,
     MQTT_BROKER,
@@ -38,6 +39,7 @@ from config import (
     TOPIC_PREFIX,
     TOPIC_STATUS,
     TOPIC_STATUS_JSON,
+    apply_runtime_config,
     get_broadcast_group_id,
     set_broadcast_group_id,
 )
@@ -118,6 +120,43 @@ class MQTTHandler:
             retain=False,
         )
         self.publish_presence(True)
+
+    def apply_config_command(self, payload: dict) -> None:
+        """Apply retained year-1 network config; reconnect MQTT if broker changed."""
+        result = apply_runtime_config(
+            server_url=str(payload.get("server_url") or ""),
+            mqtt_host=str(payload.get("mqtt_host") or ""),
+            mqtt_port=payload.get("mqtt_port") or "",
+        )
+        if result.get("server_changed"):
+            # Playlist URLs use MEDIA_BASE_URL — reload current group playlist.
+            self.cmd_queue.put({"action": "reload", "payload": {}})
+        if result.get("mqtt_changed"):
+            self._reconnect_mqtt()
+
+    def _reconnect_mqtt(self) -> None:
+        """Reconnect to the (possibly new) broker from config module."""
+        try:
+            self._client.loop_stop()
+            self._client.disconnect()
+        except Exception as err:  # noqa: BLE001
+            _LOGGER.debug("MQTT disconnect during reconnect: %s", err)
+        self._connected.clear()
+        self._client = mqtt.Client(client_id=f"alleycattv-pi-{PI_ID}")
+        self._client.on_connect = self._on_connect
+        self._client.on_disconnect = self._on_disconnect
+        self._client.on_message = self._on_message
+        if cfg.MQTT_USER or MQTT_USER:
+            self._client.username_pw_set(
+                cfg.MQTT_USER or MQTT_USER,
+                (cfg.MQTT_PASS or MQTT_PASS) or None,
+            )
+        self._client.will_set(TOPIC_STATUS, payload=b"", qos=1, retain=True)
+        broker = cfg.MQTT_BROKER or MQTT_BROKER
+        port = int(cfg.MQTT_PORT or MQTT_PORT)
+        self._client.connect_async(broker, port, keepalive=60)
+        self._client.loop_start()
+        _LOGGER.info("MQTT reconnecting to %s:%d after config", broker, port)
 
     def set_broadcast_group(self, group_id: str | None) -> None:
         """Apply membership from BGC; resubscribe broadcast + desired topics."""
@@ -201,6 +240,10 @@ class MQTTHandler:
             if bg is None:
                 bg = ""
             self.set_broadcast_group(str(bg) if bg else "")
+            return
+
+        if action == "config":
+            self.apply_config_command(payload if isinstance(payload, dict) else {})
             return
 
         if action in _CACHE_ACTIONS:

@@ -2,11 +2,13 @@
 
 Design contracts:
   - MCS is a Proxmox companion. It is NOT a Home Assistant process.
-  - HA (Registration integration) pushes Central Server URLs via POST /config.
-    MCS stores them in memory and uses them for all Central calls.
+  - HA pushes Central Server URLs + a venue peer snapshot via POST /config.
+    MCS stores them in memory, uses Central URLs for all Central calls, and
+    fans out peer config to LXC companions (GBN, Net Time).
   - Env vars (CENTRAL_PRIMARY_URL, CENTRAL_SECONDARY_URL) are first-boot
     defaults only. HA overwrites them on every setup.
-  - MCS_API_TOKEN guards /players, /events, /game-state, /device-logs, /config.
+  - MCS_API_TOKEN guards /players, /events, /game-state, /device-logs, /config,
+    /config/status.
   - Players are game records, not Home Assistant devices.
   - Central create/update are application/json; delete is soft-deactivate.
   - Active event comes from Central GET /game-state.
@@ -23,6 +25,8 @@ from fastapi import Depends, FastAPI, HTTPException, Query, Security, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 
 from central_client import (
+    create_affiliation,
+    create_affiliation_category,
     create_event,
     create_player,
     create_team,
@@ -31,8 +35,12 @@ from central_client import (
     fetch_device_logs,
     fetch_game_state,
     fetch_normalized_players,
+    list_affiliation_categories,
+    list_affiliations,
     list_events,
     list_teams,
+    rename_affiliation,
+    rename_affiliation_category,
     set_active_event,
     set_delayed_scores,
     set_scoring,
@@ -43,6 +51,12 @@ from central_client import (
 from models import (
     ActiveEventMemory,
     ActiveEventState,
+    AffiliationCategory,
+    AffiliationCategoryWrite,
+    AffiliationChoice,
+    AffiliationChoiceWrite,
+    ConfigStatusPeers,
+    ConfigStatusResponse,
     ConfigUpdate,
     DeviceLog,
     DeviceLogsResponse,
@@ -52,6 +66,7 @@ from models import (
     EventUpdate,
     GameState,
     HealthResponse,
+    PLAYER_NAME_MAX_LEN,
     Pagination,
     Player,
     PlayerWrite,
@@ -60,12 +75,19 @@ from models import (
     Team,
     TeamWrite,
 )
+from peer_fanout import fanout_peers
 from player_normalize import (
     normalize_player,
     to_central_create_body,
     to_central_update_body,
 )
 
+# Ensure app INFO/WARNING reach journalctl under systemd/uvicorn.
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(levelname)s:%(name)s:%(message)s",
+    force=True,
+)
 _LOGGER = logging.getLogger(__name__)
 
 # ---------------------------------------------------------------------------
@@ -77,6 +99,21 @@ _config: dict[str, str] = {
     "central_secondary": os.getenv("CENTRAL_SECONDARY_URL", ""),
     "api_token": os.getenv("MCS_API_TOKEN", ""),
 }
+
+# Venue peers — env seed empty; HA peer snapshot overwrites non-empty fields.
+_peers: dict[str, str] = {
+    "mcs_url": "",
+    "gbn_url": "",
+    "net_time_url": "",
+    "net_time_token": "",
+    "alleycattv_url": "",
+    "host_clock_url": "",
+    "mqtt_host": "",
+    "mqtt_port": "",
+}
+
+_PEER_KEYS = tuple(_peers.keys())
+_last_fanout: dict[str, Any] = {}
 
 # Last-known active event (cache; authoritative source is Central game-state)
 _active_event: dict[str, Any] = {
@@ -299,6 +336,33 @@ async def health() -> HealthResponse:
     )
 
 
+def _redacted_peers() -> ConfigStatusPeers:
+    token = (_peers.get("net_time_token") or "").strip()
+    return ConfigStatusPeers(
+        mcs_url=_peers.get("mcs_url") or "",
+        gbn_url=_peers.get("gbn_url") or "",
+        net_time_url=_peers.get("net_time_url") or "",
+        net_time_token="set" if token else "",
+        alleycattv_url=_peers.get("alleycattv_url") or "",
+        host_clock_url=_peers.get("host_clock_url") or "",
+        mqtt_host=_peers.get("mqtt_host") or "",
+        mqtt_port=_peers.get("mqtt_port") or "",
+    )
+
+
+@app.get("/config/status", response_model=ConfigStatusResponse, tags=["ops"])
+async def config_status(
+    _token: Annotated[str, Depends(_verify_token)],
+) -> ConfigStatusResponse:
+    """Inspect Central URLs, redacted peers, and last soft-fail fan-out results."""
+    return ConfigStatusResponse(
+        central_primary=_config["central_primary"] or "",
+        central_secondary=_config["central_secondary"] or "",
+        peers=_redacted_peers(),
+        last_fanout=dict(_last_fanout),
+    )
+
+
 @app.post(
     "/config",
     status_code=status.HTTP_204_NO_CONTENT,
@@ -308,16 +372,39 @@ async def update_config(
     update: ConfigUpdate,
     _token: Annotated[str, Depends(_verify_token)],
 ) -> None:
-    """Accept Central Server URLs pushed by the Registration HA integration."""
+    """Accept Central URLs + venue peer snapshot; fan-out to LXC companions."""
     if update.central_primary:
         _config["central_primary"] = update.central_primary
-    if update.central_secondary:
-        _config["central_secondary"] = update.central_secondary
+    # None = omit (leave current); "" = clear dead mirror; non-empty = set.
+    if update.central_secondary is not None:
+        _config["central_secondary"] = update.central_secondary.strip()
+
+    peer_touched = False
+    for key in _PEER_KEYS:
+        value = getattr(update, key, "") or ""
+        if value:
+            _peers[key] = value.strip()
+            peer_touched = True
+
     _LOGGER.info(
-        "MCS config updated — central_primary=%r central_secondary=%r",
+        "MCS config updated — central_primary=%r central_secondary=%r "
+        "peers_touched=%s mcs_url=%r gbn_url=%r net_time_url=%r",
         _config["central_primary"],
         _config["central_secondary"],
+        peer_touched,
+        _peers.get("mcs_url") or "",
+        _peers.get("gbn_url") or "",
+        _peers.get("net_time_url") or "",
     )
+
+    if peer_touched or _peers.get("gbn_url") or _peers.get("net_time_url"):
+        results = await fanout_peers(
+            api_token=_config["api_token"],
+            peers=dict(_peers),
+        )
+        _last_fanout.clear()
+        _last_fanout.update(results)
+        _LOGGER.info("MCS peer fan-out results: %s", _last_fanout)
 
 
 # ---------------------------------------------------------------------------
@@ -362,6 +449,43 @@ async def get_player(
     )
 
 
+def _validate_player_name(name: str, *, required: bool) -> str:
+    """Strip and enforce Mission Control 32-char name limit."""
+    cleaned = (name or "").strip()
+    if required and not cleaned:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="name is required",
+        )
+    if cleaned and len(cleaned) > PLAYER_NAME_MAX_LEN:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"name must be at most {PLAYER_NAME_MAX_LEN} characters",
+        )
+    return cleaned
+
+
+def _affiliation_category_from_central(raw: Any) -> AffiliationCategory | None:
+    if not isinstance(raw, dict) or not raw.get("id"):
+        return None
+    return AffiliationCategory(
+        id=str(raw["id"]),
+        event_id=str(raw.get("event_id") or ""),
+        name=str(raw.get("name") or ""),
+    )
+
+
+def _affiliation_choice_from_central(raw: Any) -> AffiliationChoice | None:
+    if not isinstance(raw, dict) or not raw.get("id"):
+        return None
+    return AffiliationChoice(
+        id=str(raw["id"]),
+        event_id=str(raw.get("event_id") or ""),
+        category_id=str(raw.get("category_id") or ""),
+        name=str(raw.get("name") or ""),
+    )
+
+
 @app.post(
     "/players",
     response_model=Player,
@@ -372,14 +496,10 @@ async def post_player(
     body: PlayerWrite,
     _token: Annotated[str, Depends(_verify_token)],
 ) -> Player:
-    """Create a player on Central (JSON name + optional email)."""
+    """Create a player on Central; optionally assign affiliations via PATCH."""
     _require_central()
-    if not (body.name or "").strip():
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="name is required",
-        )
-    payload = to_central_create_body(name=body.name, email=body.email or "")
+    name = _validate_player_name(body.name, required=True)
+    payload = to_central_create_body(name=name, email=body.email or "")
     status_code, resp = await create_player(
         _config["central_primary"],
         _config["central_secondary"],
@@ -387,14 +507,35 @@ async def post_player(
     )
     if status_code == 0 or status_code >= 400:
         raise _central_error(status_code, "create", resp)
+
+    player_id = ""
+    if isinstance(resp, dict):
+        player_id = str(resp.get("id") or "")
+
+    if player_id and body.affiliations:
+        patch = to_central_update_body(affiliations=body.affiliations)
+        patch_status, patch_resp = await update_player(
+            _config["central_primary"],
+            _config["central_secondary"],
+            player_id,
+            patch,
+        )
+        if patch_status == 0 or patch_status >= 400:
+            raise _central_error(patch_status, "assign affiliations", patch_resp)
+        if isinstance(patch_resp, dict):
+            try:
+                return Player(**normalize_player(patch_resp))
+            except Exception:  # noqa: BLE001
+                pass
+
     if isinstance(resp, dict):
         try:
             return Player(**normalize_player(resp))
         except Exception:  # noqa: BLE001
             pass
     return Player(
-        id=str(resp.get("id", "")) if isinstance(resp, dict) else "",
-        name=body.name,
+        id=player_id,
+        name=name,
         email=body.email or "",
         mode="unassigned",
         role="unassigned",
@@ -409,18 +550,22 @@ async def put_player(
 ) -> Player:
     """Update a player — proxies to Central PATCH /players/{id}."""
     _require_central()
+    name_for_update: str | None = None
+    if (body.name or "").strip():
+        name_for_update = _validate_player_name(body.name, required=False)
     payload = to_central_update_body(
-        name=body.name if (body.name or "").strip() else None,
+        name=name_for_update,
         email=body.email if body.email is not None and not body.clear_email else None,
         clear_email=body.clear_email,
         team_id=body.team_id if not body.clear_team else None,
         clear_team=body.clear_team,
         active=body.active,
+        affiliations=body.affiliations,
     )
     if not payload:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Supply name, email, team_id, or active",
+            detail="Supply name, email, team_id, active, or affiliations",
         )
     status_code, resp = await update_player(
         _config["central_primary"],
@@ -783,6 +928,221 @@ async def put_delayed_scores_active(
     if isinstance(resp, dict) and "enabled" in resp:
         return EnabledBody(enabled=bool(resp["enabled"]))
     return EnabledBody(enabled=body.enabled)
+
+
+# ---------------------------------------------------------------------------
+# Affiliations (live proxy — active-event scoped on Central)
+# ---------------------------------------------------------------------------
+
+
+@app.get(
+    "/affiliation-categories",
+    response_model=list[AffiliationCategory],
+    tags=["affiliations"],
+)
+async def get_affiliation_categories(
+    _token: Annotated[str, Depends(_verify_token)],
+) -> list[AffiliationCategory]:
+    """List affiliation categories for the Central active event."""
+    _require_central()
+    status_code, resp = await list_affiliation_categories(
+        _config["central_primary"],
+        _config["central_secondary"],
+    )
+    if status_code == 0 or status_code >= 400:
+        raise _central_error(status_code, "list affiliation categories", resp)
+    if not isinstance(resp, list):
+        return []
+    return [
+        c
+        for c in (_affiliation_category_from_central(item) for item in resp)
+        if c is not None
+    ]
+
+
+@app.post(
+    "/affiliation-categories",
+    response_model=AffiliationCategory,
+    status_code=status.HTTP_201_CREATED,
+    tags=["affiliations"],
+)
+async def post_affiliation_category(
+    body: AffiliationCategoryWrite,
+    _token: Annotated[str, Depends(_verify_token)],
+) -> AffiliationCategory:
+    """Create an affiliation category on the Central active event."""
+    _require_central()
+    name = (body.name or "").strip()
+    if not name:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST, detail="name is required"
+        )
+    status_code, resp = await create_affiliation_category(
+        _config["central_primary"],
+        _config["central_secondary"],
+        {"name": name},
+    )
+    if status_code == 0 or status_code >= 400:
+        raise _central_error(status_code, "create affiliation category", resp)
+    category = _affiliation_category_from_central(resp)
+    if category is None:
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail="Central created category but returned an unexpected body.",
+        )
+    return category
+
+
+@app.patch(
+    "/affiliation-categories/{category_id}",
+    response_model=AffiliationCategory,
+    tags=["affiliations"],
+)
+async def patch_affiliation_category(
+    category_id: str,
+    body: AffiliationCategoryWrite,
+    _token: Annotated[str, Depends(_verify_token)],
+) -> AffiliationCategory:
+    """Rename an affiliation category on the Central active event."""
+    _require_central()
+    name = (body.name or "").strip()
+    if not name:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST, detail="name is required"
+        )
+    status_code, resp = await rename_affiliation_category(
+        _config["central_primary"],
+        _config["central_secondary"],
+        category_id,
+        {"name": name},
+    )
+    if status_code == 404:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Category {category_id!r} not found.",
+        )
+    if status_code == 0 or status_code >= 400:
+        raise _central_error(status_code, "rename affiliation category", resp)
+    category = _affiliation_category_from_central(resp)
+    if category is None:
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail="Central renamed category but returned an unexpected body.",
+        )
+    return category
+
+
+@app.get(
+    "/affiliation-categories/{category_id}/affiliations",
+    response_model=list[AffiliationChoice],
+    tags=["affiliations"],
+)
+async def get_affiliations(
+    category_id: str,
+    _token: Annotated[str, Depends(_verify_token)],
+) -> list[AffiliationChoice]:
+    """List affiliations (choices) in a category for the active event."""
+    _require_central()
+    status_code, resp = await list_affiliations(
+        _config["central_primary"],
+        _config["central_secondary"],
+        category_id,
+    )
+    if status_code == 404:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Category {category_id!r} not found.",
+        )
+    if status_code == 0 or status_code >= 400:
+        raise _central_error(status_code, "list affiliations", resp)
+    if not isinstance(resp, list):
+        return []
+    return [
+        c
+        for c in (_affiliation_choice_from_central(item) for item in resp)
+        if c is not None
+    ]
+
+
+@app.post(
+    "/affiliation-categories/{category_id}/affiliations",
+    response_model=AffiliationChoice,
+    status_code=status.HTTP_201_CREATED,
+    tags=["affiliations"],
+)
+async def post_affiliation(
+    category_id: str,
+    body: AffiliationChoiceWrite,
+    _token: Annotated[str, Depends(_verify_token)],
+) -> AffiliationChoice:
+    """Create an affiliation choice under a category."""
+    _require_central()
+    name = (body.name or "").strip()
+    if not name:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST, detail="name is required"
+        )
+    status_code, resp = await create_affiliation(
+        _config["central_primary"],
+        _config["central_secondary"],
+        category_id,
+        {"name": name},
+    )
+    if status_code == 404:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Category {category_id!r} not found.",
+        )
+    if status_code == 0 or status_code >= 400:
+        raise _central_error(status_code, "create affiliation", resp)
+    choice = _affiliation_choice_from_central(resp)
+    if choice is None:
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail="Central created affiliation but returned an unexpected body.",
+        )
+    return choice
+
+
+@app.patch(
+    "/affiliation-categories/{category_id}/affiliations/{affiliation_id}",
+    response_model=AffiliationChoice,
+    tags=["affiliations"],
+)
+async def patch_affiliation(
+    category_id: str,
+    affiliation_id: str,
+    body: AffiliationChoiceWrite,
+    _token: Annotated[str, Depends(_verify_token)],
+) -> AffiliationChoice:
+    """Rename an affiliation choice."""
+    _require_central()
+    name = (body.name or "").strip()
+    if not name:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST, detail="name is required"
+        )
+    status_code, resp = await rename_affiliation(
+        _config["central_primary"],
+        _config["central_secondary"],
+        category_id,
+        affiliation_id,
+        {"name": name},
+    )
+    if status_code == 404:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Affiliation or category not found.",
+        )
+    if status_code == 0 or status_code >= 400:
+        raise _central_error(status_code, "rename affiliation", resp)
+    choice = _affiliation_choice_from_central(resp)
+    if choice is None:
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail="Central renamed affiliation but returned an unexpected body.",
+        )
+    return choice
 
 
 # ---------------------------------------------------------------------------

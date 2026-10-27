@@ -13,14 +13,18 @@ from .const import (
     KEY_CENTRAL_SECONDARY,
     KEY_GBN,
     KEY_MASTER_CONTROL_SERVER,
+    KEY_NET_TIME,
     KEY_PROXMOX,
     KEY_RTSP,
+    KEY_VENUE_UPDATER,
     SERVICE_CATALOG,
     YAML_MCS_TOKEN,
+    YAML_NET_TIME_TOKEN,
     YAML_PROXMOX_TOKEN_ID,
     YAML_PROXMOX_TOKEN_SECRET,
     YAML_RTSP_ENABLED,
     YAML_RTSP_LABEL,
+    YAML_VENUE_UPDATER_TOKEN,
 )
 from .urlutil import services_from_mapping
 
@@ -92,6 +96,16 @@ class CoreConfiguratorConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                         description={"suggested_value": "Live RTSP"},
                     ): str,
                     vol.Optional(YAML_RTSP_ENABLED, default=False): bool,
+                    vol.Optional(
+                        KEY_NET_TIME,
+                        description={"suggested_value": _placeholder(KEY_NET_TIME)},
+                    ): str,
+                    vol.Optional(YAML_NET_TIME_TOKEN): str,
+                    vol.Optional(
+                        KEY_VENUE_UPDATER,
+                        description={"suggested_value": _placeholder(KEY_VENUE_UPDATER)},
+                    ): str,
+                    vol.Optional(YAML_VENUE_UPDATER_TOKEN): str,
                 }
             ),
         )

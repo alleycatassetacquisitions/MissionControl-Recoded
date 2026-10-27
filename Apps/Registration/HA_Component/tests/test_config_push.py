@@ -94,10 +94,10 @@ async def test_push_called_on_central_secondary_update(
 
 
 @pytest.mark.asyncio
-async def test_push_not_called_for_unrelated_key(
+async def test_push_called_on_gbn_peer_update(
     hass: HomeAssistant, running_entry
 ):
-    """A CC update for an unrelated key (e.g. gbn) must NOT trigger a push."""
+    """Peer keys (e.g. gbn) trigger the MCS peer-snapshot push."""
     with patch(
         "custom_components.registration._push_central_config",
         new=AsyncMock(),
@@ -105,6 +105,24 @@ async def test_push_not_called_for_unrelated_key(
         hass.bus.async_fire(
             "core_configurator_updated",
             {"key": "gbn", "services": {}},
+        )
+        await hass.async_block_till_done()
+
+    mock_push.assert_called_once()
+
+
+@pytest.mark.asyncio
+async def test_push_not_called_for_unrelated_key(
+    hass: HomeAssistant, running_entry
+):
+    """A CC update for an unrelated key (e.g. rtsp) must NOT trigger a push."""
+    with patch(
+        "custom_components.registration._push_central_config",
+        new=AsyncMock(),
+    ) as mock_push:
+        hass.bus.async_fire(
+            "core_configurator_updated",
+            {"key": "rtsp", "services": {}},
         )
         await hass.async_block_till_done()
 

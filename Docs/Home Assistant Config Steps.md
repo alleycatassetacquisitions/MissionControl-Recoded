@@ -2,7 +2,9 @@
 
 Required configuration for Home Assistant integration.
 
-This assumes you are using **Proxmox**. Install **Home Assistant OS** as a virtual machine from the official KVM/Proxmox disk image. Do not install Home Assistant Container for Mission Control.
+For a **full venue one-liner** (HAOS + companions + secrets + update agent), see [`Docs/Venue Install.md`](Venue%20Install.md). This document remains the detailed manual / phase checklist.
+
+This assumes you are using **Proxmox** (host install + free updates: [`Proxmox Config Steps.md`](Proxmox%20Config%20Steps.md)). Install **Home Assistant OS** as a virtual machine from the official KVM/Proxmox disk image. Do not install Home Assistant Container for Mission Control.
 
 The installer script does the work shown in [Installing Home Assistant on Proxmox](https://youtu.be/CXBqeis7fgc) and uses the current image from [Home Assistant — Alternative installation](https://www.home-assistant.io/installation/alternative). The tables below are the Mission Control target (not the video’s minimums). The script applies them and picks the next free VM ID.
 
@@ -283,7 +285,7 @@ ha core restart
 1. Settings → Devices & services → Add **AlleycatTV** (install-only). MQTT must already be ready (Phase 5a). Sidebar panels without this entry → “Unknown command” / “Proxy not registered”.
 2. Sidebar: **AlleycatTV** and **AlleycatTV Content**.
 3. Pis that publish `mc/tv/status/{pi_id}` appear as devices; playback commands use `alleycattv.play_broadcast_group` / `stop_broadcast_group`.
-4. Content **+ Poster cycle** (after Phase 8 / Core Configurator `gbn`) adds `{gbn}/poster-cycle` as a webpage playlist item — see [`GBN Config Steps.md` § C](GBN%20Config%20Steps.md#c-poster-display-urls).
+4. Content **+ Poster cycle** (after Phase 8 / Core Configurator `gbn`) adds `{gbn}/poster-cycle` as a webpage playlist item for **active-event** posters — see [`GBN Config Steps.md` § C](GBN%20Config%20Steps.md#c-poster-display-urls). Set the active Event in Registration so GBN’s cache is seeded.
 
 #### 6c. Flash TV Pi SD cards (prep PC)
 
@@ -311,19 +313,24 @@ Full procedure + troubleshooting: [`AlleycatTV Config Steps.md` § D](AlleycatTV
 
 ### Phase 7 — Broadcast Group Controller
 
-One placement service for the venue. Physical = HA Area. Membership = Broadcast Group (not Labels — see app README).
+One placement service for the venue. Physical = HA Area. Membership = Broadcast Group (not Labels — see app README). Also retires inactive fabric device ids so a name can be reused.
+
+Redeploy Shared HA Helpers first when `fabric.py` changed (required for `remove_device`):
 
 ```powershell
+scp -r "z:\CodingProjects\Alleycat\MissionControl\Libraries\Shared_HA_Helpers\HA_Component\custom_components\shared_libraries" root@<HA-IP>:/config/custom_components/
 scp -r "z:\CodingProjects\Alleycat\MissionControl\Apps\Broadcast_Group_Controller\HA_Component\custom_components\broadcast_group_controller" root@<HA-IP>:/config/custom_components/
 scp -r "z:\CodingProjects\Alleycat\MissionControl\Apps\Broadcast_Group_Controller\HA_Component\www\broadcast_group_controller" root@<HA-IP>:/config/www/
 ```
 
-Merge from [`HomeAssist/configuration.yaml`](../HomeAssist/configuration.yaml): `broadcast_group_controller: {}` and the Broadcast Groups `panel_custom` entry. Redeploy AlleycatTV panels/www if you have not already (full Content + Player panels). Restart HA.
+Merge from [`HomeAssist/configuration.yaml`](../HomeAssist/configuration.yaml): `broadcast_group_controller: {}` and the Broadcast Groups `panel_custom` entry. Redeploy AlleycatTV panels/www if you have not already (full Content + Player panels). **Always** copy both BGC `custom_components/` and `www/`, then `ha core restart` — a www-only refresh leaves `list_broadcast_groups` unregistered (`Unknown command` / empty dropdown).
 
 1. Settings → Devices & services → Add **Broadcast Group Controller**.
-2. Sidebar **Broadcast Groups**: select a TV Pi or FDN → Set area → Set broadcast group (e.g. `lobby`).
-3. Pi receives `mc/tv/cmd/device/{id}/membership` and resubscribes to `cmd/broadcast/lobby/#`.
-4. AlleycatTV Content owns playlist buckets for that id; Player panel owns play/stop/interrupt.
+2. In **AlleycatTV Content**, create the playlist bucket(s) you need (e.g. `lobby`) if they do not exist yet.
+3. Sidebar **Broadcast Groups**: select a TV Pi or FDN → Set area → pick a Broadcast Group from the dropdown → **Set broadcast group**.
+4. Pi receives `mc/tv/cmd/device/{id}/membership` and resubscribes to `cmd/broadcast/{id}/#`.
+5. AlleycatTV Content owns playlist buckets for that id; Player panel owns play/stop/interrupt.
+6. To drop an unused device id: power it off (or wait until presence is not online) → **Remove from fabric** (or service `broadcast_group_controller.remove_device`). That clears the HA device and retained MQTT status/membership so the name can be reused or retired.
 
 App README: [`Apps/Broadcast_Group_Controller/README.md`](../Apps/Broadcast_Group_Controller/README.md)
 
@@ -343,11 +350,11 @@ Merge from [`HomeAssist/configuration.yaml`](../HomeAssist/configuration.yaml): 
 
 1. Settings → Devices & services → Add **Galactic Bounty Network**.
 2. Sidebar **Galactic Bounty Network**: roster pick → Generate → record/upload → create poster.
-3. Hunter/Bounty auto-select built-in poster templates; other roles pick or **Save as new** (Create poster also persists custom chrome). Affiliation control is labeled **Allegiance/NeoCorp**.
+3. Hunter/Bounty auto-select built-in poster templates; other roles pick from the dropdown. **Manage templates** creates/edits/deletes customs (Create poster does not auto-save templates). Affiliation control is labeled **Allegiance/NeoCorp**.
 4. Poster HTML overlays live MCS name/role/neocorp/faction on every read; chrome comes from the poster snapshot (or role built-in).
 5. Registration **Poster** column shows thumb + open link via `/api/gbn/proxy`.
 6. Smoke: `GET http://<gbn-ip>:8100/api/poster-templates` returns hunter + bounty (not 404).
-7. Smoke: `GET http://<gbn-ip>:8100/poster-cycle` returns HTML; AlleycatTV Content **+ Poster cycle** adds that URL to a broadcast group playlist (rotates all posters every 30s).
+7. Smoke: set active Event in Registration; `GET http://<gbn-ip>:8100/api/events/active` shows that event; `GET http://<gbn-ip>:8100/poster-cycle` rotates its posters; AlleycatTV Content **+ Poster cycle** adds that URL to a broadcast group playlist.
 
 App README: [`Apps/Galactic_Bounty_Network/README.md`](../Apps/Galactic_Bounty_Network/README.md)
 

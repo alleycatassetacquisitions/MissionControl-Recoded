@@ -11,7 +11,7 @@ from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers.dispatcher import async_dispatcher_connect
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
-from .const import DOMAIN, SIGNAL_NEW_DEVICE, SIGNAL_UPDATE
+from .const import DOMAIN, SIGNAL_DEVICE_REMOVED, SIGNAL_NEW_DEVICE, SIGNAL_UPDATE
 from .device import device_data, device_info
 
 _STATE_MAP = {
@@ -35,8 +35,15 @@ async def async_setup_entry(
         known.add(pi_id)
         async_add_entities([AlleycatTVMediaPlayer(hass, pi_id)])
 
+    @callback
+    def _removed(pi_id: str) -> None:
+        known.discard(pi_id)
+
     entry.async_on_unload(
         async_dispatcher_connect(hass, SIGNAL_NEW_DEVICE, _add)
+    )
+    entry.async_on_unload(
+        async_dispatcher_connect(hass, SIGNAL_DEVICE_REMOVED, _removed)
     )
     for pi_id in list(hass.data.get(DOMAIN, {}).get("devices", {})):
         _add(pi_id)

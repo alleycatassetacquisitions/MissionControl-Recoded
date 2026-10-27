@@ -98,6 +98,8 @@ Seed via [`HomeAssist/secrets.yaml.example`](../HomeAssist/secrets.yaml.example)
 
 AlleycatTV and AlleycatTV Content panels **read** this URL (and Live RTSP) from Core Configurator only — they have no server-IP / RTSP settings UI.
 
+On Core Configurator Save for `alleycattv` or `master_control_server` (and on AlleycatTV setup), the HA integration publishes a **retained** MQTT config to `mc/tv/cmd/all/config` (`server_url`, `mqtt_host`, `mqtt_port`) so Pis pick up year-1 network settings without a separate MCS MQTT client.
+
 ---
 
 ## C. Deploy AlleycatTV onto Home Assistant
@@ -131,9 +133,9 @@ If Content shows “Proxy not registered” or AlleycatTV shows “Unknown comma
 | Button | Requires | Playlist item |
 |---|---|---|
 | **+ Scoreboard URL** | Manual URL | `webpage` with label, URL, duration |
-| **+ Poster cycle** | Core Configurator key `gbn` | Upserts `GBN Poster Cycle` → `{gbn}/poster-cycle`, duration 3600s |
+| **+ Poster cycle** | Core Configurator key `gbn` | Upserts `GBN Poster Cycle` → `{gbn}/poster-cycle`, duration **86400s (24h)** — GBN rotates inside the page every 30s; AlleycatTV leaves the slot after `duration` |
 
-GBN’s `/poster-cycle` page rotates every made poster every 30s inside that slot. Details: [`GBN Config Steps.md` § C](GBN%20Config%20Steps.md#c-poster-display-urls). Ops fallback `/manage` has the same **+ Poster cycle** button (paste the cycle URL).
+GBN’s `/poster-cycle` page rotates **active-event** posters every 30s inside that slot (not the legacy global store). Registration must have an active Event (it pushes that to GBN). If the Pi shows a blank cycle, check `GET {gbn}/api/events/active` and `GET {gbn}/api/posters` — then set active in Registration once. Details: [`GBN Config Steps.md` § C](GBN%20Config%20Steps.md#c-poster-display-urls). Ops fallback `/manage` has the same **+ Poster cycle** button (paste the cycle URL).
 
 Playback services (examples):
 
@@ -248,7 +250,21 @@ Empty playlist / “Zone playlist has no playable items” is normal until Part 
 | `MQTT connect failed rc=5` | Mosquitto rejected auth | Save `logins` in Mosquitto add-on, then put the same user/pass in `/etc/alleycattv.env` and `sudo systemctl restart alleycattv-player` |
 | Inject to Temp / “no boot mount” | Windows slow to remount `bootfs` | Wait for `bootfs` in Explorer; enter `D:\` at prompt; tool now polls up to 90s |
 | Panel “No devices yet” | No presence publish | Fix MQTT `rc=5` first; confirm `alleycattv-player` is `active` |
+| Poster cycle goes black; Reload does nothing | Old player slept full webpage `duration` after Chromium died; reload skipped restart while webpage active | Update client (`player.py` + `web_display.py`) under `/opt/alleycattv/`, then `sudo systemctl restart alleycattv-player`. Confirm playlist poster-cycle `duration` is **86400** (re-click **+ Poster cycle** if still 3600) |
+| Stale Pi chip / want to reuse a Pi ID | Device still in fabric after flash rename or retirement | Broadcast Groups panel → select offline chip → **Remove from fabric** (must not be online) |
+| BGC dropdown empty / “Unknown command” | Panel www newer than BGC Python, or no Content buckets | Redeploy `custom_components/broadcast_group_controller` **and** `www/…`, then `ha core restart`; create buckets in AlleycatTV Content and Refresh |
 | Imager: destination not removable | USB reader looks like fixed disk | Tool passes `--enable-writing-system-drives`; own picker still blocks system disks |
+
+### Update player code on a live Pi (no reflash)
+
+From the prep PC (replace `<pi-ip>`):
+
+```powershell
+scp -r "z:\CodingProjects\Alleycat\MissionControl\Apps\AlleycatTV\Client_Component\alleycattv_player" alleycat@<pi-ip>:/tmp/alleycattv_player
+ssh alleycat@<pi-ip> "sudo rm -rf /opt/alleycattv/alleycattv_player && sudo mv /tmp/alleycattv_player /opt/alleycattv/ && sudo chown -R alleycat:alleycat /opt/alleycattv/alleycattv_player && sudo systemctl restart alleycattv-player"
+```
+
+Confirm: `journalctl -u alleycattv-player -n 20 --no-pager` should show version `2026.10.19-web-reload` (or newer) and MQTT connected.
 
 ### Notes
 
@@ -261,12 +277,12 @@ Empty playlist / “Zone playlist has no playable items” is normal until Part 
 ## E. Smoke test
 
 1. Confirm the Pi chip is online in the **AlleycatTV** panel (Part D). Playlist warnings alone are OK at this stage.
-2. Content: upload a short video via **AlleycatTV Content**; create a broadcast group playlist id (e.g. `lobby`).
-3. In the **Broadcast Groups** panel (Broadcast Group Controller): set the Pi’s Area, then assign Broadcast Group `lobby`. The Pi learns membership over MQTT (`mc/tv/cmd/device/{pi_id}/membership`) and resubscribes — do **not** flash membership on the SD card.
+2. Content: upload a short video via **AlleycatTV Content**; create a broadcast group playlist bucket (e.g. `lobby`) — this is what fills the BGC dropdown.
+3. In the **Broadcast Groups** panel (Broadcast Group Controller): set the Pi’s Area, then pick `lobby` from the **Broadcast Group ID** dropdown and **Set broadcast group**. The Pi learns membership over MQTT (`mc/tv/cmd/device/{pi_id}/membership`) and resubscribes — do **not** flash membership on the SD card. If the dropdown is empty after Content create, redeploy BGC Python + www and `ha core restart`.
 4. From HA / AlleycatTV Player panel: Play group `lobby` (or call `alleycattv.play_broadcast_group`).
 5. Pi plays; `media_player` / status JSON shows `broadcast_group_id: lobby`.
 6. Call `stop_broadcast_group` — playback stops; retained desired topic updates.
-7. (Optional, needs GBN) **+ Poster cycle** on a broadcast group → playlist shows `GBN Poster Cycle`; Pi opens `{gbn}/poster-cycle` and rotates posters every 30s.
+7. (Optional, needs GBN) **+ Poster cycle** on a broadcast group → playlist shows `GBN Poster Cycle`; Pi opens `{gbn}/poster-cycle` and rotates **active-event** posters every 30s (set active Event in Registration first).
 
 Lab-only override (optional): set `ALLEYCATV_BROADCAST_GROUP_ID` in `/etc/alleycattv.env` and restart `alleycattv-player`. Prefer BGC assign for venue ops.
 
@@ -279,7 +295,7 @@ Lab-only override (optional): set `ALLEYCATV_BROADCAST_GROUP_ID` in `/etc/alleyc
 | HA `alleycattv` | MQTT commands, presence via fabric, Content Manager proxy |
 | Proxmox content server | Files + playlists only |
 | Pi client | mpv + subscribe `mc/tv/cmd/…` |
-| Broadcast Group Controller | Membership + area placement |
+| Broadcast Group Controller | Membership + area placement (dropdown of Content buckets); remove offline fabric devices |
 
 App overview: [`Apps/AlleycatTV/README.md`](../Apps/AlleycatTV/README.md)  
 HA phase slice: [`Home Assistant Config Steps.md` — Phase 6](Home%20Assistant%20Config%20Steps.md#phase-6--alleycattv-on-the-fabric)

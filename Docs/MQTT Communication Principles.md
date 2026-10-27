@@ -9,8 +9,8 @@ Topics are **not** hardcoded per device at flash time. Each device builds its ow
 - **Broker:** official Mosquitto broker add-on on Home Assistant OS. HA’s `mqtt` integration is the only Mission Control MQTT client path.
 - Home Assistant is the **only** MQTT command publisher. The AlleycatTV server must not publish the same commands.
 - Apps use Home Assistant’s `mqtt` integration (`async_subscribe` / `async_publish`). Do not open a second broker client inside Digital Node Nexus, AlleycatTV, or Bug Buster.
-- Status and LWT create a Home Assistant device and a presence entity (`online` / `offline` / `unknown`).
-- Commands target this device, `all`, or a Broadcast Group. Membership comes from Broadcast Group Controller, not from firmware flash and not from a scrape of another app.
+- Status and LWT create a Home Assistant device and a presence entity (`online` / `offline` / `unknown`). Status topics are retained; retiring a device requires clearing that retain (Broadcast Group Controller **Remove from fabric** / `remove_device` on offline devices only).
+- Commands target this device, `all`, or a Broadcast Group. Membership comes from Broadcast Group Controller, not from firmware flash and not from a scrape of another app. Membership assign topics are also retained; remove clears them.
 - Digital Node Nexus owns FDN payloads (LED, haptic, page, protobuf). AlleycatTV owns playback payloads. The MQTT fabric owns presence and routing.
 
 Bug Buster’s MQTT spy is debug-only. It does not become a second command path.
@@ -68,4 +68,4 @@ Command action segments under those wildcards (Phase 6 AlleycatTV):
 | Volume | `…/volume` | JSON `{"volume": 0-100}` |
 | Cache | `…/cache_delete` etc. | JSON |
 
-Presence: plain `online` / `offline` (or empty LWT) on `mc/tv/status/{PI_ID}`. Optional playback telemetry on `mc/tv/status/{PI_ID}/json`.
+Presence: plain `online` / `offline` (or empty LWT) on `mc/tv/status/{PI_ID}` (**retain=True**). Optional playback telemetry on `mc/tv/status/{PI_ID}/json`. To reuse or drop a Pi ID that no longer publishes, remove it from the fabric while offline (clears the retained status + membership topics).

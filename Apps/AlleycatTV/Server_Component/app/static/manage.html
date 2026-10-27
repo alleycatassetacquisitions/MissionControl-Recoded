@@ -551,7 +551,7 @@ async function addPosterCycleUrl(zoneId) {
   const data = await showUrlForm(`Add GBN poster cycle to ${zoneDisplayName(zoneId)}`, {
     label: 'GBN Poster Cycle',
     urlPlaceholder: 'http://<gbn-ip>:8100/poster-cycle',
-    duration: 3600,
+    duration: 86400,
     maxDuration: 86400,
   });
   if (!data) return;
@@ -565,7 +565,7 @@ async function addPosterCycleUrl(zoneId) {
     filename: data.label || 'GBN Poster Cycle',
     media_type: 'webpage',
     url: cycleUrl,
-    duration: data.duration || 3600,
+    duration: data.duration || 86400,
   };
   if (existing >= 0) items[existing] = { ...items[existing], ...entry };
   else items.push(entry);

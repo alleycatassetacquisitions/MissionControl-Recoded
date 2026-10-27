@@ -67,30 +67,51 @@ If the GitHub repo is **private**, `git clone` will ask for a username/password 
 
 ## After install
 
-1. Seed or edit Core Configurator with MCS URL + token (and Central primary/secondary URLs).
-2. Deploy Registration + Shared HA Helpers + Core Configurator to HA — see [`Home Assistant Config Steps.md`](Home%20Assistant%20Config%20Steps.md#deploy-mission-control-files-onto-ha) and [`File Structure.md` — On Home Assistant](File%20Structure.md#on-home-assistant).
-3. Add the Registration integration (install-only — no token form). Registration pushes Central URLs to MCS via `POST /config` and polls `GET /players`.
-4. Operators create/activate an **event**, then register players (name + optional email) from the Registration panel. MCS proxies Central JSON create/PATCH and soft-deactivates via `active: false`. Use **Game Master** for scoring live/off and delayed scores. Bug Buster reads Central crash logs via MCS `GET /device-logs`.
+1. Seed or edit Core Configurator with MCS URL + token (and Central primary/secondary URLs). Secondary may be empty when there is no LAN mirror — do not leave a dead IP.
+2. Deploy Registration + Shared HA Helpers + Core Configurator to HA — see [`Home Assistant Config Steps.md`](Home%20Assistant%20Config%20Steps.md#deploy-mission-control-files-onto-ha) and [`File Structure.md` — On Home Assistant](File%20Structure.md#on-home-assistant). Prefer `RESUME=ha-deploy` from the [venue installer](Venue%20Install.md) when updating a live site.
+3. Add the Registration integration (install-only — no token form). Registration pushes Central URLs **plus** a venue peer snapshot to MCS via `POST /config` on setup, on `registration.sync_now`, and whenever Core Configurator Save changes MCS/Central/GBN/Net Time/AlleycatTV/Proxmox. MCS fans out companion `POST /config` to GBN and Net Time (soft-fail; MCS still returns 204). Inspect with Bearer `GET /config/status`. AlleycatTV HA publishes retained Pi `config` over MQTT separately. Registration polls `GET /players`.
+4. Operators create/activate an **event**, then register players (name + optional email + tags) from the Registration panel. MCS proxies Central JSON create/PATCH and soft-deactivates via `active: false`. Use **Game Master** for scoring live/off, delayed scores, and affiliation catalog CRUD. Bug Buster reads Central crash logs via MCS `GET /device-logs`.
+
+### Peer push / fan-out smoke test (on Proxmox host)
+
+Replace the URLs with this venue’s Core Configurator values (empty secondary is valid):
+
+```bash
+TOKEN=$(pct exec 102 -- bash -lc "grep ^MCS_API_TOKEN= /etc/mcs.env | cut -d= -f2-")
+pct exec 102 -- curl -s -o /dev/null -w '%{http_code}\n' -X POST http://127.0.0.1:8700/config \
+  -H "Authorization: Bearer ${TOKEN}" -H 'Content-Type: application/json' \
+  -d "{\"central_primary\":\"https://<central>\",\"central_secondary\":\"\",\"mcs_url\":\"http://<mcs-ip>:8700\",\"gbn_url\":\"http://<gbn-ip>:8100\",\"host_clock_url\":\"http://<proxmox-ip>:8721\"}"
+pct exec 102 -- curl -s -H "Authorization: Bearer ${TOKEN}" http://127.0.0.1:8700/config/status
+pct exec 101 -- journalctl -u gbn -n 20 --no-pager --since '1 min ago' | grep -iE 'GBN /config|POST /config' || true
+```
+
+`last_fanout.gbn.ok` should be true and GBN should log `GBN /config applied` from the MCS IP. Day-2 pushes come from Registration (CC Save / `sync_now`), not these curls.
+
+For a full code push + optional smoke from Windows, see [`ProxmoxInstallFiles/push-peer-hub-from-pc.ps1`](../ProxmoxInstallFiles/push-peer-hub-from-pc.ps1) and [`push-peer-hub-venue.sh`](../ProxmoxInstallFiles/push-peer-hub-venue.sh).
 
 ## Updating MCS code later
 
-Copy updated `Server_Component` files to the **Proxmox host** first, then into the LXC (CT id from install output, often `102`):
+Prefer a **flat** `Server_Component` tree as `SRC` (files at top level — not nested `Server_Component/Server_Component/`). Windows `scp -r Server_Component` often nests; stage contents then use the push helper:
 
 ```powershell
-# From your PC — replace <PROXMOX-IP>
-scp "z:\CodingProjects\Alleycat\MissionControl\Apps\Master_Control_Server\Server_Component\player_normalize.py" root@<PROXMOX-IP>:/root/
-scp "z:\CodingProjects\Alleycat\MissionControl\Apps\Master_Control_Server\Server_Component\central_client.py" root@<PROXMOX-IP>:/root/
-scp "z:\CodingProjects\Alleycat\MissionControl\Apps\Master_Control_Server\Server_Component\models.py" root@<PROXMOX-IP>:/root/
-scp "z:\CodingProjects\Alleycat\MissionControl\Apps\Master_Control_Server\Server_Component\main.py" root@<PROXMOX-IP>:/root/
+# From your PC — replace <PROXMOX-IP>; stage flat tree on host
+scp -r "z:\CodingProjects\Alleycat\MissionControl\Apps\Master_Control_Server\Server_Component\*" root@<PROXMOX-IP>:/root/mcs-src/
+scp "z:\CodingProjects\Alleycat\MissionControl\ProxmoxInstallFiles\lib\push-server-component.sh" root@<PROXMOX-IP>:/root/
+scp "z:\CodingProjects\Alleycat\MissionControl\ProxmoxInstallFiles\push-peer-hub-venue.sh" root@<PROXMOX-IP>:/root/
 ```
 
-On the Proxmox **host** shell (`pct` does not exist inside the LXC):
+On the Proxmox **host** shell:
 
 ```bash
-ls -la /root/*.py   # confirm files landed before push
-pct push 102 /root/player_normalize.py /opt/mcs/player_normalize.py
-pct push 102 /root/central_client.py /opt/mcs/central_client.py
-pct push 102 /root/models.py /opt/mcs/models.py
+# Confirm flat: main.py at top of SRC
+ls /root/mcs-src/main.py
+CTID=102 UNIT=mcs DEST=/opt/mcs SRC=/root/mcs-src bash /root/push-server-component.sh
+# or: bash /root/push-peer-hub-venue.sh   # MCS + GBN together
+```
+
+Per-file `pct push` still works for hotfixes:
+
+```bash
 pct push 102 /root/main.py /opt/mcs/main.py
 pct exec 102 -- systemctl restart mcs
 ```

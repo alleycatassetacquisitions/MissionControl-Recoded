@@ -261,7 +261,7 @@ Manages communications with FDNs (Fixed Data Nodes). Mission Control talks to FD
 
 ### Galactic Bounty Network
 
-Manages bounty posters, bounty boards, and poster capture. In code this is `gbn` — not Photobooth or `bounty`. Poster chrome templates (hunter/bounty built-ins + customs) live on the guest as `data/poster_templates.json`; public poster links follow the request Host (Core Configurator `gbn` URL). Kiosk pages: `/poster-cycle` (all posters, 30s) and `/active-players` (game-server list). AlleycatTV Content **+ Poster cycle** plays the former as a webpage playlist item.
+Manages bounty posters, bounty boards, and poster capture. In code this is `gbn` — not Photobooth or `bounty`. Poster chrome templates (hunter/bounty built-ins + customs) live on the guest as `data/poster_templates.json`; clips/posters are **per Event** under `data/events/{id}/` and `media/events/{id}/videos/`; `data/active_event.json` caches the active Event for kiosks (Registration `PUT /api/events/active`). Public poster links follow the request Host (Core Configurator `gbn` URL). Kiosk pages: `/poster-cycle` (**active-event** posters, 30s) and `/active-players` (game-server list). AlleycatTV Content **+ Poster cycle** plays the former as a webpage playlist item.
 
 **Path:** `Apps\Galactic_Bounty_Network\`  
 **On HA:** `/config/custom_components/gbn/` + `/config/www/gbn/`  
@@ -271,7 +271,7 @@ Manages bounty posters, bounty boards, and poster capture. In code this is `gbn`
 
 ### Registration
 
-Home Assistant face of Master Control Server: events strip, roster sensor, services (`sync_now`, `register_player`, `create_event`, `update_event`, `set_active_event`, `update_player`, soft-deactivate `delete_player`), and sidebar panel. Talks only to MCS — never opens a Central socket. MCS URL and token come from Core Configurator.
+Home Assistant face of Master Control Server: events strip, roster sensor, services (`sync_now`, `register_player`, `create_event`, `update_event`, `set_active_event`, `update_player`, soft-deactivate `delete_player`), and sidebar panel. Talks to MCS for players/events; **set_active_event** (and restore-on-start) also pushes the active Event to GBN (`PUT /api/events/active`) so AlleycatTV `/poster-cycle` stays in sync. Never opens a Central socket. MCS URL/token and GBN URL come from Core Configurator.
 
 **Path:** `Apps\Registration\`  
 **On HA:** `/config/custom_components/registration/` + `/config/www/registration/`  
@@ -287,7 +287,7 @@ Home Assistant gameplay panel: active-event status from MCS `GET /game-state`, t
 
 ### Master Control Server
 
-Proxmox companion FastAPI service. The only Central HTTP adapter. Players (JSON create/PATCH; soft-deactivate), events list + game-state active, teams, scoring/delayed-scores, device logs (`GET /device-logs`), and `POST /config`. Not a Home Assistant process.
+Proxmox companion FastAPI service. The only Central HTTP adapter. Players (JSON create/PATCH; soft-deactivate), events list + game-state active, teams, scoring/delayed-scores, device logs (`GET /device-logs`). Venue peer-config hub: `POST /config` (Central + peer snapshot; soft-fail fan-out to GBN/Net Time) and Bearer `GET /config/status`. Not a Home Assistant process.
 
 **Path:** `Apps\Master_Control_Server\`  
 **On LXC:** `/opt/mcs/` (uvicorn via systemd `mcs`)  
@@ -295,7 +295,7 @@ Proxmox companion FastAPI service. The only Central HTTP adapter. Players (JSON 
 
 ### Net Time
 
-LAN NTP authority (chrony) plus management API for Attempt Online Sync, timezone, and Offline Sync. Privileged Proxmox LXC plus a **host clock agent** on the Proxmox node (Offline Sync fallback). Core Configurator holds URL + token; the `net_time` HA integration proxies websocket commands used by the Core Configurator Net Time card (timezone dropdown, local wall-time status).
+LAN NTP authority (chrony) plus management API for Attempt Online Sync, timezone, and Offline Sync. Privileged Proxmox LXC plus a **host clock agent** on the Proxmox node (Offline Sync fallback). Core Configurator holds URL + token; the `net_time` HA integration proxies websocket commands used by the Core Configurator Net Time card (timezone dropdown, local wall-time status). MCS peer fan-out can update `host_clock_url` via Bearer `POST /config` (DEST `/opt/net_time`, underscore).
 
 **Path:** `Apps\Net_Time\`  
 **On LXC:** `/opt/net_time/` (uvicorn via systemd `net-time`) + chrony  
@@ -312,7 +312,7 @@ Talks to Meru, our local LLM agent. Meru is a story component in the overall eve
 
 ### Broadcast Group Controller
 
-Controls Broadcast Group membership and writes Home Assistant Areas for physical placement. In code this is `broadcast_group_controller`. Membership SoR is BGC Store (not HA Labels); devices learn group over MQTT.
+Controls Broadcast Group membership and writes Home Assistant Areas for physical placement. In code this is `broadcast_group_controller`. Membership SoR is BGC Store (not HA Labels); devices learn group over MQTT. Panel dropdown lists AlleycatTV Content playlist buckets via `list_broadcast_groups`. Offline fabric devices can be removed (`remove_device`) so an id can be reused or retired.
 
 **Path:** `Apps\Broadcast_Group_Controller\`
 **On HA:** `/config/custom_components/broadcast_group_controller/` + `/config/www/broadcast_group_controller/`
@@ -331,7 +331,7 @@ The same `HA_Component\` layout applies. Tests live in `HA_Component\tests\`.
 
 #### Shared HA Helpers
 
-Bearer-auth HTTP helper, MQTT fabric helpers (topic builder, subscribe/publish/presence wrappers, status/# → device + presence entity), and a panel CSS/JS kit loaded via `extra_module_url`. Other integrations import helpers directly after declaring `"shared_libraries"` as a manifest dependency.
+Bearer-auth HTTP helper, MQTT fabric helpers (topic builder, subscribe/publish/presence wrappers, status/# → device + presence entity, `async_forget_device` to clear retained status), and a panel CSS/JS kit loaded via `extra_module_url`. Other integrations import helpers directly after declaring `"shared_libraries"` as a manifest dependency.
 
 - **Code:** `shared_libraries`
 - **Path:** `Libraries\Shared_HA_Helpers\`
@@ -355,6 +355,7 @@ Standing law:
 - `Home Assistant Mapping.md` — how Home Assistant is used
 - `MQTT Communication Principles.md` — topics and MQTT ownership
 - `File Structure.md` — this file (repo **and** HA/LXC layouts)
+- `Proxmox Config Steps.md` — bare-metal ISO install, subscription nag removal, free (no-subscription) updates
 - `Home Assistant Config Steps.md` — Proxmox VM bootstrap + deploying files onto HA
 - `Master Control Server Config Steps.md` — Proxmox LXC bootstrap for Master Control Server
 - `AlleycatTV Config Steps.md` — Proxmox content server + HA integration + Pi SD flash (Phase 6)

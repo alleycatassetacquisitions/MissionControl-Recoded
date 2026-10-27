@@ -13,6 +13,7 @@ STORAGE_VERSION = 1
 STORAGE_KEY = f"{DOMAIN}_device_meta"
 
 SIGNAL_NEW_DEVICE = f"{DOMAIN}_new_device"
+SIGNAL_DEVICE_REMOVED = f"{DOMAIN}_device_removed"
 SIGNAL_UPDATE = f"{DOMAIN}_update"
 
 # Websocket commands for panels.

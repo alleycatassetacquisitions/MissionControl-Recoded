@@ -12,25 +12,26 @@ Proxmox companion service. The **only** Central HTTP adapter for Mission Control
 
 ```
 Operator (CC panel)
-    │  saves MCS URL + token, central_primary / central_secondary
+    │  saves MCS URL + token, Central URLs, companion URLs
     ▼
 Core Configurator (HA)
-    │  fires core_configurator_updated
+    │  fires core_configurator_updated (peer keys) / registration.sync_now
     ▼
 Registration integration (HA)
-    │  POST /config  (Bearer from CC get_extra)
+    │  POST /config  peer snapshot (Bearer from CC get_extra)
     ▼
 Master Control Server  ←──── /players /events /device-logs  ──── Registration / Bug Buster
-    │
-    │  tries primary, falls back to secondary
+    │                 └── soft-fail fan-out POST /config → GBN, Net Time
+    │  tries primary, falls back to secondary (game-state also on 404)
     ▼
 Central Server (online or LAN)
 ```
 
 - **Home Assistant does not talk to the Central Server directly.** MCS is the gateway.
+- MCS is also the **venue peer-config hub**: Registration pushes Central + companion URLs; MCS fans out to GBN and Net Time. Inspect with `GET /config/status`.
 - `Registration` is MCS's HA face for players + events.
 - `Bug Buster` reads device crash logs via MCS.
-- `GBN` calls MCS for Player data (Phase 8 — live overlay on poster reads).
+- `GBN` calls MCS for Player data (live overlay on poster reads).
 
 ---
 
@@ -173,19 +174,65 @@ Proxy Central device crash logs. Query: `page`, `per_page`.
 
 ### `POST /config` — Bearer required
 
-Pushed by the Registration integration on every HA start and whenever `core_configurator_updated` fires for `central_primary` or `central_secondary`.
+Pushed by Registration on setup, on `registration.sync_now`, and when Core Configurator Save touches peer keys (MCS / Central / GBN / Net Time / AlleycatTV / Proxmox). Body is a **peer snapshot**:
 
 ```json
-{ "central_primary": "https://...", "central_secondary": "http://..." }
+{
+  "central_primary": "https://...",
+  "central_secondary": "",
+  "mcs_url": "http://…:8700",
+  "gbn_url": "http://…:8100",
+  "net_time_url": "http://…:8720",
+  "net_time_token": "…",
+  "alleycattv_url": "http://…",
+  "host_clock_url": "http://…:8721",
+  "mqtt_host": "…",
+  "mqtt_port": "1883"
+}
 ```
 
-Returns `204 No Content`. Empty strings are ignored (existing value preserved).
+Returns `204 No Content` even if companion fan-out soft-fails.
+
+| Field | Empty / omitted |
+| --- | --- |
+| `central_primary` | Empty leaves current |
+| `central_secondary` | Omitted leaves current; `""` **clears** (no dead mirror) |
+| Peer fields | Empty leaves current; non-empty overwrites |
+
+After store, MCS soft-fails `POST {gbn_url}/config` (`mcs_base` / `mcs_token` / `public_base`) and `POST {net_time_url}/config` (`host_clock_url`, Bearer = Net Time token).
+
+### `GET /config/status` — Bearer required
+
+Diagnostics for the running process (no attach/`import main` needed):
+
+```json
+{
+  "central_primary": "…",
+  "central_secondary": "",
+  "peers": {
+    "mcs_url": "…",
+    "gbn_url": "…",
+    "net_time_url": "…",
+    "net_time_token": "set",
+    "alleycattv_url": "…",
+    "host_clock_url": "…",
+    "mqtt_host": "…",
+    "mqtt_port": "…"
+  },
+  "last_fanout": {
+    "gbn": { "ok": true, "status": 204 },
+    "net_time": { "ok": true, "status": 204 }
+  }
+}
+```
+
+`net_time_token` is redacted (`"set"` or `""`).
 
 ---
 
 ## Auth contract
 
-MCS uses a single static Bearer token (`MCS_API_TOKEN` on the LXC). The **same** token is stored in Core Configurator (`master_control_server` → API token). Registration and Bug Buster read it via `get_extra` and send `Authorization: Bearer {token}` on protected calls (`/players`, `/events`, `/device-logs`, `/config`). Neither keeps its own copy of the token.
+MCS uses a single static Bearer token (`MCS_API_TOKEN` on the LXC). The **same** token is stored in Core Configurator (`master_control_server` → API token) and used as GBN’s MCS peer token. Registration and Bug Buster read it via `get_extra` and send `Authorization: Bearer {token}` on protected calls (`/players`, `/events`, `/device-logs`, `/config`, `/config/status`). Neither keeps its own copy of the token.
 
 `/health` is intentionally unauthenticated so the `DataUpdateCoordinator` can detect availability without needing the token in every health probe.
 
@@ -193,7 +240,7 @@ MCS uses a single static Bearer token (`MCS_API_TOKEN` on the LXC). The **same**
 
 ## Primary / secondary failover
 
-`central_client` tries `central_primary` first. If the URL is empty or the request fails (transport / 5xx), it tries `central_secondary`. Client errors (4xx, including 409) are returned immediately without failover. No retry loop — design principle 6 (remove root causes, not symptoms).
+`central_client` tries `central_primary` first. Transport failure (`status` 0) and **5xx** fall through to `central_secondary`. For **`GET /game-state` only**, **404** also falls through so a bad/missing primary does not brick the venue when secondary is healthy. Other 4xx (including 409) return immediately without failover.
 
 ---
 

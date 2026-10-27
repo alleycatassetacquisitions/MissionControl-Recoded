@@ -200,3 +200,43 @@ async def test_json_status_copies_telemetry_attributes(
     assert state.state == PRESENCE_ONLINE
     assert state.attributes["rssi"] == -62
     assert state.attributes["firmware"] == "1.2.3"
+
+
+async def test_forget_device_clears_registry_and_ignores_offline_echo(
+    hass, mock_mqtt_subscribe, config_entry
+):
+    tracker = await async_start_presence_tracking(
+        hass,
+        "dnn",
+        config_entry_id=config_entry.entry_id,
+        domain=DOMAIN,
+        name_prefix="FDN",
+    )
+    callback = mock_mqtt_subscribe.await_args.kwargs["callback"]
+    callback(SimpleNamespace(topic="mc/dnn/status/old-pi", payload=b"online"))
+    callback(SimpleNamespace(topic="mc/dnn/status/old-pi", payload=b"offline"))
+
+    with patch(
+        "custom_components.shared_libraries.mqtt.async_publish",
+        new_callable=AsyncMock,
+    ) as mock_publish:
+        assert await tracker.async_forget_device("old-pi") is True
+        mock_publish.assert_awaited_once()
+        assert mock_publish.await_args.args[1:] == ("dnn", "status", "old-pi")
+        assert mock_publish.await_args.kwargs["retain"] is True
+        assert mock_publish.await_args.kwargs["payload"] == b""
+
+    assert tracker.list_devices() == []
+    assert hass.states.get("sensor.digital_node_nexus_old_pi_presence") is None
+    registry = dr.async_get(hass)
+    assert registry.async_get_device({(DOMAIN, "old-pi")}) is None
+
+    # Retain-clear / LWT echo must not revive the device.
+    callback(SimpleNamespace(topic="mc/dnn/status/old-pi", payload=b""))
+    callback(SimpleNamespace(topic="mc/dnn/status/old-pi", payload=b"offline"))
+    assert tracker.list_devices() == []
+
+    # A real online publish reuses the id.
+    callback(SimpleNamespace(topic="mc/dnn/status/old-pi", payload=b"online"))
+    assert len(tracker.list_devices()) == 1
+    assert tracker.list_devices()[0]["device_id"] == "old-pi"

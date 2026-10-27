@@ -14,6 +14,7 @@ from .const import (
     KEY_NET_TIME,
     KEY_PROXMOX,
     KEY_RTSP,
+    KEY_VENUE_UPDATER,
     SERVICE_CATALOG,
     YAML_MCS_TOKEN,
     YAML_NET_TIME_TOKEN,
@@ -21,6 +22,7 @@ from .const import (
     YAML_PROXMOX_TOKEN_SECRET,
     YAML_RTSP_ENABLED,
     YAML_RTSP_LABEL,
+    YAML_VENUE_UPDATER_TOKEN,
 )
 
 
@@ -88,6 +90,9 @@ def services_from_mapping(data: dict) -> dict:
     if data.get(YAML_NET_TIME_TOKEN) is not None:
         token = str(data.get(YAML_NET_TIME_TOKEN) or "").strip()
         services[KEY_NET_TIME].setdefault("extra", {})[EXTRA_TOKEN] = token
+    if data.get(YAML_VENUE_UPDATER_TOKEN) is not None:
+        token = str(data.get(YAML_VENUE_UPDATER_TOKEN) or "").strip()
+        services[KEY_VENUE_UPDATER].setdefault("extra", {})[EXTRA_TOKEN] = token
     if data.get(YAML_PROXMOX_TOKEN_ID) is not None:
         services[KEY_PROXMOX].setdefault("extra", {})[EXTRA_TOKEN_ID] = str(
             data.get(YAML_PROXMOX_TOKEN_ID) or ""

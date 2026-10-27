@@ -10,6 +10,7 @@ import logging
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import List
+from urllib.parse import quote
 
 from fastapi import APIRouter, File, Form, HTTPException, Query, Request, UploadFile
 from fastapi.responses import RedirectResponse
@@ -23,15 +24,23 @@ from app.config import (
 )
 from app.event_stores import EventPosterStores
 from app.models import (
-    NeoCorp,
+    DEFAULT_ACCENT,
+    PosterAffiliationSnap,
     PosterPublic,
     PosterRecord,
     PosterStats,
     PosterStatus,
     PosterTemplate,
     Role,
+    accent_dim,
+    accent_hex,
+    normalize_accent,
 )
-from app.services.event_paths import ensure_event_dirs, video_url_path
+from app.services.event_paths import (
+    ensure_event_dirs,
+    sanitize_event_id,
+    video_url_path,
+)
 from app.services.mcs_client import lookup_by_id, resolve_active_event_id
 from app.services.video_paths import (
     find_video_filename,
@@ -55,8 +64,14 @@ def _templates(request: Request) -> TemplateStore:
     return request.app.state.template_store
 
 
-async def _require_active_event_id() -> str:
+async def _require_active_event_id(fallback: str | None = None) -> str:
+    """MCS active event first; optional panel-supplied id when MCS is unset."""
     eid = await resolve_active_event_id()
+    if not eid and fallback:
+        try:
+            eid = sanitize_event_id(fallback)
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
     if not eid:
         raise HTTPException(
             status_code=409,
@@ -65,9 +80,27 @@ async def _require_active_event_id() -> str:
     return eid
 
 
-async def _active_store(request: Request) -> tuple[str, PosterStore]:
-    eid = await _require_active_event_id()
+async def _active_store(
+    request: Request, fallback: str | None = None
+) -> tuple[str, PosterStore]:
+    eid = await _require_active_event_id(fallback=fallback)
     return eid, _event_stores(request).for_event(eid)
+
+
+async def _resolve_event_id(fallback: str | None = None) -> str | None:
+    """Active event for reads: MCS, else sanitized panel fallback."""
+    eid = await resolve_active_event_id()
+    if eid:
+        return eid
+    raw = (fallback or "").strip()
+    if not raw:
+        return None
+    try:
+        return sanitize_event_id(raw)
+    except ValueError:
+        return None
+
+
 
 
 def _now() -> str:
@@ -84,6 +117,7 @@ def _chrome_fallback(role: Role) -> PosterTemplate:
             amount_label="RATE",
             list_label="REASONS TO HIRE",
             list_empty="Details pending",
+            accent=DEFAULT_ACCENT,
             builtin=True,
         )
     return PosterTemplate(
@@ -94,6 +128,7 @@ def _chrome_fallback(role: Role) -> PosterTemplate:
         amount_label="REWARD",
         list_label="WANTED FOR",
         list_empty="Charges pending",
+        accent=DEFAULT_ACCENT,
         builtin=True,
     )
 
@@ -108,6 +143,7 @@ def _resolve_chrome(
     amount_label: str = "",
     list_label: str = "",
     list_empty: str = "",
+    accent: str = "",
 ) -> dict:
     """Resolve chrome from template + optional form overrides."""
     store = _templates(request)
@@ -120,6 +156,9 @@ def _resolve_chrome(
         o = (override or "").strip()
         return o if o else default
 
+    accent_slug = normalize_accent(accent) if (accent or "").strip() else normalize_accent(
+        tmpl.accent
+    )
     return {
         "template_id": tmpl.id,
         "headline": pick(headline, tmpl.headline),
@@ -127,6 +166,7 @@ def _resolve_chrome(
         "amount_label": pick(amount_label, tmpl.amount_label),
         "list_label": pick(list_label, tmpl.list_label),
         "list_empty": pick(list_empty, tmpl.list_empty),
+        "accent": accent_slug,
     }
 
 
@@ -139,6 +179,7 @@ def _effective_chrome(poster: PosterRecord) -> dict:
     fb = _chrome_fallback(poster.role)
     tid = (poster.template_id or "").strip()
     is_custom = bool(tid) and tid not in ("hunter", "bounty")
+    accent = normalize_accent(poster.accent or fb.accent)
 
     if is_custom and (poster.headline or "").strip():
         return {
@@ -148,13 +189,11 @@ def _effective_chrome(poster: PosterRecord) -> dict:
             "amount_label": (poster.amount_label or "").strip() or fb.amount_label,
             "list_label": (poster.list_label or "").strip() or fb.list_label,
             "list_empty": (poster.list_empty or "").strip() or fb.list_empty,
+            "accent": accent,
         }
 
     # Builtin / unset: use snapshot only when it still matches current role
-    if (
-        (poster.headline or "").strip()
-        and tid == fb.id
-    ):
+    if (poster.headline or "").strip() and tid == fb.id:
         return {
             "template_id": tid,
             "headline": poster.headline.strip(),
@@ -162,6 +201,7 @@ def _effective_chrome(poster: PosterRecord) -> dict:
             "amount_label": (poster.amount_label or "").strip() or fb.amount_label,
             "list_label": (poster.list_label or "").strip() or fb.list_label,
             "list_empty": (poster.list_empty or "").strip() or fb.list_empty,
+            "accent": accent,
         }
 
     return {
@@ -171,14 +211,49 @@ def _effective_chrome(poster: PosterRecord) -> dict:
         "amount_label": fb.amount_label,
         "list_label": fb.list_label,
         "list_empty": fb.list_empty,
+        "accent": normalize_accent(fb.accent),
     }
 
 
-def _normalize_neocorp(value: str) -> NeoCorp:
-    v = (value or "freelancer").strip().lower()
-    if v in ("reboot", "helix", "endline", "freelancer"):
-        return v  # type: ignore[return-value]
+_KNOWN_LOGO_SLUGS = frozenset({"reboot", "helix", "endline", "freelancer"})
+
+
+def _normalize_neocorp(value: str) -> str:
+    """Store affiliation display/slug as-is; do not coerce unknowns to freelancer."""
+    return (value or "").strip()
+
+
+def _logo_slug(neocorp: str) -> str:
+    raw = (neocorp or "").strip().lower()
+    if raw in _KNOWN_LOGO_SLUGS:
+        return raw
+    first = raw.split()[0] if raw else ""
+    if first in _KNOWN_LOGO_SLUGS:
+        return first
     return "freelancer"
+
+
+def _parse_affiliations_snap(raw: str) -> list[PosterAffiliationSnap]:
+    text = (raw or "").strip()
+    if not text:
+        return []
+    try:
+        data = json.loads(text)
+    except json.JSONDecodeError:
+        return []
+    if not isinstance(data, list):
+        return []
+    out: list[PosterAffiliationSnap] = []
+    for item in data:
+        if not isinstance(item, dict):
+            continue
+        cat = str(item.get("category_name") or "").strip()
+        name = str(item.get("affiliation_name") or "").strip()
+        if cat or name:
+            out.append(
+                PosterAffiliationSnap(category_name=cat, affiliation_name=name)
+            )
+    return out
 
 
 def _normalize_role(value: str) -> Role:
@@ -206,7 +281,12 @@ def _video_url_for(
     if not filename:
         return ""
     rel = video_url_path(resolved_eid, filename)
-    return f"{public_base_for(request)}/media/{rel}"
+    url = f"{public_base_for(request)}/media/{rel}"
+    # Stable player paths get overwritten in place — bust browser/kiosk cache.
+    stamp = (poster.updated_at or poster.created_at or "").strip()
+    if stamp:
+        url = f"{url}?v={quote(stamp, safe='')}"
+    return url
 
 
 def _to_public(
@@ -224,6 +304,7 @@ def _to_public(
         role=poster.role,
         neocorp=poster.neocorp,
         faction=poster.faction,
+        affiliations=list(poster.affiliations or []),
         bounty_amount=poster.bounty_amount,
         crimes=poster.crimes,
         stats=poster.stats,
@@ -238,6 +319,7 @@ def _to_public(
         amount_label=chrome["amount_label"],
         list_label=chrome["list_label"],
         list_empty=chrome["list_empty"],
+        accent=chrome["accent"],
         created_at=poster.created_at,
         updated_at=poster.updated_at,
     )
@@ -315,7 +397,8 @@ async def _apply_live_overlay(display: PosterRecord) -> PosterRecord:
 
 def _poster_context(public: PosterPublic) -> dict:
     is_hunter = public.role == "hunter"
-    neocorp_logo = f"/media/assets/neocorp/{public.neocorp}.svg"
+    logo_slug = _logo_slug(public.neocorp)
+    neocorp_logo = f"/media/assets/neocorp/{logo_slug}.svg"
     return {
         "poster": public,
         "bounty_display": f"₩{public.bounty_amount:,}",
@@ -327,6 +410,8 @@ def _poster_context(public: PosterPublic) -> dict:
         "headline_sub": public.subtitle,
         "amount_label": public.amount_label,
         "neocorp_logo": neocorp_logo,
+        "accent_hex": accent_hex(public.accent),
+        "accent_dim": accent_dim(public.accent),
         "status_rows": [
             ("CURRENT SCORE", public.status.current_score or "—"),
             ("FASTEST WIN", public.status.fastest_win or "—"),
@@ -348,10 +433,10 @@ async def _render_poster(
 
 
 async def _resolve_poster_for_player(
-    request: Request, player_id: str
+    request: Request, player_id: str, event_id: str | None = None
 ) -> tuple[PosterRecord, str | None]:
     stores = _event_stores(request)
-    active = await resolve_active_event_id()
+    active = await _resolve_event_id(event_id)
     poster, eid = stores.get_poster_for_player(player_id, event_id=active)
     if not poster:
         raise HTTPException(status_code=404, detail="No poster for player")
@@ -359,35 +444,60 @@ async def _resolve_poster_for_player(
 
 
 @router.get("/api/posters", response_model=List[PosterPublic])
-async def list_posters(request: Request) -> List[PosterPublic]:
+async def list_posters(
+    request: Request,
+    event_id: str | None = Query(
+        default=None,
+        description="Panel-known active event when GBN→MCS cannot resolve one",
+    ),
+    include_legacy: bool = Query(
+        default=False,
+        description="If true and no active event, list pre-event global posters.json",
+    ),
+) -> List[PosterPublic]:
+    """List posters for the active Event (not the legacy global store).
+
+    ``/poster-cycle`` and Registration thumbs depend on this staying
+    event-scoped so AlleycatTV does not rotate old flat ``data/posters.json``.
+    """
     out: List[PosterPublic] = []
-    active = await resolve_active_event_id()
+    active = await _resolve_event_id(event_id)
     stores = _event_stores(request)
     if active:
         for poster in stores.for_event(active).list():
             display = await _apply_live_overlay(poster.model_copy(deep=True))
             out.append(_to_public(display, request, event_id=active))
         return out
-    # No active event — expose legacy global store only
-    for poster in stores.legacy.list():
-        display = await _apply_live_overlay(poster.model_copy(deep=True))
-        out.append(_to_public(display, request, event_id=None))
+    if include_legacy:
+        for poster in stores.legacy.list():
+            display = await _apply_live_overlay(poster.model_copy(deep=True))
+            out.append(_to_public(display, request, event_id=None))
     return out
 
 
 @router.get("/api/posters/by-player/{player_id}", response_model=PosterPublic)
-async def get_poster_by_player(player_id: str, request: Request) -> PosterPublic:
-    poster, eid = await _resolve_poster_for_player(request, player_id)
+async def get_poster_by_player(
+    player_id: str,
+    request: Request,
+    event_id: str | None = Query(default=None),
+) -> PosterPublic:
+    poster, eid = await _resolve_poster_for_player(
+        request, player_id, event_id=event_id
+    )
     display = await _apply_live_overlay(poster.model_copy(deep=True))
     return _to_public(display, request, event_id=eid)
 
 
 @router.get("/api/posters/{poster_id}", response_model=PosterPublic)
-async def get_poster(poster_id: str, request: Request) -> PosterPublic:
+async def get_poster(
+    poster_id: str,
+    request: Request,
+    event_id: str | None = Query(default=None),
+) -> PosterPublic:
     if poster_id == "by-player":
         raise HTTPException(status_code=404, detail="Poster not found")
     stores = _event_stores(request)
-    active = await resolve_active_event_id()
+    active = await _resolve_event_id(event_id)
     poster = None
     eid: str | None = None
     if active:
@@ -420,8 +530,16 @@ async def create_poster(
     amount_label: str = Form(""),
     list_label: str = Form(""),
     list_empty: str = Form(""),
-    video: UploadFile = File(...),
+    accent: str = Form(""),
+    affiliations: str = Form("[]"),
+    event_id: str = Form(""),
+    video: UploadFile | None = File(None),
 ) -> PosterPublic:
+    """Create or update a poster.
+
+    Video is required on first create. On update, omit ``video`` to keep the
+    existing clip and only refresh text/chrome/metadata.
+    """
     clean_name = name.strip()
     if not clean_name:
         raise HTTPException(status_code=400, detail="name is required")
@@ -430,22 +548,9 @@ async def create_poster(
     if not pid:
         raise HTTPException(status_code=400, detail="player_id is required")
 
-    filename = video.filename or "capture.webm"
-    ext = Path(filename).suffix.lower() or ".webm"
-    if ext not in ALLOWED_VIDEO_EXT:
-        raise HTTPException(
-            status_code=400,
-            detail=f"Unsupported video type {ext}. Allowed: {sorted(ALLOWED_VIDEO_EXT)}",
-        )
-
-    data = await video.read()
-    max_bytes = MAX_UPLOAD_MB * 1024 * 1024
-    if len(data) > max_bytes:
-        raise HTTPException(status_code=400, detail=f"Video exceeds {MAX_UPLOAD_MB}MB limit")
-    if not data:
-        raise HTTPException(status_code=400, detail="Empty video upload")
-
-    event_id, store = await _active_store(request)
+    event_id, store = await _active_store(
+        request, fallback=(event_id or "").strip() or None
+    )
     ensure_event_dirs(event_id)
     existing = store.get_by_player(pid)
 
@@ -459,14 +564,39 @@ async def create_poster(
         created_at = stamp
         old_video = ""
 
-    video_name = video_filename_for_player(pid, ext)
-    dest = video_filesystem_path(video_name, event_id=event_id)
-    dest.parent.mkdir(parents=True, exist_ok=True)
-    dest.write_bytes(data)
+    data = b""
+    if video is not None:
+        data = await video.read()
 
-    if old_video and old_video != video_name:
-        _delete_video(old_video, event_id=event_id)
-    _delete_other_player_videos(pid, video_name, event_id=event_id)
+    if data:
+        filename = (video.filename if video else None) or "capture.webm"
+        ext = Path(filename).suffix.lower() or ".webm"
+        if ext not in ALLOWED_VIDEO_EXT:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Unsupported video type {ext}. Allowed: {sorted(ALLOWED_VIDEO_EXT)}",
+            )
+        max_bytes = MAX_UPLOAD_MB * 1024 * 1024
+        if len(data) > max_bytes:
+            raise HTTPException(
+                status_code=400, detail=f"Video exceeds {MAX_UPLOAD_MB}MB limit"
+            )
+
+        video_name = video_filename_for_player(pid, ext)
+        dest = video_filesystem_path(video_name, event_id=event_id)
+        dest.parent.mkdir(parents=True, exist_ok=True)
+        dest.write_bytes(data)
+
+        if old_video and old_video != video_name:
+            _delete_video(old_video, event_id=event_id)
+        _delete_other_player_videos(pid, video_name, event_id=event_id)
+    elif existing and old_video:
+        video_name = old_video
+    else:
+        raise HTTPException(
+            status_code=400,
+            detail="video is required when creating a new poster",
+        )
 
     normalized_role = _normalize_role(role)
     chrome = _resolve_chrome(
@@ -478,6 +608,7 @@ async def create_poster(
         amount_label=amount_label,
         list_label=list_label,
         list_empty=list_empty,
+        accent=accent,
     )
 
     record = PosterRecord(
@@ -487,6 +618,7 @@ async def create_poster(
         role=normalized_role,
         neocorp=_normalize_neocorp(neocorp),
         faction=faction.strip(),
+        affiliations=_parse_affiliations_snap(affiliations),
         bounty_amount=max(0, int(bounty_amount)),
         crimes=_parse_crimes(crimes),
         stats=_parse_stats(stats),
@@ -499,19 +631,22 @@ async def create_poster(
         amount_label=chrome["amount_label"],
         list_label=chrome["list_label"],
         list_empty=chrome["list_empty"],
+        accent=chrome["accent"],
         created_at=created_at,
         updated_at=stamp,
     )
     store.save(record)
     action = "Updated" if existing else "Created"
+    kept = " (kept video)" if existing and not data else ""
     _LOGGER.info(
-        "%s poster %s for %s event=%s (%s/%s)",
+        "%s poster %s for %s event=%s (%s/%s)%s",
         action,
         poster_id,
         clean_name,
         event_id,
         record.role,
         record.neocorp,
+        kept,
     )
     return _to_public(record, request, event_id=event_id)
 

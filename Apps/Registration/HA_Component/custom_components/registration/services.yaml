@@ -1,8 +1,9 @@
 sync_now:
   name: Sync Now
   description: >
-    Push Central URLs to MCS, then refresh the player roster.
-    Call after changing the active event.
+    Push Central URLs + venue peer snapshot to MCS (MCS fans out to LXC
+    companions), then refresh the player roster. Call after changing the
+    active event or Core Configurator peer URLs.
   fields: {}
 
 register_player:
@@ -13,7 +14,7 @@ register_player:
   fields:
     name:
       name: Name
-      description: Player's display name.
+      description: Player's display name (max 32 characters for device UIs).
       required: true
       selector:
         text:
@@ -24,6 +25,13 @@ register_player:
       default: ""
       selector:
         text:
+    affiliations:
+      name: Affiliations
+      description: >
+        Optional map of category UUID to affiliation UUID for the active event.
+      required: false
+      selector:
+        object:
 
 update_player:
   name: Update Player
@@ -38,7 +46,7 @@ update_player:
         text:
     name:
       name: Name
-      description: Player's display name.
+      description: Player's display name (max 32 characters for device UIs).
       required: false
       selector:
         text:
@@ -48,6 +56,13 @@ update_player:
       required: false
       selector:
         text:
+    affiliations:
+      name: Affiliations
+      description: >
+        Optional map of category UUID to affiliation UUID (null clears a category).
+      required: false
+      selector:
+        object:
     team_id:
       name: Team ID
       description: Team UUID in the active event; empty clears membership.

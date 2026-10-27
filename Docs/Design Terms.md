@@ -77,11 +77,11 @@ The media player app used to play content across the event. Phase 6: HA integrat
 
 The Mission Control app for creating and updating posters that players see on AlleycatTV. Capture hardware and poster intake belong here.
 
-Poster **chrome** (headline, optional subtitle, amount label, list label) comes from **poster templates**: built-in Hunter / Bounty seeds auto-apply from roster role; other players pick or save a custom template at intake. Chrome is snapshotted onto each poster. The capture panel labels affiliation **Allegiance/NeoCorp** (code field remains `neocorp`).
+Poster **chrome** (headline, optional subtitle, amount label, list label, accent color) comes from **poster templates**: built-in Hunter / Bounty seeds auto-apply from roster role; other players pick or save a custom template at intake. Chrome is snapshotted onto each poster. Capture affiliations are typeaheads from the active event’s affiliation catalog; legacy poster fields `neocorp` / `faction` still snapshot Allegiance/Faction-like choices when those categories exist.
 
-Capture **clips** and poster metadata are stored **per Event** (active Event from Registration / MCS): `media/events/{event_id}/videos/{player_id}.*` and `data/events/{event_id}/posters.json`. Operators can export a zip of clips (player-id filenames) or delete an event’s media from the GBN panel.
+Capture **clips** and poster metadata are stored **per Event** (active Event from Registration / MCS): `media/events/{event_id}/videos/{player_id}.*`, `data/events/{event_id}/posters.json`, and `data/events/{event_id}/meta.json` (display name). GBN also keeps `data/active_event.json` so AlleycatTV kiosks know the active Event when MCS is briefly unreachable. Registration **set active** pushes that pointer to GBN. Operators can export a zip of clips (player-id filenames) or delete an event’s media from the GBN panel.
 
-Display URLs: single poster `/poster/player/{id}`; **poster-cycle** `/poster-cycle` rotates every made poster every 30s (AlleycatTV Content **+ Poster cycle**); **active-players** is a separate game-server curated list.
+Display URLs: single poster `/poster/player/{id}` (resolved against the active Event); **poster-cycle** `/poster-cycle` rotates **that Event’s** posters every 30s (AlleycatTV Content **+ Poster cycle**); **active-players** is a separate game-server curated list.
 
 - **Communication:** HTTP
 - **Code:** `gbn`
@@ -99,16 +99,18 @@ The Proxmox companion that is the LAN NTP authority for venues (chrony on UDP 12
 
 The Proxmox companion that is the only Central HTTP adapter. It owns Mission Control’s Player and Event JSON, proxies Central game-state / scoring / teams / device crash logs, and derives HA `mode`/`role` from Central `team_name` when helpful.
 
-Registration is its Home Assistant face for players/events. **Game Master** is the face for gameplay toggles (scoring live/off, delayed scores). Bug Buster reads device logs through MCS. GBN overlays Player data from MCS. Home Assistant does not talk to the Central Server itself.
+MCS is also the **venue peer-config hub**: on Core Configurator Save **and** on `registration.sync_now`, Registration pushes one peer snapshot to MCS `POST /config` (Central URLs plus companion URLs/tokens). MCS fans out HTTP `POST /config` to LXC companions (GBN, Net Time). Fan-out is soft-fail (MCS still returns 204); inspect peers and last results with Bearer `GET /config/status`. Empty Central secondary from HA clears MCS secondary (omit the field to leave it unchanged). AlleycatTV Pis get year-1 network config via retained MQTT from the AlleycatTV HA integration (HA is the only MQTT publisher). MAC/IP rediscovery for Pis is out of year 1.
 
-NeoCorp / faction remain empty optional fields until Central’s **affiliation** management API ships (schema already exists; HTTP pending).
+Registration is its Home Assistant face for players/events. **Game Master** is the face for gameplay toggles (scoring live/off, delayed scores) and affiliation catalog CRUD. Bug Buster reads device logs through MCS. GBN overlays Player data from MCS. Home Assistant does not talk to the Central Server itself.
+
+MCS proxies Central affiliation catalog routes live (no durable affiliation cache). Player `affiliations[]` come from each Central `PlayerResponse`. Legacy `neocorp` / `faction` overlays are derived from Allegiance/NeoCorp and Faction category names when present.
 
 - **Communication:** HTTP
 - **Code:** `master_control_server`
 
 ### Registration
 
-The Mission Control dashboard for venue **events** (create / edit / set-active) and **player** registration (name + optional email, team assign, soft-deactivate). It talks to MCS (services + panel), not to the Central Server on its own. Gameplay scoring toggles are on **Game Master**, not here.
+The Mission Control dashboard for venue **events** (create / edit / set-active) and **player** registration (name ≤ 32 characters + optional email, team assign, event affiliations via dropdowns, soft-deactivate). It talks to MCS (services + panel), not to the Central Server on its own. Gameplay scoring toggles and affiliation **catalog** CRUD (plus HA-only defaults) are on **Game Master**, not here. Registration’s form uses one dropdown per category; **Faction** may create a new choice on type. Edit player switches the same form into edit mode (does not stack below Register). Roster still shows affiliation tags as chips.
 
 - **Code:** `registration`
 
@@ -120,7 +122,7 @@ The Mission Control ops tools for Proxmox console (termproxy), companion `/healt
 
 ### Broadcast Group Controller
 
-Controls Broadcast Group membership for devices across apps, including AlleycatTV endpoints, FDNs, and lighting. It also writes the Home Assistant Area for physical placement.
+Controls Broadcast Group membership for devices across apps, including AlleycatTV endpoints, FDNs, and lighting. It also writes the Home Assistant Area for physical placement, and can remove inactive fabric devices so a device id can be reused or retired.
 
 - **Code:** `broadcast_group_controller`
 
@@ -136,13 +138,13 @@ Area is **not** a playlist, interrupt, or command-membership group.
 
 ### Broadcast Group
 
-Which endpoints, FDNs, and other devices share the same interrupt, playlist, or command. Broadcast Group Controller owns that list and writes it onto Home Assistant devices (`area_id` plus a `broadcast_group_id` attribute).
+Which endpoints, FDNs, and other devices share the same interrupt, playlist, or command. Playlist *buckets* (the operator-facing ids) live on the AlleycatTV content server; Broadcast Group Controller assigns devices to those ids (panel dropdown) and writes membership onto Home Assistant devices (`area_id` plus a `broadcast_group_id` attribute).
 
 Do not call this a Zone. Do not store membership as a Home Assistant Area.
 
 ### MQTT fabric
 
-Shared presence and command routing for FDNs and AlleycatTV endpoints, using Home Assistant’s `mqtt` integration against the official **Mosquitto** broker add-on. Status and LWT become presence entities. Commands target this device, `all`, or a Broadcast Group.
+Shared presence and command routing for FDNs and AlleycatTV endpoints, using Home Assistant’s `mqtt` integration against the official **Mosquitto** broker add-on. Status and LWT become presence entities. Commands target this device, `all`, or a Broadcast Group. Operators remove unused offline devices via Broadcast Group Controller so retained status does not keep a retired id alive.
 
 Digital Node Nexus and AlleycatTV own payloads (LED, haptic, playback). They do not each open a private MQTT client.
 
@@ -150,29 +152,42 @@ Digital Node Nexus and AlleycatTV own payloads (LED, haptic, playback). They do 
 
 ### Event
 
-A venue session on Central Server. Players register into the **active** event. Mission Control creates/edits/activates events via Master Control Server (`POST` / `PATCH` / `PUT …/active`). Active event is read from Central `GET /game-state` (MCS `GET /events/active`).
+A venue session on Central Server. Players register into the **active** event. Mission Control creates/edits/activates events via Master Control Server (`POST` / `PATCH` / `PUT …/active`). Active event is read from Central `GET /game-state` (MCS `GET /events/active`). Registration also pushes the active Event to GBN so poster capture and `/poster-cycle` stay scoped to that session’s clips and posters.
 
 ### Player
 
 A person playing the game. A Player is a Central Server record, served locally by Master Control Server.
 
-Current Central-aligned fields: `id`, `event_id`, `name`, `pdn_code`, `email`, `team_id`, `team_name`, `active`, `created_at`. Registration writes **name + email** on create; update may set name/email/team/`active`. Hard delete is not offered — deactivate sets `active: false`.
+Current Central-aligned fields: `id`, `event_id`, `name`, `pdn_code`, `email`, `team_id`, `team_name`, `active`, `created_at`, `affiliations[]`. Registration writes **name** (max 32 characters for PDN/other device UIs) + optional **email** on create; update may set name/email/team/`active`/affiliations. Hard delete is not offered — deactivate sets `active: false`.
 
 Players are **not** Home Assistant devices. Registration exposes connectivity and a roster summary as entities, plus services for operator workflows. Do not create one `device_tracker` (or similar) per Player.
 
 ### Game Master
 
-The Mission Control dashboard for **gameplay** controls on the active event: scoring on/off (“game live”), accept delayed scores, and (later) hours of operation / special-event triggers. It talks to MCS only. Changing which event is active stays on Registration.
+The Mission Control dashboard for **gameplay** controls on the active event: scoring on/off (“game live”), accept delayed scores, and (later) hours of operation / special-event triggers. It also owns the **affiliation catalog** (create/rename categories and choices) and **HA-only default choice per category** (prefill Registration create; never written to Central), with an event-keyed HA cache cleared when the active event changes. Panels (Game Master, Registration, GBN) poll `game_master/get_affiliation_catalog`. It talks to MCS only. Changing which event is active stays on Registration.
+
+### Affiliation
+
+Central’s umbrella for **non-scoring** membership a player can belong to. Hierarchy (all **per event**, like teams):
+
+```text
+Event
+ └── Affiliation category   (operator-named bucket; e.g. Allegiance, Faction)
+      └── Affiliation       (choice within that category; e.g. Helix Industries)
+           └── Player affiliation  (0 or 1 choice per category)
+```
+
+Creating an event does **not** copy categories/choices. Names have no gameplay or scoring meaning. Mission Control registers/assigns via MCS → Central. **Game Master** owns catalog CRUD and optional HA-only defaults per category; **Registration** assigns choices via dropdowns (Faction may create-on-type); GBN selects from the catalog at intake (no create-on-type). The HA catalog cache and defaults store are not MCS durable stores and are not pushed to Central.
+
+**Allegiance** is **not** a Central type — it is a common **category name** in Neo-themed seed/events. **Faction** is another common category name. Casual “sub affiliation” means an affiliation **choice** under a category.
 
 ### NeoCorp
 
-Historical label for corporation membership. Central now models this as **event affiliations** (categories + choices + player assignment). Seed data may use Allegiance/Faction category names. Registration will wire affiliation UI when Central ships the management JSON API.
-
-In the GBN capture panel the control is labeled **Allegiance/NeoCorp**; the stored field and API key remain `neocorp` (`reboot` / `helix` / `endline` / `freelancer`).
+Mission Control **legacy** label / GBN poster field `neocorp` for Allegiance-like choices. Prefer Central category + choice names in Registration. When the category is Allegiance/NeoCorp, MCS may derive a logo slug (`reboot` / `helix` / `endline` / `freelancer`) from the choice name for older poster assets; unknown names are stored as-is.
 
 ### Faction
 
-A named affiliation choice within an event category (often seeded as “Faction”). Same pending path as NeoCorp — wait for Central affiliation HTTP.
+Common affiliation **category name** (and legacy GBN poster string field). Choices under that category are event-specific affiliations (e.g. Corvid Alliance).
 
 ### Role / Mode
 

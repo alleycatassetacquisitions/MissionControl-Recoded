@@ -1,18 +1,37 @@
 "use strict";
 (() => {
+  // src/shared/affiliations.ts
+  function emptyCatalog() {
+    return { event_id: null, categories: [] };
+  }
+
   // src/panels/game-master-panel.ts
   var GameMasterPanel = class extends window.McPanel.Base {
     static get properties() {
       return {
         ...super.properties,
         _state: { state: true },
-        _busy: { state: true }
+        _busy: { state: true },
+        _catalog: { state: true },
+        _catCreateName: { state: true },
+        _choiceDrafts: { state: true },
+        _renameCatId: { state: true },
+        _renameCatName: { state: true },
+        _renameChoiceKey: { state: true },
+        _renameChoiceName: { state: true }
       };
     }
     constructor() {
       super();
       this._state = null;
       this._busy = false;
+      this._catalog = emptyCatalog();
+      this._catCreateName = "";
+      this._choiceDrafts = {};
+      this._renameCatId = "";
+      this._renameCatName = "";
+      this._renameChoiceKey = "";
+      this._renameChoiceName = "";
     }
     static get styles() {
       const base = super.styles;
@@ -142,6 +161,126 @@
           gap: 10px;
           margin-top: 8px;
         }
+        .catalog-block {
+          padding-top: 4px;
+        }
+        .catalog-block label {
+          display: block;
+          font-size: 12px;
+          letter-spacing: 0.06em;
+          text-transform: uppercase;
+          color: var(--secondary-text-color, #7aa8b8);
+          margin: 12px 0 6px;
+        }
+        .catalog-block input[type="text"] {
+          width: 100%;
+          box-sizing: border-box;
+          padding: 8px 10px;
+          background: var(--secondary-background-color, #0d1418);
+          color: var(--primary-text-color, #e8f6ff);
+          border: 1px solid var(--divider-color, #1f3a44);
+          border-radius: 6px;
+          font: inherit;
+        }
+        .input-row {
+          display: flex;
+          gap: 8px;
+          align-items: stretch;
+        }
+        .input-row input[type="text"] {
+          flex: 1;
+          min-width: 0;
+        }
+        .input-row .btn-ghost,
+        .input-row .btn-create {
+          margin-top: 0;
+          white-space: nowrap;
+        }
+        .cat-card {
+          padding: 14px 0;
+          border-top: 1px solid var(--divider-color, #1f3a44);
+        }
+        .cat-head {
+          display: flex;
+          align-items: center;
+          justify-content: space-between;
+          gap: 12px;
+          margin-bottom: 8px;
+        }
+        .cat-head h3 {
+          margin: 0;
+          font-size: 16px;
+        }
+        .chip-row {
+          display: flex;
+          flex-wrap: wrap;
+          gap: 6px;
+          margin-bottom: 10px;
+        }
+        .chip {
+          margin: 0;
+          padding: 5px 12px;
+          background: transparent;
+          color: var(--primary-color, #00e5ff);
+          border: 1px solid var(--primary-color, #00e5ff);
+          border-radius: 999px;
+          font: inherit;
+          font-size: 13px;
+          cursor: pointer;
+        }
+        .chip:hover {
+          background: rgba(0, 229, 255, 0.08);
+        }
+        .chip.default {
+          background: var(--primary-color, #00e5ff);
+          color: #041016;
+          font-weight: 600;
+        }
+        .chip:disabled {
+          opacity: 0.45;
+          cursor: not-allowed;
+        }
+        .default-row {
+          display: flex;
+          flex-wrap: wrap;
+          align-items: center;
+          gap: 8px;
+          margin-bottom: 10px;
+        }
+        .default-row label {
+          margin: 0;
+          text-transform: none;
+          letter-spacing: 0;
+          font-size: 13px;
+          color: var(--primary-text-color, #e8f6ff);
+        }
+        .default-row select {
+          flex: 1;
+          min-width: 140px;
+          box-sizing: border-box;
+          padding: 6px 10px;
+          background: var(--secondary-background-color, #0d1418);
+          color: var(--primary-text-color, #e8f6ff);
+          border: 1px solid var(--divider-color, #1f3a44);
+          border-radius: 4px;
+          font: inherit;
+          font-size: 13px;
+        }
+        .small-btn {
+          margin: 0;
+          padding: 4px 10px;
+          font-size: 12px;
+          background: transparent;
+          color: var(--primary-color, #00e5ff);
+          border: 1px solid var(--primary-color, #00e5ff);
+          border-radius: 4px;
+          cursor: pointer;
+          font: inherit;
+        }
+        .small-btn:disabled {
+          opacity: 0.45;
+          cursor: not-allowed;
+        }
       `
       ];
     }
@@ -170,6 +309,326 @@
       } finally {
         this._busy = false;
       }
+      await this._loadCatalog();
+    }
+    async _loadCatalog() {
+      const prevEvent = this._catalog?.event_id || null;
+      try {
+        const result = await this.hass.callWS({
+          type: "game_master/get_affiliation_catalog"
+        });
+        const next = {
+          event_id: result?.event_id ?? null,
+          categories: result?.categories ?? []
+        };
+        if (prevEvent && next.event_id && String(prevEvent) !== String(next.event_id)) {
+          this._choiceDrafts = {};
+          this._cancelRenames();
+        }
+        this._catalog = next;
+      } catch (err) {
+        this._catalog = emptyCatalog();
+        this._feedback(
+          "Could not load affiliation catalog: " + this._formatErr(err),
+          "err"
+        );
+      }
+    }
+    _cancelRenames() {
+      this._renameCatId = "";
+      this._renameCatName = "";
+      this._renameChoiceKey = "";
+      this._renameChoiceName = "";
+    }
+    async _createCategory() {
+      const name = this._catCreateName.trim();
+      if (!name) {
+        this._feedback("Enter a category name", "warn");
+        return;
+      }
+      this._busy = true;
+      try {
+        await this.hass.callService("game_master", "create_affiliation_category", {
+          name
+        });
+        this._catCreateName = "";
+        await this._loadCatalog();
+        this._feedback(`Created category ${name}`, "ok");
+      } catch (err) {
+        this._feedback("Create category failed: " + this._formatErr(err), "err");
+      } finally {
+        this._busy = false;
+      }
+    }
+    async _saveCategoryRename() {
+      const categoryId = this._renameCatId;
+      const name = this._renameCatName.trim();
+      if (!categoryId || !name) {
+        this._feedback("Enter a category name", "warn");
+        return;
+      }
+      this._busy = true;
+      try {
+        await this.hass.callService("game_master", "rename_affiliation_category", {
+          category_id: categoryId,
+          name
+        });
+        this._cancelRenames();
+        await this._loadCatalog();
+        this._feedback(`Renamed category to ${name}`, "ok");
+      } catch (err) {
+        this._feedback("Rename category failed: " + this._formatErr(err), "err");
+      } finally {
+        this._busy = false;
+      }
+    }
+    async _createChoice(categoryId) {
+      const name = (this._choiceDrafts[categoryId] || "").trim();
+      if (!name) {
+        this._feedback("Enter a choice name", "warn");
+        return;
+      }
+      this._busy = true;
+      try {
+        await this.hass.callService("game_master", "create_affiliation", {
+          category_id: categoryId,
+          name
+        });
+        this._choiceDrafts = { ...this._choiceDrafts, [categoryId]: "" };
+        await this._loadCatalog();
+        this._feedback(`Created ${name}`, "ok");
+      } catch (err) {
+        this._feedback("Create affiliation failed: " + this._formatErr(err), "err");
+      } finally {
+        this._busy = false;
+      }
+    }
+    async _saveChoiceRename(categoryId, affiliationId) {
+      const name = this._renameChoiceName.trim();
+      if (!name) {
+        this._feedback("Enter a choice name", "warn");
+        return;
+      }
+      this._busy = true;
+      try {
+        await this.hass.callService("game_master", "rename_affiliation", {
+          category_id: categoryId,
+          affiliation_id: affiliationId,
+          name
+        });
+        this._cancelRenames();
+        await this._loadCatalog();
+        this._feedback(`Renamed to ${name}`, "ok");
+      } catch (err) {
+        this._feedback("Rename affiliation failed: " + this._formatErr(err), "err");
+      } finally {
+        this._busy = false;
+      }
+    }
+    async _setDefault(categoryId, affiliationId) {
+      this._busy = true;
+      try {
+        await this.hass.callService("game_master", "set_default_affiliation", {
+          category_id: categoryId,
+          affiliation_id: affiliationId
+        });
+        await this._loadCatalog();
+        this._feedback(
+          affiliationId ? "Default affiliation saved" : "Default affiliation cleared",
+          "ok"
+        );
+      } catch (err) {
+        this._feedback("Set default failed: " + this._formatErr(err), "err");
+      } finally {
+        this._busy = false;
+      }
+    }
+    _catalogSection() {
+      const html = window.McPanel.html;
+      const cats = this._catalog.categories || [];
+      const hasActive = Boolean(this._state?.active_event?.id);
+      return html`
+      <section class="section">
+        <h2>Affiliation catalog</h2>
+        <div class="catalog-block">
+          <p class="meta">
+            Categories and choices for the active event (cleared when the
+            event changes). Set a default per category to prefill Registration
+            when creating a player (HA-only; not written to Central). GBN
+            selects from the catalog only.
+          </p>
+          <label for="cat-create">New category</label>
+          <div class="input-row">
+            <input
+              id="cat-create"
+              type="text"
+              placeholder="e.g. Allegiance"
+              .value=${this._catCreateName}
+              ?disabled=${this._busy || !hasActive}
+              @input=${(e) => {
+        this._catCreateName = e.target.value;
+      }}
+              @keydown=${(e) => {
+        if (e.key === "Enter") this._createCategory();
+      }}
+            />
+            <button
+              class="btn-ghost"
+              ?disabled=${this._busy || !hasActive}
+              @click=${() => this._createCategory()}
+            >
+              Add category
+            </button>
+          </div>
+          ${!hasActive ? html`<p class="meta" style="margin-top:12px">
+                Set an active event in Registration before editing the catalog.
+              </p>` : ""}
+          ${cats.length === 0 ? html`<p class="meta" style="margin-top:12px">
+                No affiliation categories yet.
+              </p>` : cats.map((cat) => this._categoryCard(cat))}
+        </div>
+      </section>
+    `;
+    }
+    _categoryCard(cat) {
+      const html = window.McPanel.html;
+      const catId = String(cat.id);
+      const renamingCat = this._renameCatId === catId;
+      const choices = cat.affiliations || [];
+      const defaultId = String(cat.default_affiliation_id || "");
+      return html`
+      <div class="cat-card">
+        <div class="cat-head">
+          ${renamingCat ? html`<div class="input-row" style="flex:1">
+                <input
+                  type="text"
+                  .value=${this._renameCatName}
+                  @input=${(e) => {
+        this._renameCatName = e.target.value;
+      }}
+                  @keydown=${(e) => {
+        if (e.key === "Enter") this._saveCategoryRename();
+        if (e.key === "Escape") this._cancelRenames();
+      }}
+                />
+                <button
+                  class="btn-create"
+                  ?disabled=${this._busy}
+                  @click=${() => this._saveCategoryRename()}
+                >
+                  Save
+                </button>
+                <button class="btn-ghost" @click=${() => this._cancelRenames()}>
+                  Cancel
+                </button>
+              </div>` : html`<h3>${cat.name || cat.id}</h3>
+                <button
+                  class="small-btn"
+                  ?disabled=${this._busy}
+                  @click=${() => {
+        this._cancelRenames();
+        this._renameCatId = catId;
+        this._renameCatName = cat.name || "";
+      }}
+                >
+                  Rename
+                </button>`}
+        </div>
+        ${choices.length === 0 ? html`<p class="meta" style="margin-bottom:10px">No choices yet.</p>` : html`<div class="chip-row">
+              ${choices.map((c) => {
+        const key = `${catId}:${c.id}`;
+        const isDefault = defaultId === String(c.id);
+        if (this._renameChoiceKey === key) {
+          return html`<div class="input-row" style="width:100%">
+                    <input
+                      type="text"
+                      .value=${this._renameChoiceName}
+                      @input=${(e) => {
+            this._renameChoiceName = e.target.value;
+          }}
+                      @keydown=${(e) => {
+            if (e.key === "Enter")
+              this._saveChoiceRename(catId, String(c.id));
+            if (e.key === "Escape") this._cancelRenames();
+          }}
+                    />
+                    <button
+                      class="btn-create"
+                      ?disabled=${this._busy}
+                      @click=${() => this._saveChoiceRename(catId, String(c.id))}
+                    >
+                      Save
+                    </button>
+                    <button class="btn-ghost" @click=${() => this._cancelRenames()}>
+                      Cancel
+                    </button>
+                  </div>`;
+        }
+        return html`<button
+                  type="button"
+                  class="chip ${isDefault ? "default" : ""}"
+                  title=${isDefault ? "Default for new players \u2014 click to rename" : "Click to rename"}
+                  ?disabled=${this._busy}
+                  @click=${() => {
+          this._cancelRenames();
+          this._renameChoiceKey = key;
+          this._renameChoiceName = c.name || "";
+        }}
+                >
+                  ${c.name}${isDefault ? " \u2605" : ""}
+                </button>`;
+      })}
+            </div>
+            <div class="default-row">
+              <label for=${`def-${catId}`}>Default for new players</label>
+              <select
+                id=${`def-${catId}`}
+                .value=${defaultId}
+                ?disabled=${this._busy}
+                @change=${(e) => {
+        this._setDefault(
+          catId,
+          e.target.value
+        );
+      }}
+              >
+                <option value="">None</option>
+                ${choices.map(
+        (c) => html`<option
+                    value=${c.id}
+                    ?selected=${defaultId === String(c.id)}
+                  >
+                    ${c.name}
+                  </option>`
+      )}
+              </select>
+            </div>`}
+        <div class="input-row">
+          <input
+            type="text"
+            placeholder="New choice, e.g. Helix Industries"
+            .value=${this._choiceDrafts[catId] || ""}
+            ?disabled=${this._busy}
+            @input=${(e) => {
+        this._choiceDrafts = {
+          ...this._choiceDrafts,
+          [catId]: e.target.value
+        };
+      }}
+            @keydown=${(e) => {
+        if (e.key === "Enter") this._createChoice(catId);
+      }}
+          />
+          <button
+            class="btn-ghost"
+            ?disabled=${this._busy}
+            @click=${() => this._createChoice(catId)}
+          >
+            Add choice
+          </button>
+        </div>
+      </div>
+    `;
     }
     async _setScoring(enabled) {
       this._busy = true;
@@ -306,6 +765,8 @@
                 Set an active event in Registration before toggling gameplay.
               </p>` : ""}
         </section>
+
+        ${this._catalogSection()}
 
         <section class="section gated">
           <h2>Hours of operation</h2>

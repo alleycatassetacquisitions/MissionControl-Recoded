@@ -124,12 +124,19 @@ resolve_template() {
   if [[ -z "$match" ]]; then
     printf '\nAvailable templates (first 30):\n' >&2
     pveam available 2>/dev/null | head -30 >&2 || true
-    die "Could not find a template matching '${TEMPLATE_PREFIX}'. Set TEMPLATE= and retry."
+    die "Could not find a template matching '${TEMPLATE_PREFIX}'. Set TEMPLATE= and retry.
+
+Offline installs cannot download templates. Pre-stage one with:
+  pveam update && pveam download ${TEMPLATE_STORAGE} <ubuntu-24.04-…tar.zst>
+Or copy the .tar.zst into /var/lib/vz/template/cache/ then: pveam list ${TEMPLATE_STORAGE}
+See Docs/Venue Install.md (Offline — Linux CT template)."
   fi
 
   say "Downloading $match to ${TEMPLATE_STORAGE}"
   filename="$match"
-  pveam download "$TEMPLATE_STORAGE" "$filename"
+  # pveam download prints progress on stdout — must not pollute TEMPLATE_REF capture
+  pveam download "$TEMPLATE_STORAGE" "$filename" >&2 \
+    || die "pveam download failed for $filename (check network / subscription mirror)"
 
   # Prefer the storage:vztmpl/... ref from pveam list after download
   listed="$(pveam list "$TEMPLATE_STORAGE" 2>/dev/null | awk 'NR>1 {print $1}' || true)"
@@ -327,3 +334,12 @@ Quick checks:
 Next: Docs/Master Control Server Config Steps.md (paste into HA secrets, restart CC seed).
 
 EOF
+
+# Machine-readable for venue orchestrator / updater
+echo "MC_OUT_URL=http://${CT_IP}:${MCS_PORT}"
+echo "MC_OUT_TOKEN=${MCS_API_TOKEN}"
+echo "MC_OUT_CTID=${CTID}"
+echo "MC_OUT_NAME=${CT_NAME}"
+echo "MC_OUT_IP=${CT_IP}"
+echo "MC_OUT_PORT=${MCS_PORT}"
+echo "MC_OUT_COMPONENT=mcs"

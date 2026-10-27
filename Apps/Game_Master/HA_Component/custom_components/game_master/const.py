@@ -9,3 +9,12 @@ EXTRA_MCS_TOKEN = "token"
 WS_GET_GAME_STATE = f"{DOMAIN}/get_game_state"
 WS_SET_SCORING = f"{DOMAIN}/set_scoring"
 WS_SET_DELAYED_SCORES = f"{DOMAIN}/set_delayed_scores"
+WS_GET_AFFILIATION_CATALOG = f"{DOMAIN}/get_affiliation_catalog"
+
+# Event-keyed affiliation catalog cache (Game Master owns CRUD).
+AFFILIATION_CATALOG_KEY = "affiliation_catalog"
+
+# HA-only defaults: event_id → category_id → affiliation_id (not sent to Central).
+AFFILIATION_DEFAULTS_KEY = "affiliation_defaults"
+AFFILIATION_DEFAULTS_STORE = f"{DOMAIN}.affiliation_defaults"
+AFFILIATION_DEFAULTS_VERSION = 1

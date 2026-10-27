@@ -32,6 +32,10 @@
       this._termConnected = false;
       this._termVmid = null;
       this._resizeObs = null;
+      this._popoutKind = null;
+      this._onPopoutKeydown = (ev) => {
+        if (ev.key === "Escape" && this._popoutKind) this._closePopout();
+      };
     }
     set panel(p) {
       this._panel = p;
@@ -56,6 +60,7 @@
         }
       }
       this._unsubs = [];
+      this._closePopout();
       this._closeTerm(true);
       if (this._resizeObs) {
         this._resizeObs.disconnect();
@@ -164,32 +169,145 @@
     }
     _bind() {
       const root = this.shadowRoot;
-      root.getElementById("mqtt-pause")?.addEventListener("click", () => {
+      const toggleMqttPause = () => {
         this._mqttPaused = !this._mqttPaused;
-        const btn = root.getElementById("mqtt-pause");
-        if (btn) btn.textContent = this._mqttPaused ? "Resume" : "Pause";
-      });
-      root.getElementById("mqtt-clear")?.addEventListener("click", () => {
+        this._syncMqttPauseButtons();
+      };
+      const clearMqtt = () => {
         this._mqtt = [];
         this._paintMqtt(true);
-      });
-      root.getElementById("mqtt-filter")?.addEventListener("input", (ev) => {
+      };
+      const onMqttFilter = (ev) => {
         this._mqttFilter = ev.target.value.trim();
+        const otherId = ev.target.id === "mqtt-filter" ? "mqtt-filter-pop" : "mqtt-filter";
+        const other = root.getElementById(otherId);
+        if (other && other.value !== ev.target.value) other.value = ev.target.value;
         this._paintMqtt(true);
-      });
+      };
+      root.getElementById("mqtt-pause")?.addEventListener("click", toggleMqttPause);
+      root.getElementById("mqtt-pause-pop")?.addEventListener("click", toggleMqttPause);
+      root.getElementById("mqtt-clear")?.addEventListener("click", clearMqtt);
+      root.getElementById("mqtt-clear-pop")?.addEventListener("click", clearMqtt);
+      root.getElementById("mqtt-filter")?.addEventListener("input", onMqttFilter);
+      root.getElementById("mqtt-filter-pop")?.addEventListener("input", onMqttFilter);
       root.getElementById("term-connect")?.addEventListener("click", () => this._connectTerm());
       root.getElementById("term-disconnect")?.addEventListener("click", () => this._closeTerm());
+      root.getElementById("term-connect-pop")?.addEventListener("click", () => this._connectTerm());
+      root.getElementById("term-disconnect-pop")?.addEventListener("click", () => this._closeTerm());
       root.getElementById("host-refresh")?.addEventListener("click", () => this._loadHosts());
       root.getElementById("health-refresh")?.addEventListener("click", () => this._loadHealth());
-      root.getElementById("logs-refresh")?.addEventListener("click", () => this._loadDeviceLogs());
-      root.getElementById("logs-prev")?.addEventListener("click", () => {
+      const refreshLogs = () => this._loadDeviceLogs();
+      const prevLogs = () => {
         if (this._logsPage > 1) this._loadDeviceLogs(this._logsPage - 1);
-      });
-      root.getElementById("logs-next")?.addEventListener("click", () => {
+      };
+      const nextLogs = () => {
         if (this._deviceLogs.length >= this._logsPerPage) {
           this._loadDeviceLogs(this._logsPage + 1);
         }
+      };
+      root.getElementById("logs-refresh")?.addEventListener("click", refreshLogs);
+      root.getElementById("logs-refresh-pop")?.addEventListener("click", refreshLogs);
+      root.getElementById("logs-prev")?.addEventListener("click", prevLogs);
+      root.getElementById("logs-prev-pop")?.addEventListener("click", prevLogs);
+      root.getElementById("logs-next")?.addEventListener("click", nextLogs);
+      root.getElementById("logs-next-pop")?.addEventListener("click", nextLogs);
+      root.getElementById("mqtt-popout")?.addEventListener("click", () => this._openPopout("mqtt"));
+      root.getElementById("logs-popout")?.addEventListener("click", () => this._openPopout("logs"));
+      root.getElementById("term-popout")?.addEventListener("click", () => this._openPopout("term"));
+      root.getElementById("popout-close")?.addEventListener("click", () => this._closePopout());
+      root.getElementById("pane-popout")?.addEventListener("click", (ev) => {
+        if (ev.target === root.getElementById("pane-popout")) this._closePopout();
       });
+    }
+    _syncMqttPauseButtons() {
+      const label = this._mqttPaused ? "Resume" : "Pause";
+      for (const id of ["mqtt-pause", "mqtt-pause-pop"]) {
+        const btn = this.shadowRoot?.getElementById(id);
+        if (btn) btn.textContent = label;
+      }
+    }
+    _openPopout(kind) {
+      if (!kind || !["mqtt", "logs", "term"].includes(kind)) return;
+      if (this._popoutKind && this._popoutKind !== kind) this._closePopout();
+      const root = this.shadowRoot;
+      const overlay = root.getElementById("pane-popout");
+      const title = root.getElementById("popout-title");
+      if (!overlay || !title) return;
+      this._popoutKind = kind;
+      const titles = { mqtt: "MQTT", logs: "Device logs", term: "Console" };
+      title.textContent = titles[kind] || "Pop out";
+      for (const k of ["mqtt", "logs", "term"]) {
+        const body = root.getElementById(`popout-${k}-body`);
+        const tools = root.getElementById(`popout-${k}-tools`);
+        if (body) body.hidden = k !== kind;
+        if (tools) tools.hidden = k !== kind;
+      }
+      if (kind === "mqtt") {
+        const filter = root.getElementById("mqtt-filter-pop");
+        if (filter) filter.value = this._mqttFilter;
+        this._syncMqttPauseButtons();
+        this._paintMqtt(true);
+      } else if (kind === "logs") {
+        this._paintDeviceLogs();
+      } else if (kind === "term") {
+        this._reparentTerm(true);
+        this._syncTermLabels();
+      }
+      overlay.hidden = false;
+      overlay.setAttribute("aria-hidden", "false");
+      document.addEventListener("keydown", this._onPopoutKeydown);
+      root.getElementById("popout-close")?.focus();
+    }
+    _closePopout() {
+      if (!this._popoutKind) return;
+      const wasTerm = this._popoutKind === "term";
+      const root = this.shadowRoot;
+      const overlay = root?.getElementById("pane-popout");
+      this._popoutKind = null;
+      if (wasTerm) this._reparentTerm(false);
+      if (overlay) {
+        overlay.hidden = true;
+        overlay.setAttribute("aria-hidden", "true");
+      }
+      document.removeEventListener("keydown", this._onPopoutKeydown);
+      requestAnimationFrame(() => this._fitNow());
+    }
+    _reparentTerm(intoPopout) {
+      const root = this.shadowRoot;
+      if (!root) return;
+      const xterm = root.getElementById("xterm");
+      const inlineSlot = root.getElementById("term-inline-slot");
+      const popSlot = root.getElementById("term-pop-slot");
+      const placeholder = root.getElementById("term-popped-placeholder");
+      if (!xterm || !inlineSlot || !popSlot) return;
+      if (intoPopout) {
+        if (xterm.parentElement !== popSlot) popSlot.appendChild(xterm);
+        if (placeholder) placeholder.hidden = false;
+      } else {
+        if (xterm.parentElement !== inlineSlot) {
+          if (placeholder) inlineSlot.insertBefore(xterm, placeholder);
+          else inlineSlot.appendChild(xterm);
+        }
+        if (placeholder) placeholder.hidden = true;
+      }
+      if (this._resizeObs) {
+        this._resizeObs.disconnect();
+        this._resizeObs.observe(xterm);
+      }
+      requestAnimationFrame(() => this._fitNow());
+    }
+    _syncTermLabels() {
+      const root = this.shadowRoot;
+      if (!root) return;
+      const host = this._selected ? this._hostByVmid(this._selected) : null;
+      const hostText = host ? `${host.name} (CT ${host.vmid})` : "No host selected";
+      for (const id of ["term-host", "term-host-pop"]) {
+        const el = root.getElementById(id);
+        if (el) el.textContent = hostText;
+      }
+      const state = root.getElementById("term-state")?.textContent || "Disconnected";
+      const statePop = root.getElementById("term-state-pop");
+      if (statePop) statePop.textContent = state;
     }
     _paintHealth() {
       const el = this.shadowRoot.getElementById("health-list");
@@ -211,31 +329,31 @@
       }).join("");
     }
     _paintDeviceLogs() {
-      const el = this.shadowRoot.getElementById("logs-list");
-      const meta = this.shadowRoot.getElementById("logs-meta");
-      const prev = this.shadowRoot.getElementById("logs-prev");
-      const next = this.shadowRoot.getElementById("logs-next");
-      if (meta) {
-        meta.textContent = this._logsLoading ? "Loading\u2026" : `Page ${this._logsPage} \xB7 ${this._deviceLogs.length} row${this._deviceLogs.length === 1 ? "" : "s"}`;
+      const root = this.shadowRoot;
+      const metaText = this._logsLoading ? "Loading\u2026" : `Page ${this._logsPage} \xB7 ${this._deviceLogs.length} row${this._deviceLogs.length === 1 ? "" : "s"}`;
+      for (const id of ["logs-meta", "logs-meta-pop"]) {
+        const meta = root.getElementById(id);
+        if (meta) meta.textContent = metaText;
       }
-      if (prev) prev.disabled = this._logsLoading || this._logsPage <= 1;
-      if (next) {
-        next.disabled = this._logsLoading || this._deviceLogs.length < this._logsPerPage;
+      const prevDisabled = this._logsLoading || this._logsPage <= 1;
+      const nextDisabled = this._logsLoading || this._deviceLogs.length < this._logsPerPage;
+      for (const id of ["logs-prev", "logs-prev-pop"]) {
+        const prev = root.getElementById(id);
+        if (prev) prev.disabled = prevDisabled;
       }
-      if (!el) return;
+      for (const id of ["logs-next", "logs-next-pop"]) {
+        const next = root.getElementById(id);
+        if (next) next.disabled = nextDisabled;
+      }
+      let html;
       if (this._logsError) {
-        el.innerHTML = `<div class="empty error"><strong>Device logs unavailable</strong><p>${this._esc(this._logsError)}</p></div>`;
-        return;
-      }
-      if (this._logsLoading && !this._deviceLogs.length) {
-        el.innerHTML = `<p class="empty">Loading device logs\u2026</p>`;
-        return;
-      }
-      if (!this._deviceLogs.length) {
-        el.innerHTML = `<p class="empty">No device crash logs yet.</p>`;
-        return;
-      }
-      el.innerHTML = `
+        html = `<div class="empty error"><strong>Device logs unavailable</strong><p>${this._esc(this._logsError)}</p></div>`;
+      } else if (this._logsLoading && !this._deviceLogs.length) {
+        html = `<p class="empty">Loading device logs\u2026</p>`;
+      } else if (!this._deviceLogs.length) {
+        html = `<p class="empty">No device crash logs yet.</p>`;
+      } else {
+        html = `
       <table class="logs-table">
         <thead>
           <tr>
@@ -252,6 +370,11 @@
           ${this._deviceLogs.map((row) => this._logRow(row)).join("")}
         </tbody>
       </table>`;
+      }
+      for (const id of ["logs-list", "logs-list-pop"]) {
+        const el = root.getElementById(id);
+        if (el) el.innerHTML = html;
+      }
     }
     _logRow(row) {
       const received = this._fmtWhen(row.received_at);
@@ -287,11 +410,7 @@
       const switchingAway = hadSession && this._termVmid != null && Number(this._termVmid) !== next;
       this._selected = next;
       this._paintHosts();
-      const host = this._hostByVmid(vmid);
-      const label = this.shadowRoot.getElementById("term-host");
-      if (label) {
-        label.textContent = host ? `${host.name} (CT ${host.vmid})` : "No host selected";
-      }
+      this._syncTermLabels();
       if (switchingAway) {
         void this._closeTerm(true).then(() => {
           this._feedback("Console disconnected \u2014 click Connect for the selected guest", "warn");
@@ -349,6 +468,12 @@
         return;
       }
       const hold = this.shadowRoot.getElementById("xterm");
+      if (!hold) {
+        this._feedback("Console mount missing", "error");
+        return;
+      }
+      if (this._popoutKind === "term") this._reparentTerm(true);
+      else this._reparentTerm(false);
       hold.innerHTML = "";
       const term = new Term({
         cursorBlink: true,
@@ -452,8 +577,10 @@
       if (!silent) this._feedback("Console disconnected", "ok");
     }
     _setTermState(text) {
-      const el = this.shadowRoot.getElementById("term-state");
-      if (el) el.textContent = text;
+      for (const id of ["term-state", "term-state-pop"]) {
+        const el = this.shadowRoot?.getElementById(id);
+        if (el) el.textContent = text;
+      }
     }
     _feedback(msg, kind = "ok") {
       const el = this.shadowRoot.getElementById("feedback");
@@ -541,35 +668,41 @@
       list.querySelectorAll(".host-card").forEach((btn) => {
         btn.addEventListener("click", () => this._selectHost(btn.dataset.vmid));
       });
-      const label = this.shadowRoot.getElementById("term-host");
-      if (label && this._selected) {
-        const host = this._hostByVmid(this._selected);
-        if (host) label.textContent = `${host.name} (CT ${host.vmid})`;
-      }
+      this._syncTermLabels();
     }
     _mqttMatch(item) {
       if (!this._mqttFilter) return true;
       const q = this._mqttFilter.toLowerCase();
       return String(item.topic || "").toLowerCase().includes(q) || String(item.text || "").toLowerCase().includes(q);
     }
+    _mqttLogTargets() {
+      const root = this.shadowRoot;
+      if (!root) return [];
+      const ids = ["mqtt-log"];
+      if (this._popoutKind === "mqtt" || root.getElementById("mqtt-log-pop")) {
+        ids.push("mqtt-log-pop");
+      }
+      return ids.map((id) => root.getElementById(id)).filter(Boolean);
+    }
     _paintMqtt(rebuild) {
-      const log = this.shadowRoot.getElementById("mqtt-log");
-      if (!log) return;
-      if (rebuild) {
-        const rows = this._mqtt.filter((m) => this._mqttMatch(m));
-        log.innerHTML = rows.length ? rows.map((m) => this._mqttRow(m)).join("") : `<p class="empty">No MQTT messages yet.</p>`;
+      if (!rebuild) return;
+      const rows = this._mqtt.filter((m) => this._mqttMatch(m));
+      const html = rows.length ? rows.map((m) => this._mqttRow(m)).join("") : `<p class="empty">No MQTT messages yet.</p>`;
+      for (const log of this._mqttLogTargets()) {
+        log.innerHTML = html;
         log.scrollTop = log.scrollHeight;
       }
     }
     _appendMqtt(item) {
       if (!this._mqttMatch(item)) return;
-      const log = this.shadowRoot.getElementById("mqtt-log");
-      if (!log) return;
-      const empty = log.querySelector(".empty");
-      if (empty) empty.remove();
-      log.insertAdjacentHTML("beforeend", this._mqttRow(item));
-      while (log.children.length > 200) log.removeChild(log.firstChild);
-      log.scrollTop = log.scrollHeight;
+      const row = this._mqttRow(item);
+      for (const log of this._mqttLogTargets()) {
+        const empty = log.querySelector(".empty");
+        if (empty) empty.remove();
+        log.insertAdjacentHTML("beforeend", row);
+        while (log.children.length > 200) log.removeChild(log.firstChild);
+        log.scrollTop = log.scrollHeight;
+      }
     }
     _mqttRow(item) {
       const ts = item.ts ? new Date(item.ts * 1e3).toLocaleTimeString() : "";
@@ -741,6 +874,8 @@ ${item.hex}` : "";
           padding: 4px 10px;
           cursor: pointer;
         }
+        .ghost + .ghost { margin-left: 0; }
+        .pane-popout-btn { margin-left: 0; flex-shrink: 0; }
         #host-grid {
           flex: 1 1 0;
           min-height: 0;
@@ -771,14 +906,32 @@ ${item.hex}` : "";
         .bar { height: 6px; background: #1a2440; border-radius: 99px; margin: 3px 0 8px; overflow: hidden; }
         .bar i { display: block; height: 100%; background: linear-gradient(90deg, var(--ac-cyan, #00e5ff), var(--ac-magenta, #ff2bd6)); }
         .host-meta { display: flex; justify-content: space-between; font-size: 11px; color: #9aa8c7; gap: 6px; }
-        #mqtt-log, #xterm {
+        #mqtt-log, #mqtt-log-pop, #xterm, #term-inline-slot, #term-pop-slot {
           flex: 1 1 0;
           min-height: 0;
           overflow: auto;
           overscroll-behavior: contain;
         }
-        #xterm { height: 100%; }
-        #mqtt-log { padding: 6px 10px; font-size: 12px; }
+        #term-inline-slot, #term-pop-slot {
+          display: flex;
+          flex-direction: column;
+          position: relative;
+        }
+        #xterm { height: 100%; flex: 1 1 0; min-height: 0; }
+        #mqtt-log, #mqtt-log-pop { padding: 6px 10px; font-size: 12px; }
+        #term-popped-placeholder {
+          flex: 1 1 0;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          color: #9aa8c7;
+          font-size: 13px;
+          letter-spacing: 0.06em;
+          text-transform: uppercase;
+          padding: 24px;
+          text-align: center;
+        }
+        #term-popped-placeholder[hidden] { display: none; }
         .mqtt-row { display: grid; grid-template-columns: 72px 1fr 64px; gap: 4px 10px; padding: 5px 0; border-bottom: 1px solid #1a2440; }
         .mqtt-row .payload { grid-column: 1 / -1; margin: 0; white-space: pre-wrap; word-break: break-word; overflow-wrap: anywhere; color: #b8f5d0; font-size: 11px; }
         .mqtt-row .topic { color: var(--ac-cyan, #00e5ff); }
@@ -805,7 +958,10 @@ ${item.hex}` : "";
         }
         .empty.error code { color: #00e5ff; }
         .term-actions { display: flex; gap: 8px; margin-left: auto; align-items: center; }
-        #term-host, #term-state { text-transform: none; letter-spacing: 0; color: #9aa8c7; font-size: 11px; }
+        .term-actions .ghost { margin-left: 0; }
+        #term-host, #term-state, #term-host-pop, #term-state-pop {
+          text-transform: none; letter-spacing: 0; color: #9aa8c7; font-size: 11px;
+        }
         .health-row {
           display: grid;
           grid-template-columns: minmax(0, 1fr) auto;
@@ -831,16 +987,60 @@ ${item.hex}` : "";
           text-decoration: none;
         }
         .health-row a.muted:hover { text-decoration: underline; }
-        #health-list, #logs-list {
+        #health-list, #logs-list, #logs-list-pop {
           flex: 1 1 0;
           min-height: 0;
           overflow: auto;
           overscroll-behavior: contain;
         }
-        #logs-meta { text-transform: none; letter-spacing: 0; color: #9aa8c7; font-size: 11px; margin-left: auto; }
-        .logs-pager { display: flex; gap: 6px; }
+        #logs-meta, #logs-meta-pop {
+          text-transform: none; letter-spacing: 0; color: #9aa8c7; font-size: 11px; margin-left: auto;
+        }
+        .logs-pager { display: flex; gap: 6px; align-items: center; }
         .logs-pager .ghost { margin-left: 0; }
         .logs-pager button:disabled { opacity: 0.4; cursor: default; }
+        .pane-popout {
+          display: flex; position: fixed; inset: 0; background: rgba(0,0,0,0.65);
+          align-items: center; justify-content: center; z-index: 1100;
+        }
+        .pane-popout[hidden] { display: none; }
+        .pane-popout-inner {
+          display: flex; flex-direction: column;
+          width: min(1100px, 96vw); height: min(90vh, 900px);
+          max-height: 90vh;
+          background: var(--card-background-color, #12192e);
+          border: 1px solid var(--divider-color, #2a3a5c);
+          border-radius: 10px;
+          overflow: hidden;
+          box-sizing: border-box;
+        }
+        .pane-popout-head {
+          display: flex; align-items: center; gap: 10px;
+          padding: 12px 16px; flex-shrink: 0;
+          border-bottom: 1px solid var(--divider-color, #2a3a5c);
+          font-size: 13px; letter-spacing: 0.08em; text-transform: uppercase;
+          color: var(--ac-cyan, #00e5ff);
+        }
+        .pane-popout-head h2 {
+          margin: 0; font-size: 14px; letter-spacing: 0.1em; text-transform: uppercase;
+          color: var(--ac-cyan, #00e5ff); font-weight: 600;
+        }
+        .pane-popout-tools {
+          display: flex; align-items: center; gap: 8px; flex: 1; min-width: 0;
+          flex-wrap: wrap;
+        }
+        .pane-popout-tools[hidden] { display: none; }
+        .pane-popout-tools .ghost { margin-left: 0; }
+        .pane-popout-tools input {
+          margin-left: auto;
+          background: #0d1426; color: inherit; border: 1px solid #2a3a5c;
+          border-radius: 6px; padding: 4px 8px; width: 200px; font-family: inherit;
+        }
+        .pane-popout-body {
+          flex: 1 1 0; min-height: 0; display: flex; flex-direction: column; overflow: hidden;
+        }
+        .pane-popout-body[hidden] { display: none; }
+        #popout-close { margin-left: 8px; }
         .logs-table {
           width: 100%; border-collapse: collapse; font-size: 12px;
         }
@@ -876,9 +1076,10 @@ ${item.hex}` : "";
           .hosts { min-height: 180px; max-height: 280px; }
           .health, .logs { min-height: 180px; max-height: 320px; }
           .mqtt, .term { min-height: 280px; }
-          #mqtt-log, #xterm { max-height: 45vh; }
+          #mqtt-log, #xterm, #term-inline-slot { max-height: 45vh; }
           .health-row { grid-template-columns: 1fr; }
           .health-row .status { justify-self: start; }
+          .pane-popout-inner { width: 96vw; height: 92vh; }
         }
       </style>
       <div class="wrap">
@@ -918,6 +1119,7 @@ ${item.hex}` : "";
                 <button class="ghost" id="logs-prev" type="button">Prev</button>
                 <button class="ghost" id="logs-next" type="button">Next</button>
                 <button class="ghost" id="logs-refresh" type="button">Refresh</button>
+                <button class="ghost pane-popout-btn" id="logs-popout" type="button">Pop out</button>
               </div>
             </div>
             <div id="logs-list"><p class="empty">No device crash logs yet.</p></div>
@@ -928,6 +1130,7 @@ ${item.hex}` : "";
               <input id="mqtt-filter" type="text" placeholder="filter topic\u2026" />
               <button class="ghost" id="mqtt-pause" type="button">Pause</button>
               <button class="ghost" id="mqtt-clear" type="button">Clear</button>
+              <button class="ghost pane-popout-btn" id="mqtt-popout" type="button">Pop out</button>
             </div>
             <div id="mqtt-log"><p class="empty">No MQTT messages yet.</p></div>
           </section>
@@ -939,10 +1142,52 @@ ${item.hex}` : "";
               <div class="term-actions">
                 <button class="ghost" id="term-connect" type="button">Connect</button>
                 <button class="ghost" id="term-disconnect" type="button">Disconnect</button>
+                <button class="ghost pane-popout-btn" id="term-popout" type="button">Pop out</button>
               </div>
             </div>
-            <div id="xterm"></div>
+            <div id="term-inline-slot">
+              <div id="xterm"></div>
+              <div id="term-popped-placeholder" hidden>Console popped out \u2014 close the overlay to return here</div>
+            </div>
           </section>
+        </div>
+      </div>
+      <div class="pane-popout" id="pane-popout" hidden aria-hidden="true" role="dialog" aria-modal="true" aria-labelledby="popout-title">
+        <div class="pane-popout-inner">
+          <div class="pane-popout-head">
+            <h2 id="popout-title">Pop out</h2>
+            <div class="pane-popout-tools" id="popout-mqtt-tools" hidden>
+              <input id="mqtt-filter-pop" type="text" placeholder="filter topic\u2026" />
+              <button class="ghost" id="mqtt-pause-pop" type="button">Pause</button>
+              <button class="ghost" id="mqtt-clear-pop" type="button">Clear</button>
+            </div>
+            <div class="pane-popout-tools" id="popout-logs-tools" hidden>
+              <span id="logs-meta-pop">Page 1</span>
+              <div class="logs-pager">
+                <button class="ghost" id="logs-prev-pop" type="button">Prev</button>
+                <button class="ghost" id="logs-next-pop" type="button">Next</button>
+                <button class="ghost" id="logs-refresh-pop" type="button">Refresh</button>
+              </div>
+            </div>
+            <div class="pane-popout-tools" id="popout-term-tools" hidden>
+              <span id="term-host-pop">No host selected</span>
+              <span id="term-state-pop">Disconnected</span>
+              <div class="term-actions">
+                <button class="ghost" id="term-connect-pop" type="button">Connect</button>
+                <button class="ghost" id="term-disconnect-pop" type="button">Disconnect</button>
+              </div>
+            </div>
+            <button class="ghost" id="popout-close" type="button">Close</button>
+          </div>
+          <div class="pane-popout-body" id="popout-mqtt-body" hidden>
+            <div id="mqtt-log-pop"><p class="empty">No MQTT messages yet.</p></div>
+          </div>
+          <div class="pane-popout-body" id="popout-logs-body" hidden>
+            <div id="logs-list-pop"><p class="empty">No device crash logs yet.</p></div>
+          </div>
+          <div class="pane-popout-body" id="popout-term-body" hidden>
+            <div id="term-pop-slot"></div>
+          </div>
         </div>
       </div>
     `;

@@ -54,3 +54,10 @@ class TimezoneRequest(BaseModel):
 class TimezoneResponse(BaseModel):
     timezone: str
     status: StatusResponse
+
+
+class ConfigUpdate(BaseModel):
+    """Payload for POST /config (MCS peer fan-out)."""
+
+    host_clock_url: str = ""
+    api_token: str = ""

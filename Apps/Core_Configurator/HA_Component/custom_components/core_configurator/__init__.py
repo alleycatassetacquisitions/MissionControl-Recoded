@@ -24,11 +24,13 @@ from .const import (
     DOMAIN,
     EVENT_UPDATED,
     EXTRA_ENABLED,
+    EXTRA_TOKEN,
     KEY_RTSP,
+    KEY_VENUE_UPDATER,
     YAML_KEYS,
     YAML_RTSP_ENABLED,
 )
-from .helpers import catalog_public, get_url, save_services
+from .helpers import catalog_public, get_extra, get_url, save_services
 from .urlutil import _truthy, empty_services, normalize_url, services_from_mapping
 
 _LOGGER = logging.getLogger(__name__)
@@ -122,6 +124,67 @@ async def ws_set_service(hass: HomeAssistant, connection, msg) -> None:
     )
 
 
+async def _venue_updater_request(
+    hass: HomeAssistant, method: str, path: str
+) -> dict:
+    """Call the Proxmox venue-update agent. Returns a result dict."""
+    from aiohttp import ClientTimeout
+
+    from custom_components.shared_libraries.http import async_request
+
+    token = str(get_extra(hass, KEY_VENUE_UPDATER, EXTRA_TOKEN, "") or "")
+    if not get_url(hass, KEY_VENUE_UPDATER):
+        return {"status": "error", "detail": "venue_updater URL not configured"}
+    if not token:
+        return {"status": "error", "detail": "venue_updater token not configured"}
+    # Check may download/compare a release; allow longer than the shared 10s default.
+    response = await async_request(
+        hass,
+        KEY_VENUE_UPDATER,
+        method,
+        path,
+        token=token,
+        timeout=ClientTimeout(total=180),
+    )
+    if response is None:
+        return {"status": "error", "detail": "venue updater unreachable"}
+    try:
+        if response.status >= 400:
+            text = await response.text()
+            return {
+                "status": "error",
+                "detail": f"HTTP {response.status}: {text[:400]}",
+            }
+        data = await response.json(content_type=None)
+        return data if isinstance(data, dict) else {"status": "ok", "data": data}
+    except Exception as err:  # noqa: BLE001
+        return {"status": "error", "detail": str(err)}
+
+
+@websocket_api.websocket_command({vol.Required("type"): f"{DOMAIN}/update_status"})
+@websocket_api.async_response
+async def ws_update_status(hass: HomeAssistant, connection, msg) -> None:
+    connection.send_result(msg["id"], await _venue_updater_request(hass, "GET", "/status"))
+
+
+@websocket_api.websocket_command({vol.Required("type"): f"{DOMAIN}/update_check"})
+@websocket_api.async_response
+async def ws_update_check(hass: HomeAssistant, connection, msg) -> None:
+    if not getattr(connection.user, "is_admin", False):
+        connection.send_error(msg["id"], "unauthorized", "Admin required")
+        return
+    connection.send_result(msg["id"], await _venue_updater_request(hass, "POST", "/check"))
+
+
+@websocket_api.websocket_command({vol.Required("type"): f"{DOMAIN}/update_apply"})
+@websocket_api.async_response
+async def ws_update_apply(hass: HomeAssistant, connection, msg) -> None:
+    if not getattr(connection.user, "is_admin", False):
+        connection.send_error(msg["id"], "unauthorized", "Admin required")
+        return
+    connection.send_result(msg["id"], await _venue_updater_request(hass, "POST", "/apply"))
+
+
 # ---------------------------------------------------------------------------
 # HA lifecycle
 # ---------------------------------------------------------------------------
@@ -167,6 +230,9 @@ def _register_ws(hass: HomeAssistant) -> None:
         websocket_api.async_register_command(hass, ws_get_services)
         websocket_api.async_register_command(hass, ws_get_url)
         websocket_api.async_register_command(hass, ws_set_service)
+        websocket_api.async_register_command(hass, ws_update_status)
+        websocket_api.async_register_command(hass, ws_update_check)
+        websocket_api.async_register_command(hass, ws_update_apply)
         _store(hass)["ws_registered"] = True
     except Exception as err:  # noqa: BLE001
         _LOGGER.debug("Core Configurator websocket already registered: %s", err)

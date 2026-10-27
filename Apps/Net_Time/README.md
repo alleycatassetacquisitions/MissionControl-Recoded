@@ -7,7 +7,64 @@ LAN time authority for Mission Control venues. Runs on Proxmox as:
 
 Core Configurator holds the URL + token and exposes **Attempt Online Sync**, a **timezone dropdown**, and **Offline Sync** (manual date/time). The status line shows wall time in the configured timezone (NTP itself remains UTC).
 
-PDN/FDN client sync is owned by those firmware teams. This app ships the server and operator controls only.
+MCS peer fan-out can update `NET_TIME_HOST_CLOCK_URL` at runtime via Bearer `POST /config` with body `{"host_clock_url": "..."}` (persists `/etc/net-time.env`). Auth uses the Net Time API token (`net_time_token` in the HA peer snapshot), not the MCS token.
+
+PDN/FDN client sync is owned by those firmware teams. This app ships the server and operator controls only. Point devices at the Net Time LXC IP on **UDP 123** (SNTP); time is always **UTC**.
+
+## PDN / FDN — grab time (SNTP)
+
+Replace `<NET_TIME_IP>` with the printed LXC IP from install (or Core Configurator Net Time URL host).
+
+| Item | Value |
+| --- | --- |
+| Protocol | SNTP / NTP |
+| Host | `<NET_TIME_IP>` |
+| Port | **UDP 123** |
+| Auth | none (LAN NTP; management API token is **not** used) |
+| Timebase | UTC |
+
+### One-shot checks (from a laptop / Pi on the venue LAN)
+
+```bash
+# Preferred (chrony client)
+chronyd -Q "server <NET_TIME_IP> iburst"
+
+# sntp (ntpsec / ntp package)
+sntp <NET_TIME_IP>
+
+# Query without setting the local clock (older ntpdate)
+ntpdate -q <NET_TIME_IP>
+```
+
+### Point a systemd NTP client at Net Time
+
+```bash
+# /etc/systemd/timesyncd.conf (or drop-in)
+[Time]
+NTP=<NET_TIME_IP>
+FallbackNTP=
+
+sudo systemctl restart systemd-timesyncd
+timedatectl timesync-status
+```
+
+### ESP / firmware (PDN & FDN)
+
+Configure the SNTP server to `<NET_TIME_IP>` (port 123). Examples:
+
+```c
+// Arduino / ESP8266WiFi or ESP32 WiFi
+configTime(0, 0, "<NET_TIME_IP>");   // GMT offset 0 — Net Time serves UTC
+```
+
+```c
+// ESP-IDF
+esp_sntp_setoperatingmode(SNTP_OPMODE_POLL);
+esp_sntp_setservername(0, "<NET_TIME_IP>");
+esp_sntp_init();
+```
+
+Do **not** use the management API (`:8720`) or host clock agent (`:8721`) from PDN/FDN — those are for Core Configurator / Offline Sync only.
 
 ## Layout
 

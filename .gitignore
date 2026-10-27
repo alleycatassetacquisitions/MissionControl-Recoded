@@ -22,3 +22,6 @@ venv/
 # Panel kit (Lit + TypeScript) — commit built www/ outputs; keep deps local
 Libraries/Shared_HA_Helpers/panel_kit/node_modules/
 Libraries/Shared_HA_Helpers/panel_kit/dist/
+
+# Venue package output (package-venue-bundle.sh)
+dist/

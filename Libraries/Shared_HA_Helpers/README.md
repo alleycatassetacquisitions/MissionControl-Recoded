@@ -16,7 +16,7 @@ Three modules other integrations import directly:
 |---|---|
 | `http.py` | `async_request` — bearer-auth HTTP via HA's managed session + Core Configurator URL |
 | `mqtt.py` | `mc_topic` topic builder, `async_subscribe` / `async_publish` / `async_subscribe_presence` wrappers |
-| `fabric.py` | Presence tracking: `mc/{kind}/status/#` → device_registry + `online`/`offline`/`unknown` sensor |
+| `fabric.py` | Presence tracking: `mc/{kind}/status/#` → device_registry + `online`/`offline`/`unknown` sensor; `async_forget_device` clears tracker + retained status |
 | `www/shared_libraries/mc-panel.js` | Lit + TypeScript McPanel kit (`window.McPanel`) — build from `panel_kit/` |
 
 ---

@@ -1,6 +1,88 @@
 "use strict";
 (() => {
+  // src/shared/affiliations.ts
+  var KNOWN_NEOCORP_SLUGS = /* @__PURE__ */ new Set([
+    "reboot",
+    "helix",
+    "endline",
+    "freelancer"
+  ]);
+  function emptyCatalog() {
+    return { event_id: null, categories: [] };
+  }
+  function findChoiceExact(choices, name) {
+    const needle = (name || "").trim().toLowerCase();
+    if (!needle) return void 0;
+    return choices.find((c) => (c.name || "").trim().toLowerCase() === needle);
+  }
+  function playerAssignmentForCategory(affiliations, category) {
+    if (!affiliations?.length) return "";
+    const catId = category.id;
+    const catName = (category.name || "").trim().toLowerCase();
+    for (const row of affiliations) {
+      if (row.category_id && String(row.category_id) === String(catId)) {
+        return (row.affiliation_name || "").trim();
+      }
+      if (catName && (row.category_name || "").trim().toLowerCase() === catName) {
+        return (row.affiliation_name || "").trim();
+      }
+    }
+    return "";
+  }
+  function neocorpSlugFromName(name) {
+    const raw = (name || "").trim();
+    if (!raw) return "";
+    const lower = raw.toLowerCase();
+    if (KNOWN_NEOCORP_SLUGS.has(lower)) return lower;
+    const first = lower.split(/\s+/)[0] || "";
+    if (KNOWN_NEOCORP_SLUGS.has(first)) return first;
+    return lower;
+  }
+  function isAllegianceCategory(name) {
+    const n = (name || "").trim().toLowerCase();
+    return n === "allegiance" || n === "neocorp";
+  }
+  function isFactionCategory(name) {
+    return (name || "").trim().toLowerCase() === "faction";
+  }
+
   // src/panels/gbn-panel.ts
+  var ACCENT_OPTIONS = [
+    ["blue", "Blue"],
+    ["green", "Green"],
+    ["red", "Red"],
+    ["yellow", "Yellow"],
+    ["purple", "Purple"],
+    ["gold", "Gold"],
+    ["cyan", "Cyan"],
+    ["orange", "Orange"],
+    ["pink", "Pink"],
+    ["white", "White"]
+  ];
+  var ACCENT_HEX = {
+    blue: "#5ec8ff",
+    green: "#5eff9a",
+    red: "#ff5e6e",
+    yellow: "#ffe15e",
+    purple: "#b85eff",
+    gold: "#ffc857",
+    cyan: "#5effef",
+    orange: "#ff9a5e",
+    pink: "#ff5ec8",
+    white: "#e8f4ff"
+  };
+  function _emptyChrome(extra = {}) {
+    return {
+      template_id: "",
+      headline: "",
+      subtitle: "",
+      amount_label: "",
+      list_label: "",
+      list_empty: "",
+      accent: "blue",
+      ...extra
+    };
+  }
   var GbnPanel = class extends window.McPanel.Base {
     constructor() {
       super();
@@ -21,10 +103,14 @@
       this._comboOpen = false;
       this._templates = [];
       this._activeTemplateId = "";
+      this._activeChrome = _emptyChrome();
+      this._tmplEditId = "";
       this._activeEventId = null;
       this._activeEventName = "";
       this._eventMedia = [];
-      this._lookManuallyToggled = false;
+      this._catalog = emptyCatalog();
+      this._affValues = {};
+      this._affOpen = "";
     }
     set panel(p) {
       this._panel = p;
@@ -48,9 +134,77 @@
       await this._loadDirectoryUrl();
       await this._loadActiveEvent();
       await this._loadTemplates();
+      await this._loadCatalog();
       await this._loadPlayers();
       await this._loadEventMedia();
       await this._refreshCameras();
+    }
+    async _loadCatalog() {
+      try {
+        const result = await this.hass.callWS({
+          type: "game_master/get_affiliation_catalog"
+        });
+        this._catalog = {
+          event_id: result?.event_id ?? null,
+          categories: result?.categories ?? []
+        };
+      } catch (_) {
+        this._catalog = emptyCatalog();
+      }
+      this._renderAffFields();
+    }
+    _renderAffFields() {
+      const host = this.shadowRoot?.getElementById("aff-fields");
+      if (!host) return;
+      const cats = this._catalog.categories || [];
+      if (!cats.length) {
+        host.innerHTML = `<p class="hint">No affiliation categories for this event yet \u2014 add categories in Game Master.</p>`;
+        return;
+      }
+      host.innerHTML = cats.map((cat) => {
+        const val = (this._affValues[cat.id] || "").trim();
+        const options = (cat.affiliations || []).map((c) => {
+          const sel = findChoiceExact([c], val) ? " selected" : "";
+          return `<option value="${this._escAttr(c.name)}"${sel}>${this._escHtml(c.name)}</option>`;
+        }).join("");
+        return `
+          <label for="aff-${cat.id}">${this._escHtml(cat.name || "Affiliation")}</label>
+          <select id="aff-${cat.id}" class="aff-select" data-cat="${cat.id}">
+            <option value="">\u2014 Unassigned \u2014</option>
+            ${options}
+          </select>`;
+      }).join("");
+      host.querySelectorAll(".aff-select").forEach((sel) => {
+        sel.onchange = () => {
+          this._affValues[sel.dataset.cat] = sel.value || "";
+        };
+      });
+    }
+    _escHtml(s) {
+      return String(s || "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+    }
+    _escAttr(s) {
+      return String(s || "").replace(/&/g, "&amp;").replace(/"/g, "&quot;").replace(/</g, "&lt;");
+    }
+    async _syncAffiliationsFromValues() {
+      const snaps = [];
+      let neocorp = "";
+      let faction = "";
+      for (const cat of this._catalog.categories || []) {
+        const raw = (this._affValues[cat.id] || "").trim();
+        if (!raw) continue;
+        const match = findChoiceExact(cat.affiliations || [], raw);
+        if (!match) continue;
+        const typed = match.name;
+        snaps.push({ category_name: cat.name, affiliation_name: typed });
+        if (isAllegianceCategory(cat.name)) {
+          neocorp = neocorpSlugFromName(typed) || typed;
+        } else if (isFactionCategory(cat.name)) {
+          faction = typed;
+        }
+      }
+      await this._loadCatalog();
+      return { snaps, neocorp, faction };
     }
     _feedback(msg, kind = "ok") {
       const el = this.shadowRoot.getElementById("feedback");
@@ -64,8 +218,7 @@
       return err.message || err.error || JSON.stringify(err);
     }
     _normNeocorp(v) {
-      const s = String(v || "freelancer").toLowerCase();
-      return ["reboot", "helix", "endline", "freelancer"].includes(s) ? s : "freelancer";
+      return neocorpSlugFromName(String(v || "")) || String(v || "").trim();
     }
     _playerRole(player) {
       if (!player) return "neither";
@@ -113,97 +266,86 @@
       return this._templates.find((t) => t.id === id) || null;
     }
     _readChromeFromForm() {
-      const root = this.shadowRoot;
+      const selId = this.shadowRoot?.getElementById("fld-template")?.value || "";
       return {
-        template_id: root.getElementById("fld-template")?.value || "",
-        headline: (root.getElementById("fld-headline")?.value || "").trim(),
-        subtitle: (root.getElementById("fld-subtitle")?.value || "").trim(),
-        amount_label: (root.getElementById("fld-amount-label")?.value || "").trim(),
-        list_label: (root.getElementById("fld-list-label")?.value || "").trim(),
-        list_empty: (root.getElementById("fld-list-empty")?.value || "").trim()
+        ...this._activeChrome,
+        template_id: selId || this._activeChrome.template_id || ""
       };
     }
     _applyChromeToForm(chrome) {
-      const root = this.shadowRoot;
       if (!chrome) return;
-      const set = (id, val) => {
-        const el = root.getElementById(id);
-        if (el) el.value = val ?? "";
-      };
-      if (chrome.template_id != null) {
-        const sel = root.getElementById("fld-template");
-        if (sel) sel.value = chrome.template_id;
-        this._activeTemplateId = chrome.template_id || "";
-      }
-      set("fld-headline", chrome.headline);
-      set("fld-subtitle", chrome.subtitle);
-      set("fld-amount-label", chrome.amount_label);
-      set("fld-list-label", chrome.list_label);
-      set("fld-list-empty", chrome.list_empty);
+      const tid = chrome.template_id != null ? chrome.template_id : this._activeTemplateId;
+      this._activeChrome = _emptyChrome({
+        template_id: tid || "",
+        headline: chrome.headline ?? "",
+        subtitle: chrome.subtitle ?? "",
+        amount_label: chrome.amount_label ?? "",
+        list_label: chrome.list_label ?? "",
+        list_empty: chrome.list_empty ?? "",
+        accent: chrome.accent || "blue"
+      });
+      this._activeTemplateId = tid || "";
+      const sel = this.shadowRoot?.getElementById("fld-template");
+      if (sel && tid != null) sel.value = tid;
       this._updateRoleUi();
+    }
+    _chromeFromTemplate(tmpl) {
+      if (!tmpl) return _emptyChrome();
+      return _emptyChrome({
+        template_id: tmpl.id,
+        headline: tmpl.headline || "",
+        subtitle: tmpl.subtitle || "",
+        amount_label: tmpl.amount_label || "",
+        list_label: tmpl.list_label || "",
+        list_empty: tmpl.list_empty || "",
+        accent: tmpl.accent || "blue"
+      });
     }
     _onTemplateSelected() {
       const id = this.shadowRoot.getElementById("fld-template")?.value || "";
       this._activeTemplateId = id;
       const tmpl = this._templateById(id);
       if (!tmpl) {
+        this._activeChrome = _emptyChrome({ template_id: id });
         this._updateRoleUi();
         return;
       }
-      this._applyChromeToForm({
-        template_id: tmpl.id,
-        headline: tmpl.headline,
-        subtitle: tmpl.subtitle,
-        amount_label: tmpl.amount_label,
-        list_label: tmpl.list_label,
-        list_empty: tmpl.list_empty
-      });
+      this._applyChromeToForm(this._chromeFromTemplate(tmpl));
     }
     _autoSelectTemplateForPlayer() {
       const role = this._getRole();
       if (role === "hunter" || role === "bounty") {
         const tmpl = this._templateById(role);
         if (tmpl) {
-          this._applyChromeToForm({
-            template_id: tmpl.id,
-            headline: tmpl.headline,
-            subtitle: tmpl.subtitle,
-            amount_label: tmpl.amount_label,
-            list_label: tmpl.list_label,
-            list_empty: tmpl.list_empty
-          });
+          this._applyChromeToForm(this._chromeFromTemplate(tmpl));
         } else if (role === "hunter") {
-          this._applyChromeToForm({
-            template_id: "hunter",
-            headline: "GUN FOR HIRE",
-            subtitle: "",
-            amount_label: "RATE",
-            list_label: "REASONS TO HIRE",
-            list_empty: "Details pending"
-          });
+          this._applyChromeToForm(
+            _emptyChrome({
+              template_id: "hunter",
+              headline: "GUN FOR HIRE",
+              amount_label: "RATE",
+              list_label: "REASONS TO HIRE",
+              list_empty: "Details pending"
+            })
+          );
         } else {
-          this._applyChromeToForm({
-            template_id: "bounty",
-            headline: "WANTED",
-            subtitle: "DEAD OR ALIVE",
-            amount_label: "REWARD",
-            list_label: "WANTED FOR",
-            list_empty: "Charges pending"
-          });
+          this._applyChromeToForm(
+            _emptyChrome({
+              template_id: "bounty",
+              headline: "WANTED",
+              subtitle: "DEAD OR ALIVE",
+              amount_label: "REWARD",
+              list_label: "WANTED FOR",
+              list_empty: "Charges pending"
+            })
+          );
         }
         return;
       }
       this._activeTemplateId = "";
       const sel = this.shadowRoot.getElementById("fld-template");
       if (sel) sel.value = "";
-      this._applyChromeToForm({
-        template_id: "",
-        headline: "",
-        subtitle: "",
-        amount_label: "",
-        list_label: "",
-        list_empty: ""
-      });
+      this._applyChromeToForm(_emptyChrome());
       this._feedback("Player is neither Hunter nor Bounty \u2014 pick a poster template", "warn");
     }
     _mergeTemplateIntoList(tmpl) {
@@ -215,6 +357,128 @@
       });
       this._activeTemplateId = tmpl.id;
       this._fillTemplateSelect();
+    }
+    _readChromeFromPopup() {
+      const root = this.shadowRoot;
+      return {
+        name: (root.getElementById("tmpl-name")?.value || "").trim(),
+        headline: (root.getElementById("tmpl-headline")?.value || "").trim(),
+        subtitle: (root.getElementById("tmpl-subtitle")?.value || "").trim(),
+        amount_label: (root.getElementById("tmpl-amount-label")?.value || "").trim(),
+        list_label: (root.getElementById("tmpl-list-label")?.value || "").trim(),
+        list_empty: (root.getElementById("tmpl-list-empty")?.value || "").trim(),
+        accent: root.getElementById("tmpl-accent")?.value || "blue"
+      };
+    }
+    _fillPopupTemplateSelect() {
+      const sel = this.shadowRoot?.getElementById("tmpl-edit-select");
+      if (!sel) return;
+      const prev = this._tmplEditId;
+      sel.innerHTML = `<option value="">\u2014 New template \u2014</option>`;
+      for (const t of this._templates) {
+        const opt = document.createElement("option");
+        opt.value = t.id;
+        opt.textContent = t.builtin ? `${t.name} (built-in)` : t.name;
+        sel.appendChild(opt);
+      }
+      if (prev && [...sel.options].some((o) => o.value === prev)) {
+        sel.value = prev;
+      } else {
+        sel.value = "";
+      }
+    }
+    _loadTemplateIntoPopup(id) {
+      const root = this.shadowRoot;
+      this._tmplEditId = id || "";
+      const tmpl = id ? this._templateById(id) : null;
+      const set = (elId, val) => {
+        const el = root.getElementById(elId);
+        if (el) el.value = val ?? "";
+      };
+      if (tmpl) {
+        set("tmpl-name", tmpl.name || "");
+        set("tmpl-headline", tmpl.headline || "");
+        set("tmpl-subtitle", tmpl.subtitle || "");
+        set("tmpl-amount-label", tmpl.amount_label || "");
+        set("tmpl-list-label", tmpl.list_label || "");
+        set("tmpl-list-empty", tmpl.list_empty || "");
+        set("tmpl-accent", tmpl.accent || "blue");
+      } else {
+        set("tmpl-name", "");
+        set("tmpl-headline", "");
+        set("tmpl-subtitle", "");
+        set("tmpl-amount-label", "REWARD");
+        set("tmpl-list-label", "WANTED FOR");
+        set("tmpl-list-empty", "Charges pending");
+        set("tmpl-accent", "blue");
+      }
+      const sel = root.getElementById("tmpl-edit-select");
+      if (sel) sel.value = this._tmplEditId;
+      this._syncPopupBuiltinUi();
+      this._updateTemplatePreview();
+    }
+    _syncPopupBuiltinUi() {
+      const root = this.shadowRoot;
+      const tmpl = this._templateById(this._tmplEditId);
+      const builtin = !!(tmpl && tmpl.builtin);
+      const isNew = !this._tmplEditId;
+      const btnSave = root.getElementById("btn-tmpl-save");
+      const btnDup = root.getElementById("btn-tmpl-duplicate");
+      const btnDel = root.getElementById("btn-tmpl-delete");
+      const note = root.getElementById("tmpl-builtin-note");
+      if (btnSave) {
+        btnSave.disabled = builtin;
+        btnSave.textContent = isNew ? "Create template" : "Save changes";
+      }
+      if (btnDup) btnDup.hidden = isNew;
+      if (btnDel) {
+        btnDel.hidden = isNew || builtin;
+        btnDel.disabled = builtin;
+      }
+      if (note) {
+        note.hidden = !builtin;
+        note.textContent = builtin ? "Built-in templates cannot be overwritten or deleted \u2014 use Duplicate to fork." : "";
+      }
+    }
+    _updateTemplatePreview() {
+      const root = this.shadowRoot;
+      const preview = root?.getElementById("tmpl-preview");
+      if (!preview) return;
+      const chrome = this._readChromeFromPopup();
+      const accent = ACCENT_HEX[chrome.accent] || ACCENT_HEX.blue;
+      const headline = chrome.headline || "HEADLINE";
+      const subtitle = chrome.subtitle || "";
+      const amountLabel = chrome.amount_label || "REWARD";
+      const listLabel = chrome.list_label || "WANTED FOR";
+      const listEmpty = chrome.list_empty || "Charges pending";
+      preview.style.setProperty("--tmpl-accent", accent);
+      preview.innerHTML = `
+      <div class="tmpl-preview-inner">
+        <div class="tmpl-preview-headline">${this._esc(headline)}</div>
+        ${subtitle ? `<div class="tmpl-preview-sub">${this._esc(subtitle)}</div>` : ""}
+        <div class="tmpl-preview-photo"></div>
+        <div class="tmpl-preview-amount">
+          <span class="tmpl-preview-amount-label">${this._esc(amountLabel)}</span>
+          <span class="tmpl-preview-amount-val">\u20A91,000,000</span>
+        </div>
+        <div class="tmpl-preview-list-label">${this._esc(listLabel)}</div>
+        <div class="tmpl-preview-list-empty">${this._esc(listEmpty)}</div>
+      </div>
+    `;
+    }
+    _esc(s) {
+      return String(s ?? "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+    }
+    _openTemplateManager() {
+      const root = this.shadowRoot;
+      this._fillPopupTemplateSelect();
+      const startId = this._activeTemplateId || "";
+      this._loadTemplateIntoPopup(startId);
+      root.getElementById("template-dialog").style.display = "flex";
+    }
+    _closeTemplateManager() {
+      const dlg = this.shadowRoot?.getElementById("template-dialog");
+      if (dlg) dlg.style.display = "none";
     }
     /**
      * POST chrome as a new custom template and select it in the dropdown.
@@ -235,7 +499,8 @@
           subtitle: (chrome.subtitle || "").trim(),
           amount_label: (chrome.amount_label || "").trim() || "REWARD",
           list_label: (chrome.list_label || "").trim() || "WANTED FOR",
-          list_empty: (chrome.list_empty || "").trim() || "Charges pending"
+          list_empty: (chrome.list_empty || "").trim() || "Charges pending",
+          accent: chrome.accent || "blue"
         })
       });
       if (!ok || !body || typeof body !== "object" || !body.id) {
@@ -249,31 +514,119 @@
       this._mergeTemplateIntoList(body);
       this._activeTemplateId = body.id;
       await this._loadTemplates();
-      this._applyChromeToForm({
-        template_id: body.id,
-        headline: body.headline,
-        subtitle: body.subtitle,
-        amount_label: body.amount_label,
-        list_label: body.list_label,
-        list_empty: body.list_empty
-      });
+      this._applyChromeToForm(this._chromeFromTemplate(body));
       return body;
     }
-    async _saveTemplateAsNew() {
-      const chrome = this._readChromeFromForm();
+    async _updateTemplateFromChrome(templateId, chrome, name) {
+      const headline = (chrome?.headline || "").trim();
+      if (!headline) {
+        this._feedback("Headline required to save a template", "warn");
+        return null;
+      }
+      const { ok, status, body } = await this._api(
+        `/api/poster-templates/${encodeURIComponent(templateId)}`,
+        {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            name: (name || headline).trim().slice(0, 80) || "Custom poster",
+            headline,
+            subtitle: (chrome.subtitle || "").trim(),
+            amount_label: (chrome.amount_label || "").trim() || "REWARD",
+            list_label: (chrome.list_label || "").trim() || "WANTED FOR",
+            list_empty: (chrome.list_empty || "").trim() || "Charges pending",
+            accent: chrome.accent || "blue"
+          })
+        }
+      );
+      if (!ok || !body || typeof body !== "object" || !body.id) {
+        this._feedback(
+          `Update template failed (${status}): ${JSON.stringify(body)}`,
+          "err"
+        );
+        return null;
+      }
+      this._mergeTemplateIntoList(body);
+      this._activeTemplateId = body.id;
+      await this._loadTemplates();
+      this._applyChromeToForm(this._chromeFromTemplate(body));
+      return body;
+    }
+    async _saveTemplateFromPopup() {
+      const chrome = this._readChromeFromPopup();
       if (!chrome.headline) {
         return this._feedback("Headline required to save a template", "warn");
       }
-      const name = window.prompt(
-        "Name for the new template:",
-        chrome.headline.slice(0, 40) || "Custom poster"
-      );
-      if (!name || !name.trim()) return;
+      const name = chrome.name || chrome.headline.slice(0, 40) || "Custom poster";
+      const existing = this._templateById(this._tmplEditId);
+      if (existing?.builtin) {
+        return this._feedback("Built-in templates cannot be overwritten \u2014 use Duplicate", "warn");
+      }
       try {
-        const body = await this._createTemplateFromChrome(chrome, name.trim());
-        if (body) this._feedback(`Template saved: ${body.name}`, "ok");
+        let body;
+        if (existing && !existing.builtin) {
+          body = await this._updateTemplateFromChrome(existing.id, chrome, name);
+        } else {
+          body = await this._createTemplateFromChrome(chrome, name);
+        }
+        if (body) {
+          this._feedback(`Template saved: ${body.name}`, "ok");
+          this._fillPopupTemplateSelect();
+          this._loadTemplateIntoPopup(body.id);
+        }
       } catch (err) {
         this._feedback(`Save template failed: ${this._errText(err)}`, "err");
+      }
+    }
+    async _duplicateTemplateFromPopup() {
+      const chrome = this._readChromeFromPopup();
+      if (!chrome.headline) {
+        return this._feedback("Headline required to duplicate a template", "warn");
+      }
+      const baseName = chrome.name || chrome.headline.slice(0, 40) || "Custom poster";
+      const name = `${baseName} copy`.slice(0, 80);
+      try {
+        const body = await this._createTemplateFromChrome(chrome, name);
+        if (body) {
+          this._feedback(`Template duplicated: ${body.name}`, "ok");
+          this._fillPopupTemplateSelect();
+          this._loadTemplateIntoPopup(body.id);
+        }
+      } catch (err) {
+        this._feedback(`Duplicate failed: ${this._errText(err)}`, "err");
+      }
+    }
+    async _deleteTemplateFromPopup() {
+      const id = this._tmplEditId;
+      const tmpl = this._templateById(id);
+      if (!tmpl || tmpl.builtin) {
+        return this._feedback("Built-in templates cannot be deleted", "warn");
+      }
+      if (!window.confirm(`Delete template \u201C${tmpl.name}\u201D? This cannot be undone.`)) {
+        return;
+      }
+      try {
+        const { ok, status, body } = await this._api(
+          `/api/poster-templates/${encodeURIComponent(id)}`,
+          { method: "DELETE" }
+        );
+        if (!ok) {
+          return this._feedback(
+            `Delete failed (${status}): ${JSON.stringify(body)}`,
+            "err"
+          );
+        }
+        this._templates = this._templates.filter((t) => t.id !== id);
+        if (this._activeTemplateId === id) {
+          this._activeTemplateId = "";
+          this._applyChromeToForm(_emptyChrome());
+        }
+        this._fillTemplateSelect();
+        this._fillPopupTemplateSelect();
+        this._loadTemplateIntoPopup("");
+        this._feedback(`Deleted template: ${tmpl.name}`, "ok");
+      } catch (err) {
+        this._feedback(`Delete failed: ${this._errText(err)}`, "err");
       }
     }
     _updateLookSummary() {
@@ -284,19 +637,8 @@
       const tmpl = this._templateById(chrome.template_id);
       const name = tmpl?.name || chrome.template_id || "none";
       const headline = chrome.headline || "\u2014";
-      summary.textContent = `Using: ${name} \xB7 ${headline}`;
-    }
-    _syncLookDisclosure() {
-      const root = this.shadowRoot;
-      const details = root?.getElementById("look-details");
-      if (!details) return;
-      const role = this._getRole();
-      if (role === "neither") {
-        details.open = true;
-      } else if (!this._lookManuallyToggled) {
-        details.open = false;
-      }
-      this._updateLookSummary();
+      const accent = chrome.accent || "blue";
+      summary.textContent = `Using: ${name} \xB7 ${headline} \xB7 ${accent}`;
     }
     _updateRoleUi() {
       const root = this.shadowRoot;
@@ -319,12 +661,12 @@
       const hint = root.getElementById("template-hint");
       if (hint) {
         if (role === "neither") {
-          hint.textContent = "Neither Hunter nor Bounty \u2014 select a template or edit chrome and Save as new.";
+          hint.textContent = "Neither Hunter nor Bounty \u2014 select a template (manage templates to create or edit).";
         } else {
-          hint.textContent = `Auto-selected ${role} template \u2014 edit chrome and Save as new to fork.`;
+          hint.textContent = `Auto-selected ${role} template \u2014 use Manage templates to fork or edit customs.`;
         }
       }
-      this._syncLookDisclosure();
+      this._updateLookSummary();
     }
     _posterUrlForPlayer(playerId) {
       const base = this._resolveServerUrl();
@@ -383,7 +725,6 @@
     async _selectPlayerById(id) {
       const player = this._players.find((p) => String(p.id) === id) || null;
       this._selected = player;
-      this._lookManuallyToggled = false;
       this._setComboOpen(false);
       const root = this.shadowRoot;
       const input = root.getElementById("player-combo-input");
@@ -393,8 +734,19 @@
       }
       if (input) input.value = player.name || "";
       root.getElementById("fld-name").value = player.name || "";
-      root.getElementById("fld-neocorp").value = this._normNeocorp(player.neocorp || player.allegiance);
-      root.getElementById("fld-faction").value = player.faction || "";
+      const vals = {};
+      for (const cat of this._catalog.categories || []) {
+        let assigned = playerAssignmentForCategory(player.affiliations, cat);
+        if (!assigned && isAllegianceCategory(cat.name)) {
+          assigned = player.neocorp || player.allegiance || "";
+        }
+        if (!assigned && isFactionCategory(cat.name)) {
+          assigned = player.faction || "";
+        }
+        vals[cat.id] = assigned;
+      }
+      this._affValues = vals;
+      this._renderAffFields();
       this._autoSelectTemplateForPlayer();
       await this._loadExistingPoster(String(player.id));
     }
@@ -402,9 +754,14 @@
       this._existingPoster = null;
       const root = this.shadowRoot;
       try {
-        const { ok, status, body } = await this._api(`/api/posters/by-player/${encodeURIComponent(playerId)}`);
+        const evQ = this._activeEventId ? `?event_id=${encodeURIComponent(this._activeEventId)}` : "";
+        const { ok, status, body } = await this._api(
+          `/api/posters/by-player/${encodeURIComponent(playerId)}${evQ}`
+        );
         if (status === 404 || !ok) {
+          this._existingPoster = null;
           root.getElementById("success-box").hidden = true;
+          this._syncSubmitButton();
           this._feedback("No existing poster \u2014 capture or upload a new clip", "ok");
           return;
         }
@@ -415,7 +772,6 @@
         root.getElementById("fld-weight").value = body.stats?.weight || "";
         root.getElementById("fld-age").value = body.stats?.age || "";
         root.getElementById("fld-flavor").value = body.flavor_text || "";
-        if (body.faction) root.getElementById("fld-faction").value = body.faction;
         if (body.template_id || body.headline) {
           this._applyChromeToForm({
             template_id: body.template_id || "",
@@ -423,34 +779,65 @@
             subtitle: body.subtitle || "",
             amount_label: body.amount_label || "",
             list_label: body.list_label || "",
-            list_empty: body.list_empty || ""
+            list_empty: body.list_empty || "",
+            accent: body.accent || "blue"
           });
         }
         if (this._selected) {
           root.getElementById("fld-name").value = this._selected.name || body.name || "";
-          root.getElementById("fld-neocorp").value = this._normNeocorp(
-            this._selected.allegiance || body.neocorp || body.allegiance
-          );
-          root.getElementById("fld-faction").value = this._selected.faction || body.faction || "";
+          const vals = { ...this._affValues };
+          for (const cat of this._catalog.categories || []) {
+            let assigned = playerAssignmentForCategory(
+              this._selected.affiliations,
+              cat
+            );
+            if (!assigned && Array.isArray(body.affiliations)) {
+              const snap = body.affiliations.find(
+                (a) => String(a.category_name || "").toLowerCase() === String(cat.name || "").toLowerCase()
+              );
+              assigned = snap?.affiliation_name || "";
+            }
+            if (!assigned && isAllegianceCategory(cat.name)) {
+              assigned = this._selected.neocorp || body.neocorp || this._selected.allegiance || "";
+            }
+            if (!assigned && isFactionCategory(cat.name)) {
+              assigned = this._selected.faction || body.faction || "";
+            }
+            vals[cat.id] = assigned;
+          }
+          this._affValues = vals;
+          this._renderAffFields();
         }
         const link = root.getElementById("poster-link");
         const url = await this._livePosterUrl(playerId, body.poster_url);
         link.href = url;
         link.textContent = url;
         root.getElementById("success-box").hidden = false;
-        if (body.video_url) {
+        if (body.video_url || body.has_video) {
           const review = root.getElementById("review-video");
           const live = root.getElementById("live-video");
-          review.src = body.video_url;
+          if (body.video_url) review.src = body.video_url;
           review.classList.remove("hidden");
           live.classList.add("hidden");
           this._blob = null;
-          this._setRecStatus("Existing clip loaded \u2014 retake or upload to replace");
+          this._setRecStatus(
+            "Existing clip loaded \u2014 edit text and Update, or retake/upload to replace"
+          );
         }
+        this._syncSubmitButton();
         this._feedback("Loaded existing poster for this player", "ok");
       } catch (err) {
         this._feedback(`Poster lookup failed: ${this._errText(err)}`, "warn");
       }
+    }
+    _canKeepExistingVideo() {
+      return !!(this._existingPoster && (this._existingPoster.has_video || this._existingPoster.video_url));
+    }
+    _syncSubmitButton() {
+      const btn = this.shadowRoot?.getElementById("btn-submit");
+      if (!btn) return;
+      const updating = this._canKeepExistingVideo() || !!this._existingPoster;
+      btn.textContent = updating ? "Update poster" : "Create poster";
     }
     _token() {
       return this.hass?.auth?.data?.access_token || "";
@@ -476,14 +863,14 @@
     async _generateFlavor() {
       const root = this.shadowRoot;
       const name = root.getElementById("fld-name").value.trim();
-      const allegiance = root.getElementById("fld-neocorp").value;
+      const { neocorp } = await this._syncAffiliationsFromValues();
       const role = this._apiRole();
       if (!name) return this._feedback("Enter a name first", "warn");
       try {
         const { ok, status, body } = await this._api("/api/flavor/generate", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ name, neocorp: allegiance, role })
+          body: JSON.stringify({ name, neocorp: neocorp || "freelancer", role })
         });
         if (!ok) {
           return this._feedback(`Generate failed (${status}): ${JSON.stringify(body)}`, "err");
@@ -505,16 +892,19 @@
           const result = await this.hass.connection.sendMessagePromise({
             type: "registration/get_active_event"
           });
-          this._activeEventId = result?.active_event_id || null;
-          this._activeEventName = result?.event?.name || "";
-          this._paintActiveEvent();
-          return;
+          const eid = result?.active_event_id || null;
+          if (eid) {
+            this._activeEventId = eid;
+            this._activeEventName = result?.event?.name || "";
+            this._paintActiveEvent();
+            return;
+          }
         } catch (_) {
         }
       }
       try {
         const { ok, body } = await this._api("/api/events/active");
-        if (ok && body) {
+        if (ok && body?.active_event_id) {
           this._activeEventId = body.active_event_id || null;
           this._activeEventName = body.event_name || "";
         } else {
@@ -547,11 +937,31 @@
       return `${(bytes / (1024 * 1024 * 1024)).toFixed(2)} GB`;
     }
     async _loadEventMedia() {
+      const params = new URLSearchParams();
+      if (this._activeEventId) {
+        params.set("ensure_event_id", this._activeEventId);
+      }
+      if (this._activeEventName) {
+        params.set("ensure_event_name", this._activeEventName);
+      }
+      const q = params.toString() ? `?${params.toString()}` : "";
       try {
-        const { ok, body } = await this._api("/api/events/media");
-        this._eventMedia = ok && Array.isArray(body) ? body : [];
-      } catch (_) {
+        const { ok, body, status } = await this._api(`/api/events/media${q}`);
+        if (ok && Array.isArray(body)) {
+          this._eventMedia = body;
+        } else {
+          this._eventMedia = [];
+          this._feedback(
+            `Event media refresh failed (${status || "error"})`,
+            "warn"
+          );
+        }
+      } catch (err) {
         this._eventMedia = [];
+        this._feedback(
+          `Event media refresh failed: ${this._errText(err)}`,
+          "warn"
+        );
       }
       this._paintEventMedia();
     }
@@ -559,16 +969,19 @@
       const body = this.shadowRoot?.getElementById("event-media-body");
       if (!body) return;
       if (!this._eventMedia.length) {
-        body.innerHTML = `<tr><td colspan="4" class="muted">No event media folders yet</td></tr>`;
+        const hint = this._activeEventId ? "No folders on the GBN server yet \u2014 Refresh again after redeploy, or create a poster" : "No event media folders yet \u2014 set an active event in Registration";
+        body.innerHTML = `<tr><td colspan="4" class="muted">${hint}</td></tr>`;
         return;
       }
       body.innerHTML = "";
       for (const row of this._eventMedia) {
         const tr = document.createElement("tr");
         if (row.is_active) tr.className = "is-active";
-        const name = row.event_name ? `${row.event_name}` : row.is_active ? "(active)" : "";
+        const name = row.event_name || (row.is_active && this._activeEventName ? this._activeEventName : "") || "";
+        const title = name || row.event_id;
+        const idLine = name && name !== row.event_id ? `<div class="muted"><code>${row.event_id}</code></div>` : "";
         tr.innerHTML = `
-        <td><code>${row.event_id}</code>${name ? `<div class="muted">${name}</div>` : ""}${row.is_active ? `<div class="badge">active</div>` : ""}</td>
+        <td><strong>${title}</strong>${idLine}${row.is_active ? `<div class="badge">active</div>` : ""}</td>
         <td>${row.clip_count}</td>
         <td>${this._formatBytes(row.bytes_total)}</td>
         <td class="actions-cell"></td>
@@ -818,6 +1231,7 @@
         review.play?.().catch(() => {
         });
         this._setRecStatus(`Captured ${(this._blob.size / 1024).toFixed(0)} KB`);
+        this._syncSubmitButton();
         this._feedback("Clip ready \u2014 review, retake, or create poster", "ok");
       };
       let left = 3;
@@ -869,6 +1283,7 @@
       this._chunks = [];
       const upload = this.shadowRoot.getElementById("fld-upload");
       if (upload) upload.value = "";
+      this._syncSubmitButton();
       this._startCamera();
     }
     _onUpload(ev) {
@@ -882,15 +1297,17 @@
       review.classList.remove("hidden");
       live.classList.add("hidden");
       this._setRecStatus(`Upload ready: ${file.name} (${(file.size / 1024).toFixed(0)} KB)`);
-      this._feedback("Upload loaded \u2014 create poster to save", "ok");
+      this._syncSubmitButton();
+      this._feedback("Upload loaded \u2014 create/update poster to save", "ok");
     }
     async _submit() {
       const root = this.shadowRoot;
       const name = root.getElementById("fld-name").value.trim();
-      const allegiance = root.getElementById("fld-neocorp").value;
-      const faction = root.getElementById("fld-faction").value.trim();
       if (!name) return this._feedback("Name required", "warn");
-      if (!this._blob) return this._feedback("Record or upload a clip first", "warn");
+      const keepVideo = !this._blob && this._canKeepExistingVideo();
+      if (!this._blob && !keepVideo) {
+        return this._feedback("Record or upload a clip first", "warn");
+      }
       const crimes = root.getElementById("fld-crimes").value.split(/\n/).map((s) => s.trim()).filter(Boolean);
       const stats = {
         height: root.getElementById("fld-height").value.trim() || `5'10"`,
@@ -916,18 +1333,19 @@
       if (this._getRole() === "neither") {
         if (!chrome.template_id || !selectedTmpl) {
           return this._feedback(
-            "Select a poster template, or Save as new template before Create",
+            "Select a poster template before Create (or manage templates to make one)",
             "warn"
           );
         }
       } else if (!chrome.template_id && !chrome.headline) {
-        return this._feedback("Select a poster template (or set a headline) first", "warn");
+        return this._feedback("Select a poster template first", "warn");
       }
+      const { snaps, neocorp, faction } = await this._syncAffiliationsFromValues();
       const form = new FormData();
       form.append("name", name);
-      form.append("neocorp", allegiance);
-      form.append("allegiance", allegiance);
+      form.append("neocorp", neocorp);
       form.append("faction", faction);
+      form.append("affiliations", JSON.stringify(snaps));
       form.append("role", role);
       form.append("player_id", playerId);
       form.append("bounty_amount", String(bounty));
@@ -940,11 +1358,15 @@
       form.append("amount_label", chrome.amount_label);
       form.append("list_label", chrome.list_label);
       form.append("list_empty", chrome.list_empty);
-      const safe = name.replace(/\s+/g, "_").toLowerCase();
-      const filename = this._blob instanceof File && this._blob.name ? this._blob.name : `${safe}.webm`;
-      form.append("video", this._blob, filename);
+      form.append("accent", chrome.accent || "blue");
+      form.append("event_id", this._activeEventId || "");
+      if (this._blob) {
+        const safe = name.replace(/\s+/g, "_").toLowerCase();
+        const filename = this._blob instanceof File && this._blob.name ? this._blob.name : `${safe}.webm`;
+        form.append("video", this._blob, filename);
+      }
       try {
-        this._feedback("Uploading poster\u2026", "ok");
+        this._feedback(keepVideo ? "Updating poster text\u2026" : "Uploading poster\u2026", "ok");
         const headers = {};
         if (this._token()) headers.Authorization = `Bearer ${this._token()}`;
         const resp = await fetch(`/api/gbn/proxy/api/posters`, {
@@ -959,12 +1381,27 @@
           return this._feedback(`Upload failed (${resp.status}): ${JSON.stringify(body)}`, "err");
         }
         this._existingPoster = body;
+        this._blob = null;
+        this._syncSubmitButton();
+        if (body.video_url) {
+          const review = root.getElementById("review-video");
+          const live = root.getElementById("live-video");
+          review.src = body.video_url;
+          review.classList.remove("hidden");
+          live.classList.add("hidden");
+          this._setRecStatus(
+            "Existing clip loaded \u2014 edit text and Update, or retake/upload to replace"
+          );
+        }
         const link = root.getElementById("poster-link");
         const url = await this._livePosterUrl(playerId, body.poster_url);
         link.href = url;
         link.textContent = url;
         root.getElementById("success-box").hidden = false;
-        this._feedback(`Poster saved for player ${playerId}`, "ok");
+        this._feedback(
+          keepVideo ? `Poster text updated for player ${playerId} (clip kept)` : `Poster saved for player ${playerId}`,
+          "ok"
+        );
         await this._loadEventMedia();
       } catch (err) {
         this._feedback(`Upload failed: ${this._errText(err)}`, "err");
@@ -1061,6 +1498,9 @@
           background: var(--card-background-color, #111); padding: 1rem;
           width: min(420px, 90vw); border: 1px solid var(--divider-color);
         }
+        .dialog-inner.wide {
+          width: min(720px, 94vw); max-height: 90vh; overflow: auto;
+        }
         .hint { font-size: 0.7rem; opacity: 0.65; margin-top: 0.35rem; }
         .event-chip {
           font-size: 0.8rem; margin: 0 0 0.75rem; padding: 0.4rem 0.6rem;
@@ -1068,18 +1508,58 @@
         }
         .event-chip.ok { border-color: #6dffb0; color: #6dffb0; }
         .event-chip.warn { border-color: #ffd166; color: #ffd166; }
-        details.look {
-          margin-bottom: 0.75rem;
-          border: 1px solid var(--divider-color, #1f3a44);
-          border-radius: 3px; padding: 0.35rem 0.55rem 0.55rem;
+        .tmpl-row {
+          display: grid; grid-template-columns: 1fr auto; gap: 0.5rem;
+          align-items: end; margin-bottom: 0.35rem;
         }
-        details.look > summary {
-          cursor: pointer; list-style: none;
-          font-size: 0.8rem; letter-spacing: 0.08em; text-transform: uppercase;
-          color: var(--ac-cyan, #00e5ff); padding: 0.35rem 0;
-        }
-        details.look > summary::-webkit-details-marker { display: none; }
+        .tmpl-row button { width: auto; white-space: nowrap; }
         #look-summary { font-size: 0.75rem; opacity: 0.75; margin: 0 0 0.35rem; }
+        .tmpl-dialog-grid {
+          display: grid; grid-template-columns: 1fr 1fr; gap: 1rem;
+          margin-top: 0.5rem;
+        }
+        @media (max-width: 640px) {
+          .tmpl-dialog-grid { grid-template-columns: 1fr; }
+        }
+        #tmpl-preview {
+          --tmpl-accent: #5ec8ff;
+          background: #0a0e12;
+          border: 2px solid var(--tmpl-accent);
+          border-radius: 3px;
+          min-height: 280px;
+          padding: 0.75rem;
+        }
+        .tmpl-preview-inner { text-align: center; }
+        .tmpl-preview-headline {
+          font-size: 1.35rem; font-weight: 700; letter-spacing: 0.12em;
+          color: var(--tmpl-accent); text-transform: uppercase;
+        }
+        .tmpl-preview-sub {
+          font-size: 0.75rem; letter-spacing: 0.16em; opacity: 0.85;
+          margin-top: 0.2rem; text-transform: uppercase;
+        }
+        .tmpl-preview-photo {
+          margin: 0.75rem auto; width: 70%; aspect-ratio: 3/4;
+          background: linear-gradient(160deg, #1a2430, #0d1218);
+          border: 1px solid color-mix(in srgb, var(--tmpl-accent) 45%, transparent);
+        }
+        .tmpl-preview-amount { margin-top: 0.55rem; }
+        .tmpl-preview-amount-label {
+          display: block; font-size: 0.65rem; letter-spacing: 0.14em;
+          color: var(--tmpl-accent); text-transform: uppercase;
+        }
+        .tmpl-preview-amount-val {
+          font-size: 1.05rem; font-weight: 600; color: #ffe15e;
+        }
+        .tmpl-preview-list-label {
+          margin-top: 0.55rem; font-size: 0.65rem; letter-spacing: 0.12em;
+          color: var(--tmpl-accent); text-transform: uppercase;
+        }
+        .tmpl-preview-list-empty {
+          font-size: 0.8rem; opacity: 0.7; margin-top: 0.25rem;
+        }
+        #tmpl-builtin-note { color: #ffd166; margin-top: 0.5rem; }
+        button:disabled { opacity: 0.45; cursor: not-allowed; }
         .media-table { width: 100%; border-collapse: collapse; font-size: 0.85rem; }
         .media-table th, .media-table td {
           text-align: left; padding: 0.4rem 0.35rem;
@@ -1140,54 +1620,20 @@
             </div>
             <label for="fld-name">Name</label>
             <input id="fld-name" autocomplete="off" />
-            <label for="fld-neocorp">Allegiance/NeoCorp</label>
-            <select id="fld-neocorp">
-              <option value="reboot">reboot</option>
-              <option value="helix">helix</option>
-              <option value="endline">endline</option>
-              <option value="freelancer" selected>freelancer</option>
-            </select>
-            <label for="fld-faction">Faction</label>
-            <input id="fld-faction" autocomplete="off" />
+            <div id="aff-fields"></div>
           </section>
 
           <section class="card">
             <h2>Poster copy</h2>
             <p id="look-summary">Using: \u2014</p>
-            <details class="look" id="look-details">
-              <summary>Customize poster look</summary>
-              <label for="fld-template">Poster template</label>
+            <label for="fld-template">Poster template</label>
+            <div class="tmpl-row">
               <select id="fld-template">
                 <option value="">\u2014 Select template \u2014</option>
               </select>
-              <p class="hint" id="template-hint">Hunter/Bounty auto-select; other roles pick a template.</p>
-              <div class="row">
-                <div>
-                  <label for="fld-headline">Headline title</label>
-                  <input id="fld-headline" placeholder="WANTED / GUN FOR HIRE / \u2026" />
-                </div>
-                <div>
-                  <label for="fld-subtitle">Subtitle (optional)</label>
-                  <input id="fld-subtitle" placeholder="DEAD OR ALIVE" />
-                </div>
-              </div>
-              <div class="row">
-                <div>
-                  <label for="fld-amount-label">Amount label</label>
-                  <input id="fld-amount-label" placeholder="REWARD / RATE" />
-                </div>
-                <div>
-                  <label for="fld-list-label">List label</label>
-                  <input id="fld-list-label" placeholder="WANTED FOR / REASONS TO HIRE" />
-                </div>
-              </div>
-              <label for="fld-list-empty">Empty-list placeholder</label>
-              <input id="fld-list-empty" placeholder="Charges pending" />
-              <div class="actions" style="margin-top:0.5rem">
-                <button type="button" id="btn-template-save">Save as new template</button>
-              </div>
-              <p class="hint">Required before Create if you changed chrome for a non-Hunter/Bounty player.</p>
-            </details>
+              <button type="button" id="btn-manage-templates">Manage templates</button>
+            </div>
+            <p class="hint" id="template-hint">Hunter/Bounty auto-select; other roles pick a template.</p>
             <label id="lbl-amount-field" for="fld-bounty">REWARD (\u20A9)</label>
             <input id="fld-bounty" type="number" min="0" step="10000" value="1000000" />
             <label id="lbl-list-field" for="fld-crimes">WANTED FOR (one per line)</label>
@@ -1241,7 +1687,7 @@
               </label>
               <button type="button" class="primary" id="btn-submit">Create poster</button>
             </div>
-            <p class="hint">Upload a video file instead of recording. Retake clears upload and returns to camera.</p>
+            <p class="hint">Upload a video instead of recording. With an existing poster, edit text and Update without re-recording. Retake clears the local clip and returns to camera (server clip stays until you Update with a new one).</p>
             <div id="success-box" hidden>
               <strong>Poster live</strong>
               <div><a id="poster-link" href="#" target="_blank" rel="noopener"></a></div>
@@ -1283,13 +1729,64 @@
           </div>
         </div>
       </div>
+
+      <div class="dialog" id="template-dialog">
+        <div class="dialog-inner wide">
+          <h2 style="margin-top:0">Manage poster templates</h2>
+          <label for="tmpl-edit-select">Template</label>
+          <select id="tmpl-edit-select">
+            <option value="">\u2014 New template \u2014</option>
+          </select>
+          <p class="hint" id="tmpl-builtin-note" hidden></p>
+          <div class="tmpl-dialog-grid">
+            <div>
+              <label for="tmpl-name">Name</label>
+              <input id="tmpl-name" placeholder="Custom poster" />
+              <label for="tmpl-headline">Headline title</label>
+              <input id="tmpl-headline" placeholder="WANTED / GUN FOR HIRE / \u2026" />
+              <label for="tmpl-subtitle">Subtitle (optional)</label>
+              <input id="tmpl-subtitle" placeholder="DEAD OR ALIVE" />
+              <div class="row" style="grid-template-columns:1fr 1fr">
+                <div>
+                  <label for="tmpl-amount-label">Amount label</label>
+                  <input id="tmpl-amount-label" placeholder="REWARD / RATE" />
+                </div>
+                <div>
+                  <label for="tmpl-list-label">List label</label>
+                  <input id="tmpl-list-label" placeholder="WANTED FOR / REASONS TO HIRE" />
+                </div>
+              </div>
+              <label for="tmpl-list-empty">Empty-list placeholder</label>
+              <input id="tmpl-list-empty" placeholder="Charges pending" />
+              <label for="tmpl-accent">Accent color (titles &amp; borders)</label>
+              <select id="tmpl-accent">
+                ${ACCENT_OPTIONS.map(
+        ([slug, label]) => `<option value="${slug}"${slug === "blue" ? " selected" : ""}>${label}</option>`
+      ).join("")}
+              </select>
+            </div>
+            <div>
+              <label>Preview</label>
+              <div id="tmpl-preview"></div>
+            </div>
+          </div>
+          <div class="actions">
+            <button type="button" class="primary" id="btn-tmpl-save">Create template</button>
+            <button type="button" id="btn-tmpl-duplicate" hidden>Duplicate</button>
+            <button type="button" class="danger" id="btn-tmpl-delete" hidden>Delete</button>
+            <button type="button" id="btn-tmpl-close">Close</button>
+          </div>
+        </div>
+      </div>
     `;
       const root = this.shadowRoot;
       root.getElementById("btn-reload").onclick = async () => {
         await this._loadActiveEvent();
+        await this._loadCatalog();
         await this._loadPlayers();
         await this._loadEventMedia();
       };
+      this._renderAffFields();
       root.getElementById("btn-generate").onclick = () => this._generateFlavor();
       root.getElementById("btn-cam-refresh").onclick = () => this._refreshCameras();
       root.getElementById("btn-cam-start").onclick = () => this._startCamera();
@@ -1303,24 +1800,29 @@
       root.getElementById("fld-upload").onchange = (ev) => this._onUpload(ev);
       root.getElementById("fld-template").onchange = () => {
         this._onTemplateSelected();
-        this._updateLookSummary();
       };
-      root.getElementById("btn-template-save").onclick = () => this._saveTemplateAsNew();
-      const lookDetails = root.getElementById("look-details");
-      if (lookDetails) {
-        lookDetails.addEventListener("toggle", () => {
-          this._lookManuallyToggled = true;
-        });
-      }
+      root.getElementById("btn-manage-templates").onclick = () => this._openTemplateManager();
+      root.getElementById("tmpl-edit-select").onchange = () => {
+        this._loadTemplateIntoPopup(root.getElementById("tmpl-edit-select").value || "");
+      };
       for (const id of [
-        "fld-headline",
-        "fld-subtitle",
-        "fld-amount-label",
-        "fld-list-label",
-        "fld-list-empty"
+        "tmpl-name",
+        "tmpl-headline",
+        "tmpl-subtitle",
+        "tmpl-amount-label",
+        "tmpl-list-label",
+        "tmpl-list-empty",
+        "tmpl-accent"
       ]) {
-        root.getElementById(id).oninput = () => this._updateRoleUi();
+        const el = root.getElementById(id);
+        if (!el) continue;
+        el.oninput = () => this._updateTemplatePreview();
+        el.onchange = () => this._updateTemplatePreview();
       }
+      root.getElementById("btn-tmpl-save").onclick = () => this._saveTemplateFromPopup();
+      root.getElementById("btn-tmpl-duplicate").onclick = () => this._duplicateTemplateFromPopup();
+      root.getElementById("btn-tmpl-delete").onclick = () => this._deleteTemplateFromPopup();
+      root.getElementById("btn-tmpl-close").onclick = () => this._closeTemplateManager();
       this._fillTemplateSelect();
       this._paintActiveEvent();
       this._paintEventMedia();

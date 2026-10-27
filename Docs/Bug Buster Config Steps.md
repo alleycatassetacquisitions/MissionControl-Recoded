@@ -62,9 +62,10 @@ Restart Home Assistant. Settings → Devices & services → Add **Bug Buster** i
 ## 5. Verify
 
 1. Core Proxmox VE entities update for MCS / AlleycatTV / GBN / HAOS guests.
-2. Sidebar **Bug Buster**: guest list loads; double-click opens xterm console.
+2. Sidebar **Bug Buster**: guest list loads; select a guest and **Connect** opens the xterm console.
 3. MQTT spy shows broker traffic (debug only — not a command path).
 4. Companion health row shows MCS / AlleycatTV / GBN `/health`.
 5. **Device logs** pane loads (or a clear MCS token/URL error). Refresh / Prev / Next page Central crash rows. Bug Buster never POSTs logs — devices do.
+6. **Pop out** on MQTT, Device logs, and Console: each opens a larger in-panel overlay; Close or Escape dismisses it. For Console, confirm the session returns to the inline pane after close.
 
 App README: [`Apps/Bug_Buster/README.md`](../Apps/Bug_Buster/README.md)

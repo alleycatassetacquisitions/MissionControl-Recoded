@@ -70,3 +70,23 @@ clear_broadcast_group:
       required: true
       selector:
         text:
+
+remove_device:
+  name: Remove Device
+  description: >
+    Delete an inactive fabric device (not online) from Home Assistant and clear
+    retained MQTT status/membership so the device id can be reused or retired.
+  fields:
+    kind:
+      name: Kind
+      required: true
+      selector:
+        select:
+          options:
+            - "tv"
+            - "dnn"
+    device_id:
+      name: Device ID
+      required: true
+      selector:
+        text:

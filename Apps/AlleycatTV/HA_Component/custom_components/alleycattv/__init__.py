@@ -125,6 +125,8 @@ async def _publish_cmd(
     segments: list[str],
     action: str,
     payload: bytes,
+    *,
+    retain: bool = False,
 ) -> None:
     if async_publish is None:
         _LOGGER.error("AlleycatTV: shared_libraries.mqtt not available")
@@ -136,7 +138,45 @@ async def _publish_cmd(
         action,
         payload=payload,
         qos=1,
-        retain=False,
+        retain=retain,
+    )
+
+
+def _mqtt_broker_hint(hass: HomeAssistant) -> tuple[str, str]:
+    try:
+        for entry in hass.config_entries.async_entries("mqtt"):
+            data = entry.data or {}
+            host = str(data.get("broker") or data.get("host") or "").strip()
+            if host:
+                return host, str(data.get("port") or "1883")
+    except Exception:  # noqa: BLE001
+        pass
+    return "", ""
+
+
+async def _publish_pi_config(hass: HomeAssistant) -> None:
+    """Publish retained year-1 Pi config (server URL + MQTT broker hint)."""
+    try:
+        from custom_components.core_configurator.helpers import get_url
+    except ImportError:
+        _LOGGER.debug("AlleycatTV: Core Configurator missing — Pi config skip")
+        return
+    server_url = (get_url(hass, "alleycattv") or "").rstrip("/")
+    mqtt_host, mqtt_port = _mqtt_broker_hint(hass)
+    if not server_url and not mqtt_host:
+        return
+    body = {
+        "server_url": server_url,
+        "mqtt_host": mqtt_host,
+        "mqtt_port": mqtt_port,
+    }
+    payload = json.dumps(body).encode("utf-8")
+    await _publish_cmd(hass, ["cmd", "all"], "config", payload, retain=True)
+    _LOGGER.info(
+        "AlleycatTV: retained Pi config published — server=%r mqtt=%r:%s",
+        server_url,
+        mqtt_host,
+        mqtt_port,
     )
 
 
@@ -262,6 +302,19 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
                         },
                     )
                     async_dispatcher_send(hass, SIGNAL_NEW_DEVICE, pi_id)
+
+    # Year-1: retained MQTT config for Pis (MCS owns LXC fan-out; HA publishes MQTT).
+    await _publish_pi_config(hass)
+
+    @callback
+    def _on_cc_updated(event) -> None:
+        key = event.data.get("key")
+        if key in ("alleycattv", "master_control_server", None):
+            hass.async_create_task(_publish_pi_config(hass))
+
+    entry.async_on_unload(
+        hass.bus.async_listen("core_configurator_updated", _on_cc_updated)
+    )
 
     return True
 

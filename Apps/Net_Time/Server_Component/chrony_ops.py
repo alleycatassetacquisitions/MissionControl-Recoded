@@ -158,7 +158,26 @@ def _validate_timezone(name: str) -> str:
     return text
 
 
+# Runtime override from POST /config (None = use env / gateway default).
+_runtime_host_clock_url: str | None = None
+
+
+def set_host_clock_url(url: str | None) -> str:
+    """Set runtime host clock agent URL. Empty clears override."""
+    global _runtime_host_clock_url
+    cleaned = (url or "").strip().rstrip("/")
+    _runtime_host_clock_url = cleaned or None
+    return _runtime_host_clock_url or ""
+
+
+def get_host_clock_url() -> str:
+    """Return the effective host clock agent base URL."""
+    return _default_host_clock_url()
+
+
 def _default_host_clock_url() -> str:
+    if _runtime_host_clock_url:
+        return _runtime_host_clock_url
     configured = (os.getenv("NET_TIME_HOST_CLOCK_URL") or "").strip().rstrip("/")
     if configured:
         return configured

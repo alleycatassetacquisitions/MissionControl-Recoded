@@ -126,12 +126,17 @@ resolve_template() {
   if [[ -z "$match" ]]; then
     printf '\nAvailable templates (first 30):\n' >&2
     pveam available 2>/dev/null | head -30 >&2 || true
-    die "Could not find a template matching '${TEMPLATE_PREFIX}'. Set TEMPLATE= and retry."
+    die "Could not find a template matching '${TEMPLATE_PREFIX}'. Set TEMPLATE= and retry.
+
+Offline: pre-stage with pveam download ${TEMPLATE_STORAGE} <ubuntu-24.04-…tar.zst>
+See Docs/Venue Install.md (Offline — Linux CT template)."
   fi
 
   say "Downloading $match to ${TEMPLATE_STORAGE}"
   filename="$match"
-  pveam download "$TEMPLATE_STORAGE" "$filename"
+  # pveam download prints progress on stdout — must not pollute TEMPLATE_REF capture
+  pveam download "$TEMPLATE_STORAGE" "$filename" >&2 \
+    || die "pveam download failed for $filename (check network / subscription mirror)"
 
   listed="$(pveam list "$TEMPLATE_STORAGE" 2>/dev/null | awk 'NR>1 {print $1}' || true)"
   match="$(printf '%s\n' "$listed" | grep -F "${TEMPLATE_PREFIX}" | head -1 || true)"
@@ -425,3 +430,12 @@ NTP clients (FDN / PDN team): point SNTP at ${CT_IP} (UDP 123).
 Next: Docs/Net Time Config Steps.md (paste into HA, Attempt Online Sync / Set timezone / Offline Sync).
 
 EOF
+
+echo "MC_OUT_URL=http://${CT_IP}:${NET_TIME_PORT}"
+echo "MC_OUT_TOKEN=${NET_TIME_API_TOKEN}"
+echo "MC_OUT_CTID=${CTID}"
+echo "MC_OUT_NAME=${CT_NAME}"
+echo "MC_OUT_IP=${CT_IP}"
+echo "MC_OUT_PORT=${NET_TIME_PORT}"
+echo "MC_OUT_HOST_CLOCK_URL=http://${HOST_IP}:${NET_TIME_HOST_CLOCK_PORT}"
+echo "MC_OUT_COMPONENT=net_time"

@@ -137,6 +137,8 @@ class PresenceTracker:
         self.model = model or kind.upper()
         self.name_prefix = name_prefix or kind.upper()
         self._devices: dict[str, PresenceDevice] = {}
+        # After forget, ignore offline/empty status echoes until a real online.
+        self._forgotten: set[str] = set()
         self._unsub: Callable[[], None] | None = None
 
     @property
@@ -156,6 +158,49 @@ class PresenceTracker:
                 self._devices.values(), key=lambda item: item.device_id
             )
         ]
+
+    async def async_forget_device(self, device_id: str) -> bool:
+        """Remove a fabric device so its id can be reused or retired.
+
+        Clears the in-memory tracker entry, HA device registry row, presence
+        state, and the retained ``mc/{kind}/status/{device_id}`` topic. Offline
+        or empty MQTT echoes are ignored until the device publishes online again.
+        """
+        device_id = (device_id or "").strip()
+        if not device_id:
+            return False
+
+        self._forgotten.add(device_id)
+        self._devices.pop(device_id, None)
+
+        registry = dr.async_get(self.hass)
+        device = registry.async_get_device(identifiers={(self.domain, device_id)})
+        if device is not None:
+            registry.async_remove_device(device.id)
+
+        entity_id = presence_entity_id(self.domain, device_id)
+        if self.hass.states.get(entity_id) is not None:
+            self.hass.states.async_remove(entity_id)
+
+        from .mqtt import async_publish
+
+        # Empty retained payload clears the broker so HA restart won't revive it.
+        await async_publish(
+            self.hass,
+            self.kind,
+            "status",
+            device_id,
+            payload=b"",
+            qos=1,
+            retain=True,
+        )
+        _LOGGER.info(
+            "fabric presence: forgot device %s/%s (domain %s)",
+            self.kind,
+            device_id,
+            self.domain,
+        )
+        return True
 
     async def async_start(self) -> None:
         """Subscribe to the status wildcard for this kind."""
@@ -200,6 +245,12 @@ class PresenceTracker:
             return
 
         presence = parse_presence_payload(payload)
+        if device_id in self._forgotten:
+            if presence != PRESENCE_ONLINE:
+                # Drop retain-clear / LWT echoes after an operator forget.
+                return
+            self._forgotten.discard(device_id)
+
         attributes: dict[str, Any] = {"kind": self.kind, "device_id": device_id}
 
         if isinstance(payload, bytes):

@@ -27,8 +27,8 @@ def public_base_for(request=None) -> str:
     """Absolute base URL for poster and media links.
 
     Prefer the Host the client used (HA proxy uses Core Configurator's ``gbn``
-    URL; direct browsers use whatever IP they opened). Fall back to
-    ``GBN_PUBLIC_BASE`` only when there is no request context.
+    URL; direct browsers use whatever IP they opened). Fall back to runtime
+    / env ``GBN_PUBLIC_BASE`` only when there is no request context.
     """
     if request is not None:
         base_url = getattr(request, "base_url", None)
@@ -36,9 +36,18 @@ def public_base_for(request=None) -> str:
             base = str(base_url).rstrip("/")
             if base:
                 return base
+    try:
+        from app.runtime_config import public_base as _runtime_public
+
+        runtime = (_runtime_public() or "").rstrip("/")
+        if runtime:
+            return runtime
+    except Exception:  # noqa: BLE001
+        pass
     return PUBLIC_BASE
 
-# Master Control Server base (player overlay). Empty = skip live overlay / intake stub.
+# Master Control Server base (player overlay) — first-boot seed only.
+# Runtime reads go through app.runtime_config getters (POST /config).
 MCS_BASE = os.getenv("GBN_MCS_BASE", "").rstrip("/")
 MCS_TOKEN = os.getenv("GBN_MCS_TOKEN", "").strip()
 

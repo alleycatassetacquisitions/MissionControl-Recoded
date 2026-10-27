@@ -11,23 +11,21 @@ from typing import Any, Optional
 
 import httpx
 
-from app.config import MCS_BASE, MCS_TOKEN
-from app.models import IntakePlayer, NeoCorp, PosterStatus, Role
+from app.models import IntakePlayer, PosterStatus, Role
+from app.runtime_config import mcs_base as _mcs_base
+from app.runtime_config import mcs_token as _mcs_token
 
 _LOGGER = logging.getLogger(__name__)
 
 
 def _auth_headers() -> dict[str, str]:
-    if not MCS_TOKEN:
+    token = _mcs_token()
+    if not token:
         return {}
-    return {"Authorization": f"Bearer {MCS_TOKEN}"}
+    return {"Authorization": f"Bearer {token}"}
 
-
-def _norm_neocorp(value: Any) -> NeoCorp:
-    v = str(value or "freelancer").strip().lower()
-    if v in ("reboot", "helix", "endline", "freelancer"):
-        return v  # type: ignore[return-value]
-    return "freelancer"
+def _norm_neocorp(value: Any) -> str:
+    return str(value or "").strip()
 
 
 def _norm_role(raw: dict[str, Any]) -> Role:
@@ -67,10 +65,11 @@ def _player_from_dict(raw: dict[str, Any]) -> IntakePlayer:
 async def lookup_by_id(player_id: str) -> Optional[IntakePlayer]:
     """Resolve a player from MCS ``GET /players/{id}``."""
     pid = (player_id or "").strip()
-    if not pid or not MCS_BASE:
+    base = _mcs_base()
+    if not pid or not base:
         return None
 
-    url = f"{MCS_BASE.rstrip('/')}/players/{pid}"
+    url = f"{base.rstrip('/')}/players/{pid}"
     try:
         async with httpx.AsyncClient(timeout=8.0) as client:
             resp = await client.get(url, headers=_auth_headers())
@@ -90,10 +89,11 @@ async def lookup_by_id(player_id: str) -> Optional[IntakePlayer]:
 
 async def list_players() -> list[IntakePlayer]:
     """Fetch the full roster from MCS ``GET /players``."""
-    if not MCS_BASE:
+    base = _mcs_base()
+    if not base:
         return []
 
-    url = f"{MCS_BASE.rstrip('/')}/players"
+    url = f"{base.rstrip('/')}/players"
     try:
         async with httpx.AsyncClient(timeout=8.0) as client:
             resp = await client.get(url, headers=_auth_headers())
@@ -119,34 +119,75 @@ async def lookup_by_mac(mac: str) -> Optional[IntakePlayer]:
     normalized = (mac or "").strip().lower()
     if not normalized:
         return None
-    if not MCS_BASE:
+    base = _mcs_base()
+    if not base:
         _LOGGER.debug("MAC lookup skipped — GBN_MCS_BASE not set (%s)", normalized)
         return None
-    _LOGGER.info("MAC lookup not implemented yet (mcs=%s mac=%s)", MCS_BASE, normalized)
+    _LOGGER.info("MAC lookup not implemented yet (mcs=%s mac=%s)", base, normalized)
     return None
 
 
+def _eid_from_state(state: dict[str, Any]) -> str:
+    eid = state.get("active_event_id")
+    if eid is None and isinstance(state.get("event"), dict):
+        eid = state["event"].get("id")
+    return str(eid).strip() if eid is not None else ""
+
+
+def _name_from_state(state: dict[str, Any]) -> str:
+    event = state.get("event")
+    if isinstance(event, dict):
+        name = str(event.get("name") or "").strip()
+        if name:
+            return name
+    return str(state.get("event_name") or "").strip()
+
+
 async def get_active_event() -> Optional[dict[str, Any]]:
-    """Fetch MCS ``GET /events/active``.
+    """Fetch MCS ``GET /events/active``, with GBN disk cache fallback.
 
     Returns a dict with ``active_event_id``, optional ``event`` (id/name), and
-    ``source``, or ``None`` when MCS is unreachable / unset.
+    ``source``. When MCS is unset/unreachable, returns the last event remembered
+    from a successful MCS read or the HA panel (so /poster-cycle keeps working).
     """
-    if not MCS_BASE:
-        return None
+    from app.services.event_paths import (
+        clear_cached_active_event,
+        read_cached_active_event,
+        remember_active_event,
+    )
 
-    url = f"{MCS_BASE.rstrip('/')}/events/active"
-    try:
-        async with httpx.AsyncClient(timeout=8.0) as client:
-            resp = await client.get(url, headers=_auth_headers())
-            if resp.status_code != 200:
-                _LOGGER.warning("MCS GET %s -> %s", url, resp.status_code)
-                return None
-            data = resp.json()
-            if isinstance(data, dict):
-                return data
-    except Exception as exc:  # noqa: BLE001
-        _LOGGER.warning("MCS active event fetch failed (%s): %s", url, exc)
+    base = _mcs_base()
+    if base:
+        url = f"{base.rstrip('/')}/events/active"
+        try:
+            async with httpx.AsyncClient(timeout=8.0) as client:
+                resp = await client.get(url, headers=_auth_headers())
+                if resp.status_code == 200:
+                    data = resp.json()
+                    if isinstance(data, dict):
+                        eid = _eid_from_state(data)
+                        if eid:
+                            remember_active_event(
+                                eid,
+                                _name_from_state(data),
+                                source=str(data.get("source") or "mcs"),
+                            )
+                            return data
+                        # MCS explicitly reports no active event
+                        clear_cached_active_event()
+                        return data
+                else:
+                    _LOGGER.warning("MCS GET %s -> %s", url, resp.status_code)
+        except Exception as exc:  # noqa: BLE001
+            _LOGGER.warning("MCS active event fetch failed (%s): %s", url, exc)
+
+    cached = read_cached_active_event()
+    if cached:
+        _LOGGER.info(
+            "Using cached active event %s (MCS unset/unreachable)",
+            cached.get("active_event_id"),
+        )
+        return cached
     return None
 
 
@@ -155,8 +196,4 @@ async def resolve_active_event_id() -> Optional[str]:
     state = await get_active_event()
     if not state:
         return None
-    eid = state.get("active_event_id")
-    if eid is None and isinstance(state.get("event"), dict):
-        eid = state["event"].get("id")
-    eid = str(eid).strip() if eid is not None else ""
-    return eid or None
+    return _eid_from_state(state) or None

@@ -10,7 +10,12 @@
   <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@500;700;800&family=Share+Tech+Mono&display=swap" rel="stylesheet" />
 </head>
 <body class="role-{{ poster.role }}">
-  <div class="stage" data-role="{{ poster.role }}" data-neocorp="{{ poster.neocorp }}">
+  <div
+    class="stage"
+    data-role="{{ poster.role }}"
+    data-neocorp="{{ poster.neocorp }}"
+    style="--neon: {{ accent_hex }}; --neon-dim: {{ accent_dim }};"
+  >
     <div class="hud-frame">
       <div class="corner tl"></div>
       <div class="corner tr"></div>

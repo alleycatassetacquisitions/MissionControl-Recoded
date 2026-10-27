@@ -33,12 +33,14 @@ from app.event_stores import EventPosterStores
 from app.models import ActivePlayersState
 from app.routers import (
     active_players,
+    config as config_routes,
     events_media,
     flavor,
     intake,
     posters,
     templates as template_routes,
 )
+from app.runtime_config import load_persisted
 from app.template_store import TemplateStore
 
 logging.basicConfig(
@@ -66,9 +68,14 @@ async def log_requests(request: Request, call_next):
     start = time.perf_counter()
     response = await call_next(request)
     path = request.url.path
-    if path.startswith("/api/"):
+    if (
+        path.startswith("/api/")
+        or path.startswith("/poster")
+        or path.startswith("/media/")
+    ):
         response.headers["Cache-Control"] = "no-store, no-cache, must-be-revalidate"
         response.headers["Pragma"] = "no-cache"
+    if path.startswith("/api/"):
         ms = (time.perf_counter() - start) * 1000
         _LOGGER.info(
             "%s %s -> %s (%.0fms)", request.method, path, response.status_code, ms
@@ -82,11 +89,13 @@ app.include_router(template_routes.router)
 app.include_router(active_players.router)
 app.include_router(flavor.router)
 app.include_router(intake.router)
+app.include_router(config_routes.router)
 
 
 @app.on_event("startup")
 async def startup() -> None:
     DATA_DIR.mkdir(parents=True, exist_ok=True)
+    load_persisted()
     Path(DATA_DIR, "events").mkdir(parents=True, exist_ok=True)
     for sub in MEDIA_SUBDIRS:
         Path(MEDIA_BASE, sub).mkdir(parents=True, exist_ok=True)
@@ -97,6 +106,25 @@ async def startup() -> None:
     app.state.poster_store = app.state.event_stores.legacy
     app.state.template_store = TemplateStore(TEMPLATES_FILE)
     app.state.active_playlist = ActivePlayersState()
+    # Warm active-event cache from MCS (or keep disk cache) so /poster-cycle
+    # does not need a human to open the page once after restart.
+    try:
+        from app.services.mcs_client import get_active_event
+
+        warm = await get_active_event()
+        if warm and warm.get("active_event_id"):
+            _LOGGER.info(
+                "Active event ready at startup: %s (%s)",
+                warm.get("active_event_id"),
+                warm.get("source") or "?",
+            )
+        else:
+            _LOGGER.warning(
+                "No active event at startup — set one in Registration "
+                "(pushes to GBN) or Pis show NO ACTIVE EVENT until then"
+            )
+    except Exception as exc:  # noqa: BLE001
+        _LOGGER.warning("Active event warmup failed: %s", exc)
     _LOGGER.info(
         "GBN started. Media: %s Legacy posters: %s Templates: %s",
         MEDIA_BASE,

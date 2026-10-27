@@ -22,10 +22,9 @@
     const pid = ids[index % ids.length];
     const next = ids[(index + 1) % ids.length];
     frame.src = posterUrl(pid);
-    if (hud) hud.hidden = false;
-    if (hudLabel) {
-      hudLabel.textContent = `PLAYER ${pid} · ${index % ids.length + 1}/${ids.length}`;
-    }
+    // Kiosk: no player/counter chrome over the poster art.
+    if (hud) hud.hidden = true;
+    if (hudLabel) hudLabel.textContent = "";
     if (next && next !== pid) {
       const prefetch = document.createElement("link");
       prefetch.rel = "prefetch";

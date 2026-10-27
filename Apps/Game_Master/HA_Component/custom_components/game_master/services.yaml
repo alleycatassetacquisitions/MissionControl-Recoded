@@ -1,0 +1,80 @@
+create_affiliation_category:
+  name: Create Affiliation Category
+  description: >
+    Create an affiliation category (e.g. Allegiance, Faction) on the active event.
+  fields:
+    name:
+      name: Name
+      description: Category name.
+      required: true
+      selector:
+        text:
+
+rename_affiliation_category:
+  name: Rename Affiliation Category
+  description: Rename an affiliation category on the active event.
+  fields:
+    category_id:
+      name: Category ID
+      required: true
+      selector:
+        text:
+    name:
+      name: Name
+      required: true
+      selector:
+        text:
+
+create_affiliation:
+  name: Create Affiliation
+  description: >
+    Create an affiliation choice under a category on the active event.
+  fields:
+    category_id:
+      name: Category ID
+      required: true
+      selector:
+        text:
+    name:
+      name: Name
+      required: true
+      selector:
+        text:
+
+rename_affiliation:
+  name: Rename Affiliation
+  description: Rename an affiliation choice on the active event.
+  fields:
+    category_id:
+      name: Category ID
+      required: true
+      selector:
+        text:
+    affiliation_id:
+      name: Affiliation ID
+      required: true
+      selector:
+        text:
+    name:
+      name: Name
+      required: true
+      selector:
+        text:
+
+set_default_affiliation:
+  name: Set Default Affiliation
+  description: >
+    Set (or clear) the HA-only default choice for a category on the active
+    event. Prefills Registration when creating a player; not written to Central.
+  fields:
+    category_id:
+      name: Category ID
+      required: true
+      selector:
+        text:
+    affiliation_id:
+      name: Affiliation ID
+      description: Choice id to use as default; empty clears the default.
+      required: false
+      selector:
+        text:
