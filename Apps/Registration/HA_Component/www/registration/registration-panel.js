@@ -153,15 +153,28 @@
         ...baseArr,
         window.McPanel.css`
         :host {
-          min-height: 100vh;
+          display: block;
+          position: relative;
+          box-sizing: border-box;
+          height: 100%;
+          min-height: calc(100dvh - var(--header-height, 56px));
+          overflow: hidden;
         }
         .wrap {
+          position: absolute;
+          inset: 0;
+          display: flex;
+          flex-direction: column;
           max-width: none;
           margin: 0;
           padding: 0;
+          min-height: 0;
+          overflow: hidden;
+          box-sizing: border-box;
         }
         .page-header {
           display: block;
+          flex-shrink: 0;
           padding: 18px 24px;
           margin-bottom: 0;
           border-bottom: 1px solid var(--divider-color, #1f3a44);
@@ -366,14 +379,33 @@
         .layout {
           display: grid;
           grid-template-columns: 380px 1fr;
-          min-height: calc(100vh - 100px);
+          flex: 1 1 0;
+          min-height: 0;
+          overflow: hidden;
         }
         .form-col,
         .table-col {
           padding: 20px 24px;
+          min-height: 0;
         }
         .form-col {
           border-right: 1px solid var(--divider-color, #1f3a44);
+          overflow-y: auto;
+        }
+        .table-col {
+          display: flex;
+          flex-direction: column;
+          min-width: 0;
+          overflow: hidden;
+        }
+        .table-col > .form-title,
+        .table-col > .search-row {
+          flex-shrink: 0;
+        }
+        .table-scroll {
+          flex: 1 1 0;
+          min-height: 0;
+          overflow: auto;
         }
         .form-title {
           margin: 0 0 8px;
@@ -464,10 +496,14 @@
           font-size: 14px;
         }
         .roster-table th {
+          position: sticky;
+          top: 0;
+          z-index: 1;
           font-size: 11px;
           letter-spacing: 0.08em;
           text-transform: uppercase;
           color: var(--secondary-text-color, #7aa8b8);
+          background: var(--primary-background-color, #0b0d12);
         }
         .roster-table tr.highlight {
           background: rgba(0, 229, 255, 0.1);
@@ -530,8 +566,29 @@
           color: #e24b4a;
         }
         @media (max-width: 900px) {
+          :host {
+            height: auto;
+            overflow: auto;
+          }
+          .wrap {
+            position: static;
+            overflow: visible;
+          }
           .layout {
             grid-template-columns: 1fr;
+            flex: none;
+            overflow: visible;
+          }
+          .form-col,
+          .table-col,
+          .table-scroll {
+            overflow: visible;
+          }
+          .table-col {
+            display: block;
+          }
+          .table-scroll {
+            flex: none;
           }
           .form-col {
             border-right: 0;
@@ -1422,60 +1479,62 @@
       }}
               />
             </div>
-            ${loadFailed && count === 0 ? html`<p class="empty" style="color:var(--error-color,#f44336)">
-                  Could not load roster.
-                </p>` : filtered.length === 0 ? html`<p class="empty">
-                    ${count === 0 ? "No players yet" : "No players match search"}
-                  </p>` : html`
-                    <table class="roster-table">
-                      <thead>
-                        <tr>
-                          <th>PDN</th>
-                          <th>Name</th>
-                          <th>Team</th>
-                          <th>Affiliations</th>
-                          <th>Status</th>
-                          <th>Created</th>
-                          <th>Email</th>
-                          <th>Poster</th>
-                          <th></th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        ${filtered.map((p) => {
+            <div class="table-scroll">
+              ${loadFailed && count === 0 ? html`<p class="empty" style="color:var(--error-color,#f44336)">
+                    Could not load roster.
+                  </p>` : filtered.length === 0 ? html`<p class="empty">
+                      ${count === 0 ? "No players yet" : "No players match search"}
+                    </p>` : html`
+                      <table class="roster-table">
+                        <thead>
+                          <tr>
+                            <th>PDN</th>
+                            <th>Name</th>
+                            <th>Team</th>
+                            <th>Affiliations</th>
+                            <th>Status</th>
+                            <th>Created</th>
+                            <th>Email</th>
+                            <th>Poster</th>
+                            <th></th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          ${filtered.map((p) => {
         const highlighted = this._highlightName && (p.name || "").trim().toLowerCase() === this._highlightName.trim().toLowerCase();
         return html`
-                            <tr class=${highlighted ? "highlight" : ""}>
-                              <td>${p.pdn_code ?? ""}</td>
-                              <td>${p.name ?? ""}</td>
-                              <td>${this._teamOf(p)}</td>
-                              <td>${this._affiliationChips(p.affiliations)}</td>
-                              <td>${this._activeOf(p)}</td>
-                              <td>${this._formatCreated(p.created_at)}</td>
-                              <td>${p.email ?? ""}</td>
-                              <td class="poster-cell">${this._posterCell(p)}</td>
-                              <td class="actions-cell">
-                                <button
-                                  class="edit-btn"
-                                  @click=${() => this._beginEdit(p)}
-                                >
-                                  Edit
-                                </button>
-                                <button
-                                  class="delete-btn"
-                                  title="Soft-deactivate (keeps roster row)"
-                                  ?disabled=${p.active === false}
-                                  @click=${() => this._deactivatePlayer(p)}
-                                >
-                                  Deactivate
-                                </button>
-                              </td>
-                            </tr>
-                          `;
+                              <tr class=${highlighted ? "highlight" : ""}>
+                                <td>${p.pdn_code ?? ""}</td>
+                                <td>${p.name ?? ""}</td>
+                                <td>${this._teamOf(p)}</td>
+                                <td>${this._affiliationChips(p.affiliations)}</td>
+                                <td>${this._activeOf(p)}</td>
+                                <td>${this._formatCreated(p.created_at)}</td>
+                                <td>${p.email ?? ""}</td>
+                                <td class="poster-cell">${this._posterCell(p)}</td>
+                                <td class="actions-cell">
+                                  <button
+                                    class="edit-btn"
+                                    @click=${() => this._beginEdit(p)}
+                                  >
+                                    Edit
+                                  </button>
+                                  <button
+                                    class="delete-btn"
+                                    title="Soft-deactivate (keeps roster row)"
+                                    ?disabled=${p.active === false}
+                                    @click=${() => this._deactivatePlayer(p)}
+                                  >
+                                    Deactivate
+                                  </button>
+                                </td>
+                              </tr>
+                            `;
       })}
-                      </tbody>
-                    </table>
-                  `}
+                        </tbody>
+                      </table>
+                    `}
+            </div>
           </div>
         </div>
       </div>
