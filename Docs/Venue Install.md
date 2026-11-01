@@ -4,13 +4,15 @@ Install Home Assistant OS, Mission Control companion LXCs, HA components, and Co
 
 ## Online (preferred)
 
+Run this from an **SSH session** into the Proxmox host (not the web UI → Shell). Host prep used to restart `pveproxy`, which drops the browser shell and aborts the install; prefer SSH anyway so a long `apt dist-upgrade` cannot lose the session.
+
 ```bash
 bash <(curl -fsSL https://github.com/alleycatassetacquisitions/MissionControl-Recoded/releases/latest/download/install-mission-control.sh)
 ```
 
 Private release: `GH_TOKEN=…` in the environment before the curl.
 
-The bootstrap downloads `mission-control-venue.tar.gz`, verifies `SHA256SUMS` when present, stages `/root/mission-control-src`, then runs the orchestrator.
+The bootstrap downloads `mission-control-venue.tar.gz`, verifies `SHA256SUMS` when present, stages `/root/mission-control-src`, then runs the orchestrator. After host prep, hard-refresh the Proxmox UI (`Ctrl+Shift+R`) if the subscription nag is still visible.
 
 ## Offline / USB / SCP (Windows PowerShell)
 
