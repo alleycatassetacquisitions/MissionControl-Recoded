@@ -1,6 +1,49 @@
 # custom-sidebar. Lives in /config/www/ — HA serves this as /local/.
-# Renames the upper-left sidebar title. Requires the plugin on
-# frontend.extra_module_url: /local/mc-shell/custom-sidebar-plugin.js
+# Renames the upper-left sidebar title and sets venue panel order/visibility.
+# Requires the plugin on frontend.extra_module_url:
+#   /local/mc-shell/custom-sidebar-plugin.js
 # (one frontend: block only — see HomeAssist/configuration.yaml).
-# Item order can be added later under `order:`.
 title: "Mission Control"
+
+order:
+  # Visible Mission Control panels (venue sidebar order)
+  - item: Overview
+    order: 0
+  - item: Registration
+    order: 1
+  - item: Game Master
+    order: 2
+  - item: Digital Node Nexus
+    order: 3
+  - item: Galactic Bounty Network
+    order: 4
+  # exact: avoid matching "AlleycatTV Content"
+  - item: AlleycatTV
+    exact: true
+    order: 5
+  - item: Core Configurator
+    order: 6
+  - item: Bug Buster
+    order: 7
+  - item: AlleycatTV Content
+    order: 8
+  - item: Broadcast Groups
+    order: 9
+
+  # Stock HA items — hide for venue operators (Settings / Notifications stay)
+  - item: Map
+    hide: true
+  - item: Media
+    hide: true
+  - item: History
+    hide: true
+  - item: Logbook
+    hide: true
+  - item: Activity
+    hide: true
+  - item: Energy
+    hide: true
+  - item: To-do lists
+    hide: true
+  - item: To-do
+    hide: true

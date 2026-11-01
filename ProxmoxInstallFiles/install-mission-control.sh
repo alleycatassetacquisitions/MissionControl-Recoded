@@ -497,7 +497,7 @@ Automated for the venue operator:
   • Proxmox API token (hass@pve!missioncontrol) written to secrets
   • Mosquitto add-on + MQTT integration (best effort)
   • Alleycat theme set as default (light + dark)
-  • Sidebar title **Mission Control** (vendored custom-sidebar)
+  • Sidebar title + panel order **Mission Control** (vendored custom-sidebar)
   • HACS component (when HA has internet) — authorize once in the UI
 
 Still optional / venue-specific:

@@ -442,7 +442,12 @@ The upper-left sidebar name (default **Home Assistant**) is set by custom-sideba
 
 ```yaml
 title: "Mission Control"
+order:
+  # Overview → Registration → Game Master → … → Broadcast Groups
+  # (plus hide: Map / Media / History / Activity / Energy / To-do)
 ```
+
+Full order lives in the repo file above; the venue installer copies it to HA.
 
 2. Plugin loaded in `/config/configuration.yaml` via `frontend.extra_module_url` (YAML alone does nothing).
 
