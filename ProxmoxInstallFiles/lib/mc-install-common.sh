@@ -462,24 +462,25 @@ EOF
     mc_say "Wrote /etc/apt/sources.list.d/pve-no-subscription.list"
   fi
 
-  # Subscription nag patch + APT hook so upgrades re-apply it
+  # Subscription nag patch + APT hook so upgrades re-apply it.
+  # Never restart pveproxy here: the Proxmox web UI Shell is served by pveproxy, so
+  # restarting it kills this install mid-run. Hard-refresh :8006 after install instead.
   local libjs="/usr/share/javascript/proxmox-widget-toolkit/proxmoxlib.js"
   if [[ -f "$libjs" ]]; then
     if ! grep -q 'orig_cmd(); return;' "$libjs"; then
       cp -a "$libjs" "${libjs}.bak-mc" 2>/dev/null || true
       sed -i "s/checked_command: function (orig_cmd) {/checked_command: function (orig_cmd) { orig_cmd(); return;/" \
         "$libjs"
-      mc_say "Patched subscription nag in proxmoxlib.js"
+      mc_say "Patched subscription nag in proxmoxlib.js (hard-refresh the UI later — not restarting pveproxy)"
     else
       mc_say "Subscription nag already patched"
     fi
-    systemctl restart pveproxy.service 2>/dev/null || true
   else
     mc_say "proxmoxlib.js not found — skip nag patch"
   fi
 
   cat > /etc/apt/apt.conf.d/86no-nag-popup <<'EOF'
-DPkg::Post-Invoke { "f=/usr/share/javascript/proxmox-widget-toolkit/proxmoxlib.js; if [ -f $f ] && ! grep -q 'orig_cmd(); return;' $f; then sed -i 's/checked_command: function (orig_cmd) {/checked_command: function (orig_cmd) { orig_cmd(); return;/' $f && systemctl restart pveproxy.service; fi"; };
+DPkg::Post-Invoke { "f=/usr/share/javascript/proxmox-widget-toolkit/proxmoxlib.js; if [ -f $f ] && ! grep -q 'orig_cmd(); return;' $f; then sed -i 's/checked_command: function (orig_cmd) {/checked_command: function (orig_cmd) { orig_cmd(); return;/' $f; fi"; };
 EOF
   mc_say "Installed APT hook /etc/apt/apt.conf.d/86no-nag-popup"
 
