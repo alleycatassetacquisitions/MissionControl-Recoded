@@ -117,7 +117,7 @@ Do **not** run that last `bash /root/...` line in Windows PowerShell — `/root/
 7. Creates a Proxmox API token (`hass@pve!missioncontrol`, role `PVEVMUser`) unless `PROXMOX_TOKEN_SECRET` is already set.
 8. Prompts for **Central** primary/secondary URLs (or use `CENTRAL_PRIMARY` / `CENTRAL_SECONDARY` env). Secondary is optional — press Enter to leave it empty when there is no LAN mirror (do not keep a dead IP).
 9. Copies all `custom_components` / `www` / themes / **mc-shell** (custom-sidebar + card-mod) into HA, writes `secrets.yaml`, merges configuration seed, force-reseeds Core Configurator.
-10. Best-effort **Mosquitto** + **MQTT**, **Alleycat** default theme, **HACS** component (when HA can reach GitHub), sidebar title **Mission Control** plus panel order/visibility from `HomeAssist/www/custom-sidebar-config.yaml`.
+10. During the HA onboarding pause (after SSH works): unpacks **HACS** into `/config/custom_components/hacs` and prints UI finish steps. Later: **Mosquitto** + **MQTT** integration, **Alleycat** default theme, sidebar title **Mission Control** plus panel order/visibility from `HomeAssist/www/custom-sidebar-config.yaml`.
 
 After HA is up, Registration auto-pushes the peer snapshot to MCS on Core Configurator Save (peer keys) and on `registration.sync_now`; MCS fans out to GBN / Net Time. See [`Master Control Server Config Steps.md`](Master%20Control%20Server%20Config%20Steps.md#peer-push--fan-out-smoke-test-on-proxmox-host).
 
@@ -125,10 +125,13 @@ State is stored at `/root/mission-control-install-state.json`.
 
 ## Remaining operator steps (after Done)
 
-1. Settings → Devices & services → Add **Proxmox VE** (node/VM sensors). Use host IP, user `hass`, realm PVE, token id `missioncontrol`, same secret as Core Configurator / `secrets.yaml`.
-2. Settings → Devices & services → Add **HACS** if prompted → complete the one-time GitHub device-code authorize (sidebar title already works without this).
-3. Hard-refresh the browser (Ctrl+Shift+R). Confirm sidebar says **Mission Control** and Profile theme is **Alleycat** (or Backend-selected).
-4. Flash AlleycatTV Pis / point FDN firmware at HA MQTT (`alleycatTV` / `alleycat`).
+Do these before AlleycatTV / Digital Node Nexus / Broadcast Groups will leave “Failed setup”:
+
+1. **MQTT** — Confirm Mosquitto is **started** (Start on boot), Configuration `logins` Saved as `alleycatTV` / `alleycat`, and **MQTT** integration is connected (official Mosquitto broker, or manual `core-mosquitto:1883` with those creds). If the installer printed `MQTT: INCOMPLETE`, finish this in the UI then **Restart Home Assistant**. Details: [`Home Assistant Config Steps.md`](Home%20Assistant%20Config%20Steps.md) Phase 5a.
+2. **HACS** — Component is unpacked at the HA pause. Settings → Devices & services → Add **HACS** → GitHub device-code once. Sidebar title already works without HACS (vendored mc-shell). Details: Phase 10b in the same doc.
+3. Settings → Devices & services → Add **Proxmox VE** (node/VM sensors). Use host IP, user `hass`, realm PVE, token id `missioncontrol`, same secret as Core Configurator / `secrets.yaml`.
+4. Hard-refresh the browser (Ctrl+Shift+R). Confirm sidebar says **Mission Control** and Profile theme is **Alleycat** (or Backend-selected).
+5. Flash AlleycatTV Pis / point FDN firmware at HA MQTT (`alleycatTV` / `alleycat`).
 
 Redeploy into an existing HA (after pulling a newer bundle):
 

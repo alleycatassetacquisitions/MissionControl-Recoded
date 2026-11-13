@@ -741,20 +741,24 @@ THEME
 }
 
 mc_ha_bootstrap_hacs() {
-  # Install HACS custom component (needs GitHub download). Operator still authorizes
-  # once in the UI. custom-sidebar/card-mod are vendored separately so Mission Control
-  # rename works even if this step fails offline.
+  # Unpack HACS custom component (needs GitHub download from HA). Operator still
+  # adds the integration + GitHub device-code in the UI. custom-sidebar/card-mod
+  # are vendored separately so Mission Control rename works even if this fails.
+  # Returns 0 on success / already present, 1 on download/unpack failure.
   local ha_ip="$1"
-  mc_say "Installing HACS (best effort — needs HA internet + one-time GitHub authorize)"
-  mc_ha_ssh "$ha_ip" bash -s <<'HACS' || mc_say "HACS download skipped/failed — vendored sidebar still provides Mission Control title"
+  mc_say "Unpacking HACS into /config/custom_components/hacs"
+  if mc_ha_ssh "$ha_ip" bash -s <<'HACS'
 set -euo pipefail
-if [ -d /config/custom_components/hacs ]; then
+# Already usable?
+if [ -f /config/custom_components/hacs/manifest.json ] \
+  || [ -f /config/custom_components/hacs/hacs/manifest.json ]; then
   echo "HACS already present"
   exit 0
 fi
 mkdir -p /config/custom_components
 cd /tmp
-rm -f hacs.zip
+rm -rf hacs.zip hacs_unpack
+mkdir hacs_unpack
 if command -v wget >/dev/null 2>&1; then
   wget -q -O hacs.zip "https://github.com/hacs/integration/releases/latest/download/hacs.zip" || exit 1
 elif command -v curl >/dev/null 2>&1; then
@@ -763,104 +767,220 @@ else
   echo "No wget/curl in HA SSH — cannot fetch HACS"
   exit 1
 fi
-rm -rf /config/custom_components/hacs
-mkdir -p /config/custom_components/hacs
-unzip -qo hacs.zip -d /config/custom_components/hacs
+unzip -qo hacs.zip -d hacs_unpack
 rm -f hacs.zip
-echo "HACS unpacked — add the HACS integration in Settings → Devices after restart (GitHub device code once)"
+rm -rf /config/custom_components/hacs
+# Official zip may be flat (manifest.json at root) or nested one level.
+if [ -f hacs_unpack/manifest.json ]; then
+  mkdir -p /config/custom_components/hacs
+  cp -a hacs_unpack/. /config/custom_components/hacs/
+elif [ -f hacs_unpack/hacs/manifest.json ]; then
+  cp -a hacs_unpack/hacs /config/custom_components/hacs
+else
+  # Single top-level dir from the zip
+  top="$(find hacs_unpack -mindepth 1 -maxdepth 1 -type d | head -1 || true)"
+  if [ -n "$top" ] && [ -f "$top/manifest.json" ]; then
+    cp -a "$top" /config/custom_components/hacs
+  else
+    echo "Unexpected HACS zip layout"
+    find hacs_unpack -maxdepth 2 -type f | head -20
+    rm -rf hacs_unpack
+    exit 1
+  fi
+fi
+rm -rf hacs_unpack
+test -f /config/custom_components/hacs/manifest.json \
+  || test -f /config/custom_components/hacs/hacs/manifest.json
+echo "HACS component unpacked"
 HACS
+  then
+    return 0
+  fi
+  mc_say "HACS download/unpack failed — vendored sidebar still provides Mission Control title; install HACS manually later"
+  return 1
+}
+
+mc_ha_print_hacs_ui_instructions() {
+  cat <<'EOF'
+
+──────────────────────────────────────────────────────────────────────────────
+ HACS — finish in the Home Assistant UI
+──────────────────────────────────────────────────────────────────────────────
+The HACS files are on disk under /config/custom_components/hacs.
+Complete setup (now during this pause, or after the venue install finishes):
+
+  1. Settings → System → Restart Home Assistant
+     (wait until HA is back; SSH may drop briefly)
+  2. Settings → Devices & services → Add integration → HACS
+  3. Accept the terms → authorize with GitHub (device-code flow once)
+  4. Confirm HACS appears in the sidebar
+
+Mission Control sidebar title does NOT need HACS (vendored mc-shell).
+HACS is for optional Frontend extras from the store.
+──────────────────────────────────────────────────────────────────────────────
+
+EOF
+}
+
+mc_ha_apps() {
+  # Prefer `ha apps` (current); fall back to deprecated `ha addons`.
+  # Runs on HA via SSH. Args are forwarded to ha apps|addons.
+  local ha_ip="$1"
+  shift
+  mc_ha_ssh "$ha_ip" bash -s -- "$@" <<'APPS'
+set -euo pipefail
+if ha apps "$@" >/tmp/mc-ha-apps.out 2>/tmp/mc-ha-apps.err; then
+  cat /tmp/mc-ha-apps.out
+  exit 0
+fi
+if ha addons "$@" >/tmp/mc-ha-apps.out 2>/tmp/mc-ha-apps.err; then
+  cat /tmp/mc-ha-apps.out
+  exit 0
+fi
+echo "ha apps/addons failed:" >&2
+cat /tmp/mc-ha-apps.err >&2 || true
+cat /tmp/mc-ha-apps.out >&2 || true
+exit 1
+APPS
+}
+
+mc_ha_supervisor_curl() {
+  # Run curl against Supervisor Core API on HA. No python3 on HA (SSH add-on).
+  # Usage: mc_ha_supervisor_curl <ha_ip> <METHOD> <path> [json_body]
+  # Prints response body on stdout. Exit 0 even on HTTP errors (caller inspects body).
+  local ha_ip="$1" method="$2" path="$3" body="${4:-}"
+  mc_ha_ssh "$ha_ip" bash -s -- "$method" "$path" "$body" <<'CURL'
+set +e
+METHOD="$1"
+PATH_Q="$2"
+BODY="$3"
+TOK="${SUPERVISOR_TOKEN:-}"
+if [ -z "$TOK" ] && [ -f /root/.hassio/supervisor_token ]; then
+  TOK="$(cat /root/.hassio/supervisor_token 2>/dev/null)"
+fi
+if [ -z "$TOK" ] && [ -f /etc/hassio.json ]; then
+  # No python3 in HA SSH — sed out the token string.
+  TOK="$(sed -n 's/.*"supervisor_token"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' /etc/hassio.json | head -1)"
+fi
+if [ -z "$TOK" ]; then
+  echo "NO_SUPERVISOR_TOKEN" >&2
+  exit 1
+fi
+API="http://supervisor/core/api"
+if [ -n "$BODY" ]; then
+  curl -sS -X "$METHOD" \
+    -H "Authorization: Bearer ${TOK}" \
+    -H "Content-Type: application/json" \
+    "${API}${PATH_Q}" \
+    -d "$BODY"
+else
+  curl -sS -X "$METHOD" \
+    -H "Authorization: Bearer ${TOK}" \
+    "${API}${PATH_Q}"
+fi
+exit 0
+CURL
 }
 
 mc_ha_bootstrap_mqtt() {
-  # Install Mosquitto, set venue login, create/accept MQTT config entry via Supervisor API.
+  # Install Mosquitto, set venue login, start broker, create MQTT config entry.
+  # JSON parsing runs on Proxmox (python3). HA SSH only runs ha/curl (no python3).
   local ha_ip="$1"
+  local out state entries disc init flow_id
   mc_say "Bootstrapping Mosquitto + MQTT integration"
-  mc_ha_ssh "$ha_ip" bash -s <<'MQTTBOOT' || mc_say "MQTT bootstrap incomplete — finish in UI if needed"
+
+  mc_say "Installing Mosquitto broker add-on"
+  mc_ha_apps "$ha_ip" install core_mosquitto >/dev/null 2>&1 \
+    || mc_say "Mosquitto install returned non-zero (may already be installed) — continuing"
+
+  mc_say "Setting Mosquitto logins (alleycatTV / alleycat)"
+  if ! mc_ha_ssh "$ha_ip" bash -s <<'OPTS'
 set -euo pipefail
-ha addons install core_mosquitto 2>/dev/null || true
-ha addons options core_mosquitto <<'EOF' || true
-logins:
+OPTS_YAML='logins:
   - username: alleycatTV
     password: alleycat
-EOF
-ha addons start core_mosquitto 2>/dev/null || true
-
-auth_hdr() {
-  if [ -n "${SUPERVISOR_TOKEN:-}" ]; then
-    printf 'Authorization: Bearer %s' "${SUPERVISOR_TOKEN}"
-    return 0
-  fi
-  local tok=""
-  tok="$(cat /root/.hassio/supervisor_token 2>/dev/null || true)"
-  if [ -z "$tok" ] && [ -f /etc/hassio.json ]; then
-    tok="$(python3 -c "import json;print(json.load(open('/etc/hassio.json')).get('supervisor_token',''))" 2>/dev/null || true)"
-  fi
-  printf 'Authorization: Bearer %s' "${tok}"
-}
-
-HDR="$(auth_hdr)"
-API="http://supervisor/core/api"
-
-if curl -fsS -H "$HDR" "${API}/config/config_entries/entry" 2>/dev/null \
-  | grep -q '"domain":"mqtt"'; then
-  echo "MQTT config entry already present"
+'
+if ha apps options core_mosquitto <<<"$OPTS_YAML"; then
   exit 0
 fi
+ha addons options core_mosquitto <<<"$OPTS_YAML"
+OPTS
+  then
+    mc_say "WARNING: could not set Mosquitto options — set logins in the add-on UI and Save"
+  fi
 
-sleep 5
+  mc_say "Starting Mosquitto broker"
+  mc_ha_apps "$ha_ip" start core_mosquitto >/dev/null 2>&1 \
+    || mc_say "Mosquitto start returned non-zero — will re-check state"
 
-# Prefer confirming an in-progress / discovery flow for mqtt
-DISC="$(curl -fsS -H "$HDR" "${API}/config/config_entries/flow" 2>/dev/null || true)"
-FLOW_ID="$(python3 -c "
+  state=""
+  for _ in $(seq 1 24); do
+    out="$(mc_ha_apps "$ha_ip" info core_mosquitto 2>/dev/null || true)"
+    if printf '%s' "$out" | grep -qiE 'state:[[:space:]]*started|\"state\"[[:space:]]*:[[:space:]]*\"started\"'; then
+      state="started"
+      break
+    fi
+    sleep 2
+  done
+  if [[ "$state" != "started" ]]; then
+    mc_say "MQTT bootstrap incomplete — Mosquitto is not started. In HA: Add-ons → Mosquitto → Start (+ Start on boot), Save logins alleycatTV/alleycat, then Add Integration → MQTT."
+    return 1
+  fi
+  mc_say "Mosquitto is started"
+
+  entries="$(mc_ha_supervisor_curl "$ha_ip" GET /config/config_entries/entry 2>/dev/null || true)"
+  if printf '%s' "$entries" | grep -q '"domain":"mqtt"'; then
+    mc_say "MQTT config entry already present"
+    return 0
+  fi
+
+  sleep 3
+
+  # Confirm an in-progress discovery flow if Supervisor already opened one.
+  disc="$(mc_ha_supervisor_curl "$ha_ip" GET /config/config_entries/flow 2>/dev/null || true)"
+  flow_id="$(printf '%s' "$disc" | python3 -c "
 import json,sys
 raw=sys.stdin.read()
 try:
     data=json.loads(raw)
 except Exception:
     data=[]
-cands=[]
 if isinstance(data, list):
     for f in data:
         if isinstance(f, dict) and f.get('handler')=='mqtt':
-            cands.append(f.get('flow_id') or '')
-print(cands[0] if cands else '')
-" <<<"$DISC")"
+            print(f.get('flow_id') or '')
+            break
+" 2>/dev/null || true)"
+  if [[ -n "$flow_id" ]]; then
+    mc_ha_supervisor_curl "$ha_ip" POST "/config/config_entries/flow/${flow_id}" '{}' >/dev/null 2>&1 || true
+  fi
 
-if [ -n "$FLOW_ID" ]; then
-  curl -fsS -X POST -H "$HDR" -H "Content-Type: application/json" \
-    "${API}/config/config_entries/flow/${FLOW_ID}" \
-    -d '{}' >/dev/null 2>&1 || true
-fi
-
-INIT="$(curl -fsS -X POST -H "$HDR" -H "Content-Type: application/json" \
-  "${API}/config/config_entries/flow" \
-  -d '{"handler":"mqtt","show_advanced_options":false}' 2>/dev/null || true)"
-FLOW_ID="$(python3 -c "
+  init="$(mc_ha_supervisor_curl "$ha_ip" POST /config/config_entries/flow \
+    '{"handler":"mqtt","show_advanced_options":false}' 2>/dev/null || true)"
+  flow_id="$(printf '%s' "$init" | python3 -c "
 import json,sys
 try:
     d=json.loads(sys.stdin.read())
 except Exception:
     d={}
 print(d.get('flow_id') or '')
-" <<<"$INIT")"
+" 2>/dev/null || true)"
 
-if [ -n "$FLOW_ID" ]; then
-  curl -fsS -X POST -H "$HDR" -H "Content-Type: application/json" \
-    "${API}/config/config_entries/flow/${FLOW_ID}" \
-    -d '{"broker":"core-mosquitto","port":1883,"username":"alleycatTV","password":"alleycat"}' \
-    >/dev/null 2>&1 \
-  || curl -fsS -X POST -H "$HDR" -H "Content-Type: application/json" \
-    "${API}/config/config_entries/flow/${FLOW_ID}" \
-    -d '{}' >/dev/null 2>&1 \
-  || true
-fi
+  if [[ -n "$flow_id" ]]; then
+    mc_ha_supervisor_curl "$ha_ip" POST "/config/config_entries/flow/${flow_id}" \
+      '{"broker":"core-mosquitto","port":1883,"username":"alleycatTV","password":"alleycat"}' \
+      >/dev/null 2>&1 \
+      || mc_ha_supervisor_curl "$ha_ip" POST "/config/config_entries/flow/${flow_id}" '{}' \
+      >/dev/null 2>&1 \
+      || true
+  fi
 
-if curl -fsS -H "$HDR" "${API}/config/config_entries/entry" 2>/dev/null \
-  | grep -q '"domain":"mqtt"'; then
-  echo "MQTT config entry created"
-else
-  echo "MQTT entry not confirmed — operator may need Add Integration → MQTT once"
-  exit 1
-fi
-MQTTBOOT
+  entries="$(mc_ha_supervisor_curl "$ha_ip" GET /config/config_entries/entry 2>/dev/null || true)"
+  if printf '%s' "$entries" | grep -q '"domain":"mqtt"'; then
+    mc_say "MQTT config entry created"
+    return 0
+  fi
+
+  mc_say "MQTT bootstrap incomplete — Mosquitto is up, but the MQTT integration was not confirmed. In HA: Settings → Devices & services → Add Integration → MQTT (official Mosquitto broker / core-mosquitto:1883, alleycatTV/alleycat). Then restart HA so AlleycatTV / DNN / Broadcast Groups leave Failed setup."
+  return 1
 }

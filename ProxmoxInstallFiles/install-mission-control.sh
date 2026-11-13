@@ -125,6 +125,8 @@ if [[ "$RESUME" == "ha-deploy" ]]; then
   HOST_IP="$(python3 -c "import json;print(json.load(open('$MC_STATE_FILE')).get('host_ip','') or '')" 2>/dev/null || true)"
   [[ -n "$HOST_IP" ]] || HOST_IP="$(mc_host_ip "$BRIDGE")"
   mc_say "RESUME=ha-deploy — deploying into HA at ${HA_IP} (skipping LXC create)"
+  mc_ha_bootstrap_hacs "$HA_IP" || true
+  mc_ha_print_hacs_ui_instructions
 else
 
 # ─── Phase 1: HAOS ───────────────────────────────────────────────────────────
@@ -177,6 +179,8 @@ Open: ${HA_URL_HINT}
    - Network → port 22 → Save
    - Start the add-on
 4. Confirm the HA LAN IP below (Enter accepts the detected value).
+5. After SSH succeeds, the installer unpacks **HACS** and prints the remaining
+   Add Integration + GitHub authorize steps (finish now or after Done).
 
 Public key for Terminal & SSH Authorized Keys:
 
@@ -213,6 +217,11 @@ while true; do
 done
 
 mc_state_merge "{\"ha_ip\":\"${HA_IP}\",\"host_ip\":\"${HOST_IP}\",\"services\":{\"haos\":{\"ip\":\"${HA_IP}\",\"ctid\":\"${HAOS_VMID}\"}}}"
+
+# Unpack HACS while SSH is fresh; remaining Add Integration + GitHub authorize is UI-only.
+mc_ha_bootstrap_hacs "$HA_IP" || true
+mc_ha_print_hacs_ui_instructions
+read -r -p "Press Enter to continue the venue install (HACS UI steps can finish later): " _
 
 # ─── Phase 3: Companion LXCs ─────────────────────────────────────────────────
 fi  # end RESUME!=ha-deploy early section — LXCs only when not resuming
@@ -453,12 +462,14 @@ for _ in $(seq 1 36); do
   sleep 5
 done
 
-# ─── Phase 5: Mosquitto + MQTT + theme + HACS ─────────────────────────────────
-mc_ha_bootstrap_mqtt "$HA_IP" || true
-mc_ha_bootstrap_hacs "$HA_IP" || true
+# ─── Phase 5: Mosquitto + MQTT + theme ───────────────────────────────────────
+MQTT_OK=0
+if mc_ha_bootstrap_mqtt "$HA_IP"; then
+  MQTT_OK=1
+fi
 mc_ha_apply_alleycat_theme "$HA_IP" || true
-# Theme storage is read at core start — one more restart after HACS unpack
-mc_say "Restarting HA core to load theme + HACS"
+# Theme storage is read at core start — restart also picks up HACS if unpacked at pause
+mc_say "Restarting HA core to load theme + custom components"
 mc_ha_ssh "$HA_IP" "ha core restart" || true
 sleep 15
 for _ in $(seq 1 24); do
@@ -471,12 +482,13 @@ done
 mc_ha_apply_alleycat_theme "$HA_IP" || true
 
 # ─── Done ────────────────────────────────────────────────────────────────────
-python3 - "$MC_STATE_FILE" "${PROXMOX_TOKEN_ID:-}" <<'PY'
+python3 - "$MC_STATE_FILE" "${PROXMOX_TOKEN_ID:-}" "$MQTT_OK" <<'PY'
 import json, sys
 with open(sys.argv[1], encoding="utf-8") as f:
     st = json.load(f)
 svc = st.get("services") or {}
 ptid = sys.argv[2] if len(sys.argv) > 2 else ""
+mqtt_ok = sys.argv[3] == "1" if len(sys.argv) > 3 else False
 print("""
 ══════════════════════════════════════════════════════════════════════════════
  Mission Control venue install complete
@@ -486,6 +498,7 @@ print(f"  State file:  {sys.argv[1]}")
 print(f"  HA IP:       {st.get('ha_ip')}")
 print(f"  Release:     {st.get('release')}")
 print(f"  Proxmox tok: {ptid or '(see secrets.yaml)'}")
+print(f"  MQTT:        {'OK' if mqtt_ok else 'INCOMPLETE — finish in HA UI before fabric apps'}")
 for key in ("mcs", "alleycattv", "gbn", "net_time", "venue_updater"):
     s = svc.get(key) or {}
     print(f"  {key:14} {s.get('url','')}")
@@ -495,17 +508,23 @@ Automated for the venue operator:
   • Registration + Digital Node Nexus config entries (YAML import)
   • Core Configurator reseed from secrets.yaml
   • Proxmox API token (hass@pve!missioncontrol) written to secrets
-  • Mosquitto add-on + MQTT integration (best effort)
+  • Mosquitto broker + MQTT integration (see MQTT line above)
   • Alleycat theme set as default (light + dark)
   • Sidebar title + panel order **Mission Control** (vendored custom-sidebar)
-  • HACS component (when HA has internet) — authorize once in the UI
+  • HACS component unpacked during HA pause (Add integration + GitHub still UI)
+
+Required before AlleycatTV / Digital Node Nexus / Broadcast Groups work:
+  1. MQTT healthy — Mosquitto started, logins alleycatTV/alleycat Saved,
+     MQTT integration connected (core-mosquitto:1883). Restart HA if those
+     three still show Failed setup.
+  2. HACS — Settings → Devices & services → Add **HACS** → GitHub device code
+     (files already under /config/custom_components/hacs after the pause unpack).
 
 Still optional / venue-specific:
-  1. Settings → Devices & services → Add **Proxmox VE** (monitoring sensors)
+  3. Settings → Devices & services → Add **Proxmox VE** (monitoring sensors)
      Host=<proxmox-ip> port 8006 · user hass · realm PVE · token missioncontrol
      (same secret as Core Configurator — printed above / in secrets.yaml)
-  2. Settings → Devices & services → Add **HACS** (if not prompted) → GitHub device code once
-  3. Flash AlleycatTV Pis / point FDN firmware at HA MQTT (alleycatTV / alleycat)
+  4. Flash AlleycatTV Pis / point FDN firmware at HA MQTT (alleycatTV / alleycat)
 
 Updates later:
   Core Configurator → Check for GitHub Update
