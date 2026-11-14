@@ -25,12 +25,14 @@ from .const import (
     EVENT_UPDATED,
     EXTRA_ENABLED,
     EXTRA_TOKEN,
+    KEY_PROXMOX,
     KEY_RTSP,
     KEY_VENUE_UPDATER,
     YAML_KEYS,
     YAML_RTSP_ENABLED,
 )
 from .helpers import catalog_public, get_extra, get_url, save_services
+from .proxmoxve_bootstrap import schedule_proxmoxve_bootstrap
 from .urlutil import _truthy, empty_services, normalize_url, services_from_mapping
 
 _LOGGER = logging.getLogger(__name__)
@@ -113,6 +115,8 @@ async def ws_set_service(hass: HomeAssistant, connection, msg) -> None:
     services[key] = current
     save_services(hass, services, changed_key=key)
     _LOGGER.info("Core Configurator: %s → %s", key, current.get("url"))
+    if key == KEY_PROXMOX:
+        schedule_proxmoxve_bootstrap(hass)
     connection.send_result(
         msg["id"],
         {
@@ -213,6 +217,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     data["entry_id"] = entry.entry_id
     _register_ws(hass)
     hass.bus.async_fire(EVENT_UPDATED, {"key": None, "services": catalog_public(hass)})
+    schedule_proxmoxve_bootstrap(hass)
     _LOGGER.info("Core Configurator ready (%d services)", len(services))
     return True
 

@@ -521,9 +521,9 @@ Required before AlleycatTV / Digital Node Nexus / Broadcast Groups work:
      (files already under /config/custom_components/hacs after the pause unpack).
 
 Still optional / venue-specific:
-  3. Settings → Devices & services → Add **Proxmox VE** (monitoring sensors)
-     Host=<proxmox-ip> port 8006 · user hass · realm PVE · token missioncontrol
-     (same secret as Core Configurator — printed above / in secrets.yaml)
+  3. Proxmox VE monitoring — Core Configurator one-shots this when Proxmox URL +
+     token are set. Manual fallback: Add **Proxmox VE** (host IP, user hass,
+     realm PVE, token missioncontrol, same secret as secrets.yaml).
   4. Flash AlleycatTV Pis / point FDN firmware at HA MQTT (alleycatTV / alleycat)
 
 Updates later:

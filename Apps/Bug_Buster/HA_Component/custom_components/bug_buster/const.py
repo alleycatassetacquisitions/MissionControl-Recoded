@@ -7,7 +7,7 @@ DOMAIN = "bug_buster"
 CONF_VERIFY_SSL = "verify_ssl"
 CONF_MQTT_TOPIC = "mqtt_topic"
 
-DEFAULT_MQTT_TOPIC = "#"
+DEFAULT_MQTT_TOPIC = "mc/#"
 DEFAULT_VERIFY_SSL = False
 DEFAULT_LOGS_PER_PAGE = 20
 

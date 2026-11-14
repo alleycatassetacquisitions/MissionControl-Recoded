@@ -129,7 +129,7 @@ Do these before AlleycatTV / Digital Node Nexus / Broadcast Groups will leave �
 
 1. **MQTT** — Confirm Mosquitto is **started** (Start on boot), Configuration `logins` Saved as `alleycatTV` / `alleycat`, and **MQTT** integration is connected (official Mosquitto broker, or manual `core-mosquitto:1883` with those creds). If the installer printed `MQTT: INCOMPLETE`, finish this in the UI then **Restart Home Assistant**. Details: [`Home Assistant Config Steps.md`](Home%20Assistant%20Config%20Steps.md) Phase 5a.
 2. **HACS** — Component is unpacked at the HA pause. Settings → Devices & services → Add **HACS** → GitHub device-code once. Sidebar title already works without HACS (vendored mc-shell). Details: Phase 10b in the same doc.
-3. Settings → Devices & services → Add **Proxmox VE** (node/VM sensors). Use host IP, user `hass`, realm PVE, token id `missioncontrol`, same secret as Core Configurator / `secrets.yaml`.
+3. **Proxmox VE** monitoring — usually created automatically when Core Configurator has Proxmox URL + token (`hass@pve!missioncontrol`). If sensors are missing: Add Integration → **Proxmox VE** (host IP, user `hass`, realm PVE, token id `missioncontrol`, same secret). See [`Bug Buster Config Steps.md`](Bug%20Buster%20Config%20Steps.md).
 4. Hard-refresh the browser (Ctrl+Shift+R). Confirm sidebar says **Mission Control** and Profile theme is **Alleycat** (or Backend-selected).
 5. Flash AlleycatTV Pis / point FDN firmware at HA MQTT (`alleycatTV` / `alleycat`).
 

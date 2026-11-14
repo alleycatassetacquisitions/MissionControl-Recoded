@@ -676,3 +676,126 @@ async def test_ws_set_service_extra_field(
     assert msg["success"] is True
     assert msg["result"]["extra"]["node"] == "mynode"
     assert get_extra(hass, KEY_PROXMOX, "node") == "mynode"
+
+
+# ---------------------------------------------------------------------------
+# 6. Proxmox VE bootstrap (D10)
+# ---------------------------------------------------------------------------
+
+
+class TestProxmoxveBootstrapParsers:
+    def test_parse_token_id_ok(self):
+        from custom_components.core_configurator.proxmoxve_bootstrap import (
+            parse_proxmox_token_id,
+        )
+
+        assert parse_proxmox_token_id("hass@pve!missioncontrol") == (
+            "hass",
+            "pve",
+            "missioncontrol",
+        )
+
+    def test_parse_token_id_rejects_short(self):
+        from custom_components.core_configurator.proxmoxve_bootstrap import (
+            parse_proxmox_token_id,
+        )
+
+        assert parse_proxmox_token_id("missioncontrol") is None
+        assert parse_proxmox_token_id("hass@pve") is None
+
+    def test_parse_host_port(self):
+        from custom_components.core_configurator.proxmoxve_bootstrap import (
+            parse_proxmox_host_port,
+        )
+
+        assert parse_proxmox_host_port("https://192.168.1.1:8006") == (
+            "192.168.1.1",
+            8006,
+        )
+        assert parse_proxmox_host_port("192.168.1.1") == ("192.168.1.1", 8006)
+
+
+@pytest.mark.asyncio
+async def test_ensure_proxmoxve_skips_incomplete(hass: HomeAssistant):
+    from custom_components.core_configurator.proxmoxve_bootstrap import (
+        ensure_proxmoxve_entry,
+    )
+
+    hass.data[DOMAIN] = {
+        "services": {
+            KEY_PROXMOX: {
+                "url": "https://192.168.1.1:8006",
+                "extra": {"node": "pve"},
+            }
+        },
+        "entry_id": None,
+    }
+    result = await ensure_proxmoxve_entry(hass)
+    assert result["status"] == "skipped"
+
+
+@pytest.mark.asyncio
+async def test_ensure_proxmoxve_idempotent_when_entry_exists(hass: HomeAssistant):
+    from custom_components.core_configurator.proxmoxve_bootstrap import (
+        ensure_proxmoxve_entry,
+    )
+
+    hass.data[DOMAIN] = {
+        "services": {
+            KEY_PROXMOX: {
+                "url": "https://192.168.1.1:8006",
+                "extra": {
+                    "node": "pve",
+                    "token_id": "hass@pve!missioncontrol",
+                    "token_secret": "uuid-secret",
+                },
+            }
+        },
+        "entry_id": None,
+    }
+    existing = MockConfigEntry(
+        domain="proxmoxve",
+        data={"host": "192.168.1.1", "port": 8006},
+        title="192.168.1.1",
+    )
+    existing.add_to_hass(hass)
+
+    result = await ensure_proxmoxve_entry(hass)
+    assert result["status"] == "exists"
+
+
+@pytest.mark.asyncio
+async def test_ensure_proxmoxve_import_creates_entry(hass: HomeAssistant):
+    from custom_components.core_configurator.proxmoxve_bootstrap import (
+        ensure_proxmoxve_entry,
+    )
+
+    hass.data[DOMAIN] = {
+        "services": {
+            KEY_PROXMOX: {
+                "url": "https://10.10.50.205:8006",
+                "extra": {
+                    "node": "pve",
+                    "token_id": "hass@pve!missioncontrol",
+                    "token_secret": "uuid-secret",
+                },
+            }
+        },
+        "entry_id": None,
+    }
+
+    async def _fake_init(domain, context=None, data=None):
+        assert domain == "proxmoxve"
+        assert context["source"] == "import"
+        assert data["host"] == "10.10.50.205"
+        assert data["token_id"] == "missioncontrol"
+        assert data["token"] is True
+        assert data["verify_ssl"] is False
+        return {"type": FlowResultType.CREATE_ENTRY, "data": data}
+
+    with patch.object(
+        hass.config_entries.flow, "async_init", side_effect=_fake_init
+    ):
+        result = await ensure_proxmoxve_entry(hass)
+    assert result["status"] == "created"
+    assert result["detail"] == "10.10.50.205"

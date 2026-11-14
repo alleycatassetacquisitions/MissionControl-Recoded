@@ -15,7 +15,7 @@ Assistant Core **Proxmox VE** — not from Bug Buster.
 4. **API Tokens → Add** for that user (Token ID e.g. `missioncontrol`). Copy the secret once.
 5. Prefer privilege separation with token-specific permissions if you tighten access later.
 
-**Source of truth:** paste the token into **Core Configurator** (full id `hass@pve!missioncontrol`). Bug Buster reads that for console. HA Core **Proxmox VE** still needs a one-time monitoring entry (bootstrap) using the same secret — split fields as below. Do not treat dual-entry as an ongoing ops habit when the token rotates: update Core Configurator first, then refresh Proxmox VE if monitoring breaks.
+**Source of truth:** paste the token into **Core Configurator** (full id `hass@pve!missioncontrol`). Bug Buster reads that for console. Core Configurator **one-shots** HA Core **Proxmox VE** for monitoring when URL + token are saved (idempotent if an entry for that host already exists). Do not dual-enter on every rotate: update Core Configurator first; only reconfigure Proxmox VE if monitoring stays broken after Save.
 
 ## 2. Core Configurator (token SoR + RTSP)
 
@@ -31,16 +31,19 @@ In the **Core Configurator** sidebar (or YAML seed on first boot):
 
 Secrets example: [`HomeAssist/secrets.yaml.example`](../HomeAssist/secrets.yaml.example).
 
-## 3. HA Core Proxmox VE (monitoring — once)
+## 3. HA Core Proxmox VE (monitoring)
+
+Saving Proxmox URL + `hass@pve!missioncontrol` + secret in **Core Configurator** creates the Core **Proxmox VE** entry once (HA 2026.3+ with API-token support). Confirm node/guest entities appear after Save.
+
+**Manual fallback** (bootstrap skipped — Proxmox unreachable, old HA, or entry already present under another host string):
 
 1. Settings → Devices & services → **Add Integration** → **Proxmox VE**.
 2. Host: IP or hostname only (no `https://`). Port `8006`.
 3. Username: `hass` (no `@pve`). Realm: **PVE**.
-4. Enable API token. Token ID: the short name only (`missioncontrol`, not `hass@pve!missioncontrol`).
-5. Paste the **same** Token Secret. Disable SSL verification for LAN self-signed certs if needed.
-6. Confirm node and guest entities appear (CPU, memory, status, start/stop buttons).
+4. Enable API token. Token ID: short name only (`missioncontrol`).
+5. Same Token Secret as Core Configurator. Disable SSL verify for LAN self-signed certs if needed.
 
-Docs: [Proxmox VE integration](https://www.home-assistant.io/integrations/proxmoxve). Auto-bootstrap from Core Configurator into this entry is planned; until then this remains a one-time install step.
+Docs: [Proxmox VE integration](https://www.home-assistant.io/integrations/proxmoxve).
 
 ## 4. Deploy Bug Buster
 
@@ -63,7 +66,7 @@ Restart Home Assistant. Settings → Devices & services → Add **Bug Buster** i
 
 1. Core Proxmox VE entities update for MCS / AlleycatTV / GBN / HAOS guests.
 2. Sidebar **Bug Buster**: guest list loads; select a guest and **Connect** opens the xterm console.
-3. MQTT spy shows broker traffic (debug only — not a command path).
+3. MQTT spy defaults to `mc/#`; use AlleycatTV / FDN filter buttons to slice the live stream (debug only — not a command path).
 4. Companion health row shows MCS / AlleycatTV / GBN `/health`.
 5. **Device logs** pane loads (or a clear MCS token/URL error). Refresh / Prev / Next page Central crash rows. Bug Buster never POSTs logs — devices do.
 6. **Pop out** on MQTT, Device logs, and Console: each opens a larger in-panel overlay; Close or Escape dismisses it. For Console, confirm the session returns to the inline pane after close.

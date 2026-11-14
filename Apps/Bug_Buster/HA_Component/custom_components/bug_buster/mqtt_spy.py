@@ -10,7 +10,13 @@ from typing import Any, Callable
 from homeassistant.components import mqtt
 from homeassistant.core import HomeAssistant, callback
 
-from .const import EVENT_MQTT_MESSAGE, MQTT_BUFFER_SIZE, MQTT_HEX_BYTES, MQTT_PREVIEW_CHARS
+from .const import (
+    DEFAULT_MQTT_TOPIC,
+    EVENT_MQTT_MESSAGE,
+    MQTT_BUFFER_SIZE,
+    MQTT_HEX_BYTES,
+    MQTT_PREVIEW_CHARS,
+)
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -49,7 +55,7 @@ def preview_payload(raw: bytes) -> dict[str, Any]:
 class MqttSpy:
     def __init__(self, hass: HomeAssistant, topic: str) -> None:
         self.hass = hass
-        self.topic = topic or "#"
+        self.topic = topic or DEFAULT_MQTT_TOPIC
         self.buffer: deque[dict[str, Any]] = deque(maxlen=MQTT_BUFFER_SIZE)
         self._unsub: Callable[[], None] | None = None
         self.received = 0

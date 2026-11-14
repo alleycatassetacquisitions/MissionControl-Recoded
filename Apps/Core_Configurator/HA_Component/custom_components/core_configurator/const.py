@@ -78,8 +78,8 @@ SERVICE_CATALOG = (
     {
         "key": KEY_PROXMOX,
         "label": "Proxmox",
-        "hint": "Hypervisor API — Bug Buster console reads URL/node/token from here "
-        "(also paste the same token into HA Core Proxmox VE for monitoring)",
+        "hint": "Hypervisor API — Bug Buster console reads URL/node/token from here; "
+        "Core Configurator one-shots HA Core Proxmox VE monitoring when credentials are set",
         "apps": ["Bug Buster"],
         "placeholder": "https://192.168.1.1:8006",
         "extra_fields": (

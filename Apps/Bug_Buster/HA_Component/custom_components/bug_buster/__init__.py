@@ -169,6 +169,13 @@ async def async_setup(hass: HomeAssistant, config: dict) -> bool:
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     data = _domain(hass)
     verify_ssl, topic = _options(hass, entry)
+    # Whole-broker ``#`` is too wide; migrate leftover configs to fabric default.
+    if topic.strip() == "#":
+        topic = DEFAULT_MQTT_TOPIC
+        hass.config_entries.async_update_entry(
+            entry,
+            data={**dict(entry.data), CONF_MQTT_TOPIC: topic},
+        )
     session = async_get_clientsession(hass, verify_ssl=verify_ssl)
 
     url, node, token_id, token_secret = _cc_proxmox(hass)
@@ -179,7 +186,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 
     client = ProxmoxClient(
         session,
-        proxmox_url or "https://127.0.0.1:8006",
+        proxmox_url,
         token_id,
         token_secret,
         default_node=node,
@@ -207,13 +214,11 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
                 "on the Proxmox card, then refresh.",
                 "auth",
             )
-        if not client.base_url or client.base_url.endswith("127.0.0.1:8006"):
-            url_now, _, _, _ = _cc_proxmox(hass)
-            if not url_now:
-                return _fail(
-                    "Proxmox URL is not set in Core Configurator.",
-                    "connect",
-                )
+        if not client.base_url:
+            return _fail(
+                "Proxmox URL is not set in Core Configurator.",
+                "connect",
+            )
         try:
             items, inventory = await client.list_guests()
         except ProxmoxError as err:
@@ -331,7 +336,7 @@ async def ws_mqtt_snapshot(hass: HomeAssistant, connection, msg) -> None:
         {
             "messages": spy.snapshot() if spy else [],
             "received": getattr(spy, "received", 0),
-            "topic": getattr(spy, "topic", "#"),
+            "topic": getattr(spy, "topic", DEFAULT_MQTT_TOPIC),
         },
     )
 

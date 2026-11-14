@@ -373,10 +373,9 @@ scp -r "z:\CodingProjects\Alleycat\MissionControl\Apps\Core_Configurator\HA_Comp
 
 Merge from [`HomeAssist/configuration.yaml`](../HomeAssist/configuration.yaml): `bug_buster: {}`, Bug Buster `panel_custom`, and Core Configurator Proxmox token / RTSP secrets. Restart HA.
 
-1. Add **Proxmox VE** (Core) for sensors/buttons.
-2. Set Proxmox URL + token (+ Live RTSP) in **Core Configurator**.
-3. Add **Bug Buster** — confirm console, MQTT spy, companion health, and Device logs (needs MCS URL + Bearer).
-4. AlleycatTV / AlleycatTV Content do not edit server IP or RTSP — use Core Configurator only.
+1. Set Proxmox URL + token (+ Live RTSP) in **Core Configurator** — this one-shots Core **Proxmox VE** for sensors/buttons when credentials are complete.
+2. Add **Bug Buster** — confirm console, MQTT spy, companion health, and Device logs (needs MCS URL + Bearer).
+3. AlleycatTV / AlleycatTV Content do not edit server IP or RTSP — use Core Configurator only.
 
 App README: [`Apps/Bug_Buster/README.md`](../Apps/Bug_Buster/README.md)
 
