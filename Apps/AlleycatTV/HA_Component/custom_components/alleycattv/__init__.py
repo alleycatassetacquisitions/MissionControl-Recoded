@@ -151,11 +151,37 @@ async def _publish_pi_config(hass: HomeAssistant) -> None:
     )
 
 
+def _merge_desired_playback(
+    hass: HomeAssistant,
+    broadcast_group_id: str,
+    *,
+    state: str | None = None,
+    volume: int | None = None,
+) -> bytes:
+    """Merge into last desired so volume updates do not wipe retained state."""
+    store = hass.data.setdefault(DOMAIN, {}).setdefault("desired_playback", {})
+    current = dict(store.get(broadcast_group_id) or {})
+    if state is not None:
+        current["state"] = state
+    if volume is not None:
+        current["volume"] = int(volume)
+    store[broadcast_group_id] = current
+    return encode_desired_playback(
+        state=current.get("state"),
+        volume=current.get("volume"),
+    )
+
+
 async def _publish_desired(
     hass: HomeAssistant,
     broadcast_group_id: str,
-    payload: bytes,
+    *,
+    state: str | None = None,
+    volume: int | None = None,
 ) -> None:
+    payload = _merge_desired_playback(
+        hass, broadcast_group_id, state=state, volume=volume
+    )
     await async_publish(
         hass,
         MQTT_KIND,
@@ -298,7 +324,7 @@ def _make_status_json_handler(hass: HomeAssistant):
                     async_dispatcher_send(hass, SIGNAL_UPDATE, pi_id)
                 return
             parsed = json.loads(text)
-            bg = parsed.get("broadcast_group_id") or parsed.get("zone") or ""
+            bg = parsed.get("broadcast_group_id") or ""
             hass.data[DOMAIN]["devices"][pi_id] = {
                 "pi_id": parsed.get("pi_id") or pi_id,
                 "broadcast_group_id": bg,
@@ -327,13 +353,13 @@ def _register_services(hass: HomeAssistant) -> None:
         bg = call.data["broadcast_group_id"]
         segments = resolve_cmd_segments(broadcast_group_id=bg)
         await _publish_cmd(hass, segments, "play", encode_play_cmd())
-        await _publish_desired(hass, bg, encode_desired_playback(state="playing"))
+        await _publish_desired(hass, bg, state="playing")
 
     async def handle_stop_bg(call: ServiceCall) -> None:
         bg = call.data["broadcast_group_id"]
         segments = resolve_cmd_segments(broadcast_group_id=bg)
         await _publish_cmd(hass, segments, "stop", encode_stop_cmd())
-        await _publish_desired(hass, bg, encode_desired_playback(state="stopped"))
+        await _publish_desired(hass, bg, state="stopped")
 
     async def handle_interrupt_bg(call: ServiceCall) -> None:
         bg = call.data["broadcast_group_id"]
@@ -356,9 +382,8 @@ def _register_services(hass: HomeAssistant) -> None:
         volume = call.data["volume"]
         segments = resolve_cmd_segments(broadcast_group_id=bg)
         await _publish_cmd(hass, segments, "volume", encode_volume_cmd(volume=volume))
-        await _publish_desired(
-            hass, bg, encode_desired_playback(state="playing", volume=volume)
-        )
+        # Merge volume into retained desired; do not force state=playing.
+        await _publish_desired(hass, bg, volume=volume)
 
     async def handle_cache_delete(call: ServiceCall) -> None:
         segments = resolve_cmd_segments(pi_id=call.data["pi_id"])

@@ -228,6 +228,40 @@
         this._feedback(this._formatErr(err), "err");
       }
     }
+    async _forceRepublish() {
+      try {
+        const sel = this._selectedDevice();
+        if (!sel) return this._feedback("Select a device", "err");
+        if (this._selectedPresence() !== "online") {
+          return this._feedback("Device must be online to force membership", "warn");
+        }
+        const storedBg = (this._bgId || "").trim();
+        if (!storedBg) {
+          return this._feedback("No stored Broadcast Group on this device", "warn");
+        }
+        const result = await this.hass.callWS({
+          type: "broadcast_group_controller/force_republish_membership",
+          kind: sel.kind,
+          device_id: sel.device_id
+        });
+        if (result?.ack_supported === false) {
+          this._feedback(
+            `Republished ${result.broadcast_group_id || storedBg} (dnn soft ack)`,
+            "ok"
+          );
+        } else if (result?.acked) {
+          this._feedback(
+            `Membership ack for ${result.broadcast_group_id || storedBg}`,
+            "ok"
+          );
+        } else {
+          this._feedback(result?.detail || "Force republish finished", "warn");
+        }
+        await this._boot();
+      } catch (err) {
+        this._feedback(this._formatErr(err), "err");
+      }
+    }
     _selectedPresence() {
       if (!this._selected) return "unknown";
       const d = this._devices.find(
@@ -368,6 +402,14 @@ This deletes the HA device and clears retained MQTT so the name can be reused or
                 @click=${() => this._clearBg()}
               >
                 Clear broadcast group
+              </button>
+              <button
+                class="btn btn-secondary"
+                ?disabled=${!this._selected || this._selectedPresence() !== "online"}
+                title="Re-publish retained membership and wait for tv status ack"
+                @click=${() => this._forceRepublish()}
+              >
+                Force membership
               </button>
               <button
                 class="btn btn-secondary"

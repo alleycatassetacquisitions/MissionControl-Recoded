@@ -20,7 +20,7 @@ import time
 from typing import Optional, Tuple
 
 from config import (
-    PI_ID, ZONE_ID, MPV_SOCKET_PATH,
+    PI_ID, BROADCAST_GROUP_ID, MPV_SOCKET_PATH, get_broadcast_group_id,
     STATUS_INTERVAL, PHOTO_DURATION, PLAYLIST_REFRESH_INTERVAL, CACHE_ENABLED,
     BUMPER_PATH, BUMPER_DURATION, SERVER_URL,
 )
@@ -226,8 +226,10 @@ class AlleycatTVPlayer:
         signal.signal(signal.SIGINT,  self._handle_signal)
 
         _LOGGER.info(
-            "AlleycatTV player v%s starting (PI_ID=%s ZONE=%s)",
-            _PLAYER_VERSION, PI_ID, ZONE_ID,
+            "AlleycatTV player v%s starting (PI_ID=%s broadcast_group=%s)",
+            _PLAYER_VERSION,
+            PI_ID,
+            get_broadcast_group_id() or BROADCAST_GROUP_ID,
         )
 
         self._mqtt.start()

@@ -24,6 +24,15 @@ from app.models import AnnouncementUrlEntry, ContentFile, MediaType
 from app.playlist_store import find_zones_with_file, load_playlists, remove_file_from_all_playlists, save_playlists
 
 
+def _resolve_broadcast_group_id(
+    *,
+    broadcast_group_id: Optional[str] = None,
+    zone_id: Optional[str] = None,
+) -> Optional[str]:
+    raw = (broadcast_group_id or zone_id or "").strip()
+    return raw or None
+
+
 def _notify_zones_reload(zone_ids: List[str]) -> None:
     """Playlist changed — operators reload via Home Assistant (no MQTT from this server)."""
     if not zone_ids:
@@ -229,9 +238,10 @@ async def delete_bumper(filename: str):
 async def upload_file(
     file: UploadFile = File(...),
     subdir: str = Form(default="videos"),
+    broadcast_group_id: Optional[str] = Form(default=None),
     zone_id: Optional[str] = Form(default=None),
 ):
-    """Upload a media file. If zone_id is provided, auto-adds it to that zone's playlist."""
+    """Upload a media file. If broadcast_group_id is set, auto-adds to that group's playlist."""
     if subdir not in ("videos", "photos", "announcements"):
         raise HTTPException(status_code=400, detail="subdir must be videos, photos, or announcements")
 
@@ -251,15 +261,19 @@ async def upload_file(
                 raise HTTPException(status_code=413, detail=f"File exceeds {MAX_UPLOAD_MB} MB limit")
             out.write(chunk)
 
-    if zone_id:
-        _add_to_playlist(zone_id, file.filename, media_type.value)
+    group_id = _resolve_broadcast_group_id(
+        broadcast_group_id=broadcast_group_id,
+        zone_id=zone_id,
+    )
+    if group_id:
+        _add_to_playlist(group_id, file.filename, media_type.value)
 
     return {
         "filename": file.filename,
         "media_type": media_type,
         "size_bytes": total,
         "subdir": subdir,
-        "added_to_zone": zone_id,
+        "added_to_broadcast_group": group_id,
     }
 
 
@@ -267,6 +281,7 @@ class UploadStart(BaseModel):
     filename: str
     subdir: str = "videos"
     size_bytes: int = 0
+    broadcast_group_id: Optional[str] = None
     zone_id: Optional[str] = None
 
 
@@ -284,7 +299,10 @@ async def start_chunked_upload(body: UploadStart):
         "filename": Path(body.filename).name,
         "subdir": body.subdir,
         "size_bytes": body.size_bytes,
-        "zone_id": body.zone_id,
+        "broadcast_group_id": _resolve_broadcast_group_id(
+            broadcast_group_id=body.broadcast_group_id,
+            zone_id=body.zone_id,
+        ),
         "tmp_dir": str(tmp_dir),
         "received": 0,
     }
@@ -334,16 +352,16 @@ async def complete_chunked_upload(upload_id: str):
                 _abort_upload(upload_id)
                 raise HTTPException(status_code=413, detail=f"File exceeds {MAX_UPLOAD_MB} MB limit")
             out.write(data)
-    zone_id = info.get("zone_id")
-    if zone_id:
-        _add_to_playlist(zone_id, filename, media_type.value)
+    group_id = info.get("broadcast_group_id")
+    if group_id:
+        _add_to_playlist(group_id, filename, media_type.value)
     _abort_upload(upload_id)
     return {
         "filename": filename,
         "media_type": media_type,
         "size_bytes": total,
         "subdir": subdir,
-        "added_to_zone": zone_id,
+        "added_to_broadcast_group": group_id,
     }
 
 
@@ -439,15 +457,19 @@ async def delete_announcement_file(filename: str):
     return await _delete_announcement_file(filename)
 
 
-def _add_to_playlist(zone_id: str, filename: str, media_type: str) -> None:
-    """Append a file to a zone's playlist, creating the playlist if needed."""
+def _add_to_playlist(group_id: str, filename: str, media_type: str) -> None:
+    """Append a file to a broadcast group's playlist, creating it if needed."""
     data = load_playlists()
-    playlist = data.get(zone_id, {"zone_id": zone_id, "items": [], "photo_interval": 5})
+    playlist = data.get(
+        group_id,
+        {"broadcast_group_id": group_id, "items": [], "photo_interval": 5},
+    )
     items = playlist.get("items", [])
     if not any(i.get("filename") == filename for i in items):
         items.append({"filename": filename, "media_type": media_type})
     playlist["items"] = items
-    data[zone_id] = playlist
+    playlist["broadcast_group_id"] = group_id
+    data[group_id] = playlist
     save_playlists(data)
 
 
@@ -456,8 +478,8 @@ async def content_usage(subdir: str, filename: str):
     """Return zone playlists that reference a library file (for delete confirmation)."""
     if subdir not in ("videos", "photos"):
         raise HTTPException(status_code=400, detail="Usage lookup only applies to videos and photos")
-    zones = find_zones_with_file(filename, subdir)
-    return {"filename": filename, "subdir": subdir, "zones": zones}
+    groups = find_zones_with_file(filename, subdir)
+    return {"filename": filename, "subdir": subdir, "broadcast_groups": groups}
 
 
 @router.delete("/{subdir}/{filename:path}")
@@ -481,4 +503,4 @@ async def _delete_library_file(subdir: str, filename: str):
     target.unlink()
     _notify_zones_reload(removed_from)
     _LOGGER.info("Deleted file: %s (removed from zones: %s)", target, removed_from)
-    return {"deleted": filename, "subdir": subdir, "removed_from_zones": removed_from}
+    return {"deleted": filename, "subdir": subdir, "removed_from_broadcast_groups": removed_from}

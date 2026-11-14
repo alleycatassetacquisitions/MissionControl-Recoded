@@ -225,10 +225,14 @@
       const r = String(player.mode || player.role || "").toLowerCase();
       if (r === "hunter") return "hunter";
       if (r === "bounty") return "bounty";
-      if (r === "gbn" || r === "neither" || r === "other" || r === "custom") return "neither";
+      if (r === "unassigned" || r === "gbn" || r === "neither" || r === "other" || r === "custom") {
+        return "neither";
+      }
+      const team = String(player.team_name || "").toLowerCase();
+      if (team.includes("hunter")) return "hunter";
+      if (team.includes("bounty")) return "bounty";
       if (player.hunter === 1) return "hunter";
-      if (player.hunter === 2) return "neither";
-      if (player.hunter === 0) return "bounty";
+      if (player.hunter === 2) return "bounty";
       return "neither";
     }
     _getRole() {

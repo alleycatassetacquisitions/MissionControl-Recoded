@@ -17,7 +17,7 @@ message PageCmd {
   int32  duration  = 2;  // Seconds
   bool   scroll    = 3;
   string player_id = 4;  // MCS player id stamp (empty if unused)
-  string role      = 5;  // hunter | bounty (empty if unused)
+  string role      = 5;  // hunter | bounty | unassigned (empty if unused; HA alias of team_name)
   string neocorp   = 6;  // freelancer | helix | endline | reboot
 }
 

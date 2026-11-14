@@ -35,12 +35,12 @@ Home Assistant is the **only** MQTT command publisher.
 
 | Service | MQTT under `mc/tv/` |
 |---|---|
-| `play_broadcast_group` | `cmd/broadcast/{id}/play` + retained `desired/.../playback` |
-| `stop_broadcast_group` | `cmd/broadcast/{id}/stop` + desired |
-| `interrupt_broadcast_group` | `cmd/broadcast/{id}/interrupt` |
-| `interrupt_pi` | `cmd/device/{pi_id}/interrupt` |
-| `reload_playlist` | `cmd/broadcast/{id}/reload` |
-| `set_volume_broadcast_group` | `cmd/broadcast/{id}/volume` |
+| `play_broadcast_group` | cmd nudge + retained desired `state=playing` (desired is authority) |
+| `stop_broadcast_group` | cmd nudge + retained desired `state=stopped` |
+| `interrupt_broadcast_group` | `cmd/broadcast/{id}/interrupt` (nudge only) |
+| `interrupt_pi` | `cmd/device/{pi_id}/interrupt` (nudge only) |
+| `reload_playlist` | `cmd/broadcast/{id}/reload` (nudge only) |
+| `set_volume_broadcast_group` | cmd nudge + merge `volume` into retained desired (does not force playing) |
 | `cache_*` | `cmd/device/{pi_id}/cache_*` |
 
 **Panels:** AlleycatTV (live control) + AlleycatTV Content (full library/playlists via HA proxy). Placement and Broadcast Group membership: **Broadcast Group Controller**.

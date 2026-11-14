@@ -114,7 +114,7 @@ When you rename an identity string, update this section and `const.py` in the sa
 | MQTT kind `dnn` | BGC `KIND_DNN` + `KIND_DOMAIN` map, fabric `mc/dnn/status/#` subscriptions, FDN firmware MQTT topics, all DNN MQTT command topics |
 | Roster WS `registration/get_roster` | DNN panel page targets (Registration owns MCS roster poll) |
 | Domain `digital_node_nexus` | HA `custom_components/` folder, `manifest.json`, entity_id prefix, `www/digital_node_nexus/` |
-| Role strings (`hunter`, `bounty`) | DNN `ROLES` tuple — DNN only; Registration has **no** `ROLES` constant |
+| Role strings (`hunter`, `bounty`, `unassigned`) | DNN `ROLES` tuple — display aliases of Central `team_name`; Registration has **no** `ROLES` |
 
 ### Identity checklist
 
@@ -124,7 +124,7 @@ When you rename an identity string, update this section and `const.py` in the sa
 | MQTT fabric kind | `dnn` | `MQTT_KIND` in `const.py` |
 | Roster (panel) | `registration/get_roster` | Registration WS — DNN does not own an MCS client |
 | Extra field (MCS token) | `token` | `EXTRA_MCS_TOKEN` in `const.py` |
-| Role values | `hunter`, `bounty` | `ROLES` tuple in `const.py` — DNN only |
+| Role values | `hunter`, `bounty`, `unassigned` | `ROLES` tuple in `const.py` — HA aliases only |
 | NeoCorp values | `freelancer`, `helix`, `endline`, `reboot` | `NEOCORPS` tuple in `const.py` |
 | WS namespace | `digital_node_nexus/get_devices` | `WS_GET_DEVICES` in `const.py` |
 | Panel url_path | `digital-node-nexus` | bare literal in `HomeAssist/configuration.yaml` |

@@ -198,8 +198,12 @@ function isLibraryItem(f) {
   return subdir === 'videos' || subdir === 'photos';
 }
 
+function broadcastGroupId(g) {
+  return g.broadcast_group_id || g.zone_id || '';
+}
+
 function zoneDisplayName(zoneId) {
-  const z = zones.find(x => x.zone_id === zoneId);
+  const z = zones.find((x) => broadcastGroupId(x) === zoneId);
   return z?.name || zoneId;
 }
 
@@ -290,7 +294,7 @@ function itemIcon(type) {
 
 async function loadAll() {
   const [zonesRes, playlistsRes, contentRes] = await Promise.all([
-    apiFetch('/api/zones').then(r => r.json()).catch(() => []),
+    apiFetch('/api/broadcast_groups/').then(r => r.json()).catch(() => []),
     apiFetch('/api/playlists').then(r => r.json()).catch(() => ({})),
     apiFetch('/api/content/').then(r => r.json()).catch(() => []),
   ]);
@@ -395,16 +399,17 @@ function renderZones(zones, plMap) {
   [...container.querySelectorAll('.zone-card')].forEach(c => c.remove());
 
   zones.forEach(z => {
-    const pl = plMap[z.zone_id] || { items: [], mode: 'manual', photo_interval: 5 };
+    const gid = broadcastGroupId(z);
+    const pl = plMap[gid] || { items: [], mode: 'manual', photo_interval: 5 };
     const items = pl.items || [];
     const mode = pl.mode || 'manual';
     const photoInterval = pl.photo_interval ?? 5;
-    const domId = zoneDomId(z.zone_id);
-    const zoneEsc = escAttr(z.zone_id);
+    const domId = zoneDomId(gid);
+    const zoneEsc = escAttr(gid);
 
     const card = document.createElement('div');
     card.className = 'zone-card';
-    card.dataset.zoneId = z.zone_id;
+    card.dataset.zoneId = gid;
 
     const itemsHtml = items.length === 0
       ? '<p class="playlist-empty">No content yet â€” drop files above</p>'
@@ -419,7 +424,7 @@ function renderZones(zones, plMap) {
 
     card.innerHTML = `
       <div class="zone-header">
-        <span class="zone-name">${escAttr(z.name || z.zone_id)}</span>
+        <span class="zone-name">${escAttr(z.name || gid)}</span>
         <span class="zone-count">${items.length} item${items.length !== 1 ? 's' : ''}</span>
       </div>
       <div class="zone-controls-row">
@@ -462,23 +467,23 @@ function renderZones(zones, plMap) {
         card.classList.remove('drag-over');
         const payload = libDrag;
         libDrag = null;
-        addLibraryToPlaylist(z.zone_id, payload);
+        addLibraryToPlaylist(gid, payload);
         return;
       }
       if (e.dataTransfer.types.includes('Files')) {
         e.preventDefault();
         card.classList.remove('drag-over');
-        handleFiles({ target: { files: e.dataTransfer.files } }, z.zone_id);
+        handleFiles({ target: { files: e.dataTransfer.files } }, gid);
       }
     });
 
-    setupPlaylistDrag(card, z.zone_id);
-    card.querySelector('.btn-save-settings')?.addEventListener('click', () => savePlaylistSettings(z.zone_id));
-    card.querySelector('.btn-add-scoreboard')?.addEventListener('click', () => addScoreboardUrl(z.zone_id));
-    card.querySelector('.btn-add-poster-cycle')?.addEventListener('click', () => addPosterCycleUrl(z.zone_id));
-    card.querySelector('.zone-file-input')?.addEventListener('change', (e) => handleFiles(e, z.zone_id));
+    setupPlaylistDrag(card, gid);
+    card.querySelector('.btn-save-settings')?.addEventListener('click', () => savePlaylistSettings(gid));
+    card.querySelector('.btn-add-scoreboard')?.addEventListener('click', () => addScoreboardUrl(gid));
+    card.querySelector('.btn-add-poster-cycle')?.addEventListener('click', () => addPosterCycleUrl(gid));
+    card.querySelector('.zone-file-input')?.addEventListener('change', (e) => handleFiles(e, gid));
     card.querySelectorAll('.btn-remove').forEach(btn => {
-      btn.addEventListener('click', () => removeFromPlaylist(z.zone_id, parseInt(btn.dataset.idx, 10)));
+      btn.addEventListener('click', () => removeFromPlaylist(gid, parseInt(btn.dataset.idx, 10)));
     });
     container.insertBefore(card, addCard);
   });
@@ -512,7 +517,7 @@ async function reorderPlaylist(zoneId, fromIdx, toIdx) {
   const items = pl.items || [];
   const [moved] = items.splice(fromIdx, 1);
   items.splice(toIdx, 0, moved);
-  await savePlaylist(zoneId, { ...pl, zone_id: zoneId, items, mode: pl.mode || 'manual' });
+  await savePlaylist(zoneId, { ...pl, broadcast_group_id: zoneId, items, mode: pl.mode || 'manual' });
   toast('Playlist order saved', 'ok');
   await loadAll();
 }
@@ -531,7 +536,7 @@ async function savePlaylistSettings(zoneId) {
   const mode = card.querySelector('.mode-select').value;
   const photoInterval = parseInt(card.querySelector('.photo-interval').value, 10) || 0;
   const pl = await fetch(`${API}/api/playlists/${encodeURIComponent(zoneId)}`).then(r => r.json());
-  await savePlaylist(zoneId, { ...pl, zone_id: zoneId, mode, photo_interval: photoInterval });
+  await savePlaylist(zoneId, { ...pl, broadcast_group_id: zoneId, mode, photo_interval: photoInterval });
   toast('Zone settings saved', 'ok');
   await loadAll();
 }
@@ -542,7 +547,7 @@ async function addScoreboardUrl(zoneId) {
   const pl = await fetch(`${API}/api/playlists/${encodeURIComponent(zoneId)}`).then(r => r.json());
   const items = pl.items || [];
   items.push({ filename: data.label, media_type: 'webpage', url: data.url, duration: data.duration });
-  await savePlaylist(zoneId, { ...pl, zone_id: zoneId, items });
+  await savePlaylist(zoneId, { ...pl, broadcast_group_id: zoneId, items });
   toast('Scoreboard URL added', 'ok');
   await loadAll();
 }
@@ -569,7 +574,7 @@ async function addPosterCycleUrl(zoneId) {
   };
   if (existing >= 0) items[existing] = { ...items[existing], ...entry };
   else items.push(entry);
-  await savePlaylist(zoneId, { ...pl, zone_id: zoneId, items });
+  await savePlaylist(zoneId, { ...pl, broadcast_group_id: zoneId, items });
   toast('Poster cycle added — rotates all GBN posters every 30s', 'ok');
   await loadAll();
 }
@@ -582,7 +587,7 @@ async function addLibraryToPlaylist(zoneId, file) {
   const item = { filename: file.filename, media_type: mediaType };
   if (mediaType === 'photo') item.photo_duration = 10;
   items.push(item);
-  await savePlaylist(zoneId, { ...pl, zone_id: zoneId, items });
+  await savePlaylist(zoneId, { ...pl, broadcast_group_id: zoneId, items });
   toast(`Added ${file.filename} to ${zoneDisplayName(zoneId)}`, 'ok');
   await loadAll();
 }
@@ -605,7 +610,7 @@ async function handleFiles(event, zoneId) {
     const fd = new FormData();
     fd.append('file', file);
     fd.append('subdir', isPhoto ? 'photos' : 'videos');
-    fd.append('zone_id', zoneId);
+    fd.append('broadcast_group_id', zoneId);
     try {
       const res = await fetch(`${API}/api/content/upload`, { method: 'POST', body: fd });
       if (!res.ok) {
@@ -628,7 +633,7 @@ async function removeFromPlaylist(zoneId, idx) {
   const pl = await fetch(`${API}/api/playlists/${encodeURIComponent(zoneId)}`).then(r => r.json());
   const items = pl.items || [];
   items.splice(idx, 1);
-  await savePlaylist(zoneId, { ...pl, zone_id: zoneId, items });
+  await savePlaylist(zoneId, { ...pl, broadcast_group_id: zoneId, items });
   toast('Removed from playlist', 'ok');
   await loadAll();
 }
@@ -646,10 +651,10 @@ async function submitNewZone() {
   const id = document.getElementById('nz-id').value.trim();
   const name = document.getElementById('nz-name').value.trim();
   if (!id) return toast('Zone ID is required', 'err');
-  const res = await fetch(`${API}/api/zones`, {
+  const res = await fetch(`${API}/api/broadcast_groups/`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ zone_id: id, name: name || id }),
+    body: JSON.stringify({ broadcast_group_id: id, name: name || id, pi_ids: [] }),
   });
   if (res.ok) { toast(`Zone "${id}" created`, 'ok'); cancelNewZone(); await loadAll(); }
   else { const err = await res.json().catch(() => ({})); toast(`âœ— ${err.detail || 'Failed'}`, 'err'); }
@@ -695,7 +700,7 @@ async function deleteFile(subdir, filename, btn) {
     const usageRes = await apiPost('/api/content/usage-check', { subdir, filename });
     if (usageRes.ok) {
       const usage = await usageRes.json();
-      zoneIds = usage.zones || [];
+      zoneIds = usage.broadcast_groups || [];
     }
   } catch (e) {
     console.warn('[AlleycatTV] usage lookup failed:', e);
@@ -712,7 +717,7 @@ async function deleteFile(subdir, filename, btn) {
   if (res.ok) {
     btn?.closest('.lib-item')?.remove();
     const data = await res.json().catch(() => ({}));
-    const removed = data.removed_from_zones || [];
+    const removed = data.removed_from_broadcast_groups || [];
     if (removed.length) {
       toast(`Deleted and removed from ${removed.map(zoneDisplayName).join(', ')}`, 'ok');
     } else {

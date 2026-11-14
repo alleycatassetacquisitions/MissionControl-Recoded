@@ -8,6 +8,6 @@ MQTT_KIND = "dnn"
 
 WS_GET_DEVICES = f"{DOMAIN}/get_devices"
 
-# Role and NeoCorp choices stamped into page payloads (DNN only; Registration has no ROLES).
-ROLES = ("hunter", "bounty")
+# Role stamps for page payloads (derived display aliases — Central SoT is team_name).
+ROLES = ("hunter", "bounty", "unassigned")
 NEOCORPS = ("freelancer", "helix", "endline", "reboot")

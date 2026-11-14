@@ -19,10 +19,7 @@ _ENV_PATH = Path("/etc/alleycattv.env")
 
 # -- Per-device identity ------------------------------------------------------
 PI_ID = os.getenv("ALLEYCATV_PI_ID", "pi-01")
-BROADCAST_GROUP_ID = os.getenv(
-    "ALLEYCATV_BROADCAST_GROUP_ID",
-    os.getenv("ALLEYCATV_ZONE_ID", ""),  # legacy env alias
-)
+BROADCAST_GROUP_ID = os.getenv("ALLEYCATV_BROADCAST_GROUP_ID", "")
 
 # Runtime override from BGC membership assign (None = use env bootstrap).
 _runtime_broadcast_group_id: Optional[str] = None
@@ -37,9 +34,8 @@ def get_broadcast_group_id() -> str:
 
 def set_broadcast_group_id(group_id: str | None) -> str:
     """Apply BGC membership; empty string clears. Returns the new id."""
-    global _runtime_broadcast_group_id, ZONE_ID
+    global _runtime_broadcast_group_id
     _runtime_broadcast_group_id = (group_id or "").strip()
-    ZONE_ID = _runtime_broadcast_group_id
     return _runtime_broadcast_group_id
 
 # -- Network ------------------------------------------------------------------
@@ -87,10 +83,6 @@ BUMPER_DURATION = int(os.getenv("ALLEYCATV_BUMPER_DURATION", "0"))
 CACHE_ENABLED = os.getenv("ALLEYCATV_CACHE", "1") == "1"
 CACHE_DIR = os.getenv("ALLEYCATV_CACHE_DIR", "/opt/alleycattv/cache")
 CACHE_MAX_GB = float(os.getenv("ALLEYCATV_CACHE_MAX_GB", "10"))
-
-# Back-compat names used by older player code paths
-ZONE_ID = BROADCAST_GROUP_ID
-
 
 def apply_runtime_config(
     *,

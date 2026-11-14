@@ -55,9 +55,8 @@ def test_broadcast_group_crud(client):
     assert listed.status_code == 200
     assert any(g["broadcast_group_id"] == "lobby" for g in listed.json())
 
-    # Legacy alias
     legacy = client.get("/api/zones/")
-    assert legacy.status_code == 200
+    assert legacy.status_code == 404
 
 
 def test_zone_command_gone(client):

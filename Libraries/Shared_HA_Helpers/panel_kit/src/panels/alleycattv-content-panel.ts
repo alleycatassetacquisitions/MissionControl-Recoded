@@ -4,7 +4,7 @@
  * AlleycatTV Content Manager — HA sidebar panel for library, playlists, and cache.
  * JSON goes through /api/alleycattv/proxy only; large files use chunked /api/alleycattv/uploads.
  * Cache actions use alleycattv.cache_* HA services (server cache HTTP routes return 410).
- * Playlist bucket create uses /api/broadcast_groups (zones alias still accepted).
+ * Playlist buckets use /api/broadcast_groups only.
  * After playlist edits, calls alleycattv.reload_playlist.
  */
 class AlleycatTVContentPanel extends window.McPanel.Base {
@@ -95,13 +95,8 @@ class AlleycatTVContentPanel extends window.McPanel.Base {
     let playlists = {};
     let content = [];
     try {
-      let z;
-      try {
-        z = await this._api("GET", "/api/broadcast_groups/");
-      } catch (_) {
-        z = await this._api("GET", "/api/zones");
-      }
-      zones = Array.isArray(z) ? z : Array.isArray(z?.zones) ? z.zones : [];
+      const z = await this._api("GET", "/api/broadcast_groups/");
+      zones = Array.isArray(z) ? z : [];
     } catch (err) {
       errors.push(`broadcast_groups: ${err.message}`);
     }
@@ -545,11 +540,10 @@ class AlleycatTVContentPanel extends window.McPanel.Base {
     const name = this.shadowRoot.getElementById("nz-name").value.trim();
     if (!id) return this._toast("Broadcast Group ID is required", "err");
     try {
-      try {
-        await this._api("POST", "/api/broadcast_groups/", { broadcast_group_id: id, name: name || id });
-      } catch (_) {
-        await this._api("POST", "/api/zones", { zone_id: id, name: name || id });
-      }
+      await this._api("POST", "/api/broadcast_groups/", {
+        broadcast_group_id: id,
+        name: name || id,
+      });
       this.shadowRoot.getElementById("new-zone-form").hidden = true;
       await this._loadAll();
     } catch (err) {

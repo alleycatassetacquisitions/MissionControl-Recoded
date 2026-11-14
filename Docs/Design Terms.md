@@ -191,7 +191,7 @@ Common affiliation **category name** (and legacy GBN poster string field). Choic
 
 ### Role / Mode
 
-Legacy HA alias for hunter/bounty assignment. Central now uses **teams** (`team_id` / `team_name`); MCS may still derive `mode`/`role` from team names such as Hunter/Bounty for older consumers. GBN must not define Role. GBN stores `player_id` as a foreign key and overlays live Player data from Master Control Server. For poster chrome, GBN maps hunter → built-in Hunter template, bounty → built-in Bounty template, and any other roster role to a manually chosen (or newly saved) custom template.
+Legacy HA alias for hunter/bounty assignment. Central SoT is **teams** (`team_id` / `team_name`); MCS derives `mode`/`role` from team names containing Hunter/Bounty (else `unassigned`). Legacy Central `hunter` int map is `1→hunter`, `2→bounty` (same in GBN panel). GBN must not define Role; it overlays live Player data from MCS. Poster chrome: hunter → built-in Hunter template, bounty → Bounty, anything else → manually chosen custom template.
 
 ### ID
 

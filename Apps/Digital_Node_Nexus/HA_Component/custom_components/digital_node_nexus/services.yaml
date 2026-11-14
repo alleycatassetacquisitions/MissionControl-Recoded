@@ -56,13 +56,14 @@ page:
         text:
     role:
       name: Role filter
-      description: Stamp role (hunter or bounty) into the page payload.
+      description: Stamp role (hunter, bounty, or unassigned) into the page payload — HA alias of Central team_name; not written back to Central.
       required: false
       selector:
         select:
           options:
             - hunter
             - bounty
+            - unassigned
     neocorp:
       name: NeoCorp filter
       description: Stamp NeoCorp into the page payload.

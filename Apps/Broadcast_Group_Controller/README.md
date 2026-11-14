@@ -25,12 +25,13 @@ mc/{kind}/cmd/device/{device_id}/membership
 {"broadcast_group_id": "lobby"}   # or null / "" to clear
 ```
 
-Messages are published with **retain=True** so a rebooting device re-learns its
-group from the broker. BGC also watches `mc/{kind}/status/#` and **republishes**
-stored membership when a device transitions to online (covers clients that miss
-retain or still have a stale env bootstrap).
+Membership delivery policy (D8) — three named paths, no silent watchdog:
 
-- **tv:** Pi client updates `BROADCAST_GROUP_ID`, resubscribes `cmd/broadcast/{id}/#` + desired playback, reflects group in status JSON.
+1. **Retain** — assign/clear publishes with **retain=True** so a rebooting device re-learns its group from the broker.
+2. **Online republish** — BGC watches `mc/{kind}/status/#` and republishes stored membership on offline→online (covers missed retain / stale env bootstrap).
+3. **Force + ack** — operator `force_republish_membership` mid-event; **tv** waits for matching `broadcast_group_id` on `mc/tv/status/{id}/json`; **dnn** republishes while online but `ack_supported=false` until FDN status JSON exists.
+
+- **tv:** Pi client updates membership, resubscribes `cmd/broadcast/{id}/#` + desired playback, reflects group in status JSON.
 - **dnn:** FDN firmware should honor the same topic when present; HA stores membership for operator UI regardless.
 
 ## Services
@@ -40,8 +41,8 @@ retain or still have a stale env bootstrap).
 | `set_area` | Write HA Area on a fabric device |
 | `set_broadcast_group` | Assign membership + MQTT notify |
 | `clear_broadcast_group` | Clear membership + MQTT notify |
+| `force_republish_membership` | Re-publish Store membership and wait for tv status-JSON ack (dnn: soft) |
 | `remove_device` | Delete an **offline** fabric device (HA device + retained MQTT status/membership) so the id can be reused or retired |
-
 Online devices cannot be removed — stop the Pi/FDN (or wait for LWT) first.
 
 ## Panel
@@ -61,6 +62,7 @@ AlleycatTV Player panel does not own placement/membership.
 | `broadcast_group_controller/list_areas` | HA areas |
 | `broadcast_group_controller/list_broadcast_groups` | Content-server buckets + assigned ids (for the dropdown) |
 | `broadcast_group_controller/get_membership` | Raw BGC Store map |
+| `broadcast_group_controller/force_republish_membership` | Force retain republish + ack result (`acked` / `ack_supported`) |
 
 ## Deploy note
 
@@ -93,5 +95,5 @@ When you rename an identity string, update this section and `const.py` in the sa
 | DNN fabric kind | `dnn` | `KIND_DNN` in `const.py` |
 | Storage key | `broadcast_group_controller.membership` | `STORAGE_KEY` in `const.py` |
 | MQTT membership topic | `mc/{kind}/cmd/device/{id}/membership` | built via `mc_topic` in `Shared_HA_Helpers` — uses retained=True |
-| WS namespace | `broadcast_group_controller/list_devices`, `.../list_areas`, `.../list_broadcast_groups`, `.../get_membership` | `WS_*` in `const.py` |
+| WS namespace | `.../list_devices`, `.../list_areas`, `.../list_broadcast_groups`, `.../get_membership`, `.../force_republish_membership` | `WS_*` in `const.py` |
 | Panel url_path | `broadcast-groups` | bare literal in `HomeAssist/configuration.yaml` |

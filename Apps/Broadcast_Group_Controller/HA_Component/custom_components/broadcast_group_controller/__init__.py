@@ -8,6 +8,7 @@ Design contracts:
 """
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
 
@@ -23,15 +24,19 @@ from homeassistant.helpers.storage import Store
 from homeassistant.helpers.typing import ConfigType
 
 from .const import (
+    DEFAULT_FORCE_ACK_TIMEOUT,
     DOMAIN,
     KIND_DOMAIN,
+    KIND_TV,
     SERVICE_CLEAR_BROADCAST_GROUP,
+    SERVICE_FORCE_REPUBLISH_MEMBERSHIP,
     SERVICE_REMOVE_DEVICE,
     SERVICE_SET_AREA,
     SERVICE_SET_BROADCAST_GROUP,
     STORAGE_KEY,
     STORAGE_VERSION,
     SUPPORTED_KINDS,
+    WS_FORCE_REPUBLISH_MEMBERSHIP,
     WS_GET_MEMBERSHIP,
     WS_LIST_AREAS,
     WS_LIST_BROADCAST_GROUPS,
@@ -71,6 +76,14 @@ _SET_BG_SCHEMA = vol.Schema(
     }
 )
 _CLEAR_BG_SCHEMA = vol.Schema(_KIND_DEVICE)
+_FORCE_REPUBLISH_SCHEMA = vol.Schema(
+    {
+        **_KIND_DEVICE,
+        vol.Optional("timeout", default=DEFAULT_FORCE_ACK_TIMEOUT): vol.All(
+            vol.Coerce(float), vol.Range(min=1, max=60)
+        ),
+    }
+)
 _REMOVE_DEVICE_SCHEMA = vol.Schema(_KIND_DEVICE)
 
 
@@ -272,6 +285,117 @@ async def _republish_stored_membership(
     await _publish_membership(hass, kind, device_id, bg)
 
 
+async def _wait_tv_membership_ack(
+    hass: HomeAssistant,
+    device_id: str,
+    expected_bg: str,
+    timeout: float,
+) -> bool:
+    """Wait until Pi status JSON reports the expected broadcast_group_id."""
+    loop = asyncio.get_running_loop()
+    done: asyncio.Future[bool] = loop.create_future()
+
+    @callback
+    def _on_status_json(msg) -> None:
+        if done.done():
+            return
+        raw = getattr(msg, "payload", None) or b""
+        try:
+            if isinstance(raw, bytes):
+                text = raw.decode("utf-8") or "{}"
+            else:
+                text = str(raw) or "{}"
+            data = json.loads(text)
+        except Exception:  # noqa: BLE001
+            return
+        if not isinstance(data, dict):
+            return
+        got = (data.get("broadcast_group_id") or "").strip()
+        if got == expected_bg:
+            done.set_result(True)
+
+    if async_subscribe is None:
+        return False
+    unsub = await async_subscribe(
+        hass,
+        KIND_TV,
+        "status",
+        device_id,
+        "json",
+        callback=_on_status_json,
+        qos=0,
+    )
+    try:
+        await asyncio.wait_for(done, timeout=timeout)
+        return True
+    except asyncio.TimeoutError:
+        return False
+    finally:
+        try:
+            unsub()
+        except Exception:  # noqa: BLE001
+            pass
+
+
+async def async_force_republish_membership(
+    hass: HomeAssistant,
+    kind: str,
+    device_id: str,
+    *,
+    timeout: float = DEFAULT_FORCE_ACK_TIMEOUT,
+) -> dict:
+    """Force-republish Store membership; tv waits for status-JSON ack."""
+    device_id = (device_id or "").strip()
+    if not device_id:
+        raise HomeAssistantError("device_id is required")
+    if kind not in SUPPORTED_KINDS:
+        raise HomeAssistantError(f"Unsupported kind: {kind}")
+
+    mem = _get_entry(hass, kind, device_id)
+    bg = (mem.get("broadcast_group_id") or "").strip()
+    if not bg:
+        raise HomeAssistantError(
+            f"No stored Broadcast Group membership for {kind}/{device_id}"
+        )
+
+    presence = _presence_for(hass, kind, device_id)
+    if presence != PRESENCE_ONLINE:
+        raise HomeAssistantError(
+            f"Cannot force-republish {kind}/{device_id} while it is not online "
+            f"(presence={presence})"
+        )
+
+    await _publish_membership(hass, kind, device_id, bg)
+
+    if kind != KIND_TV:
+        return {
+            "kind": kind,
+            "device_id": device_id,
+            "broadcast_group_id": bg,
+            "republished": True,
+            "acked": None,
+            "ack_supported": False,
+            "detail": "dnn has no status-JSON membership ack yet",
+        }
+
+    acked = await _wait_tv_membership_ack(hass, device_id, bg, timeout)
+    result = {
+        "kind": kind,
+        "device_id": device_id,
+        "broadcast_group_id": bg,
+        "republished": True,
+        "acked": acked,
+        "ack_supported": True,
+        "detail": "ok" if acked else f"no status-JSON ack within {timeout}s",
+    }
+    if not acked:
+        raise HomeAssistantError(
+            f"Membership republished for {kind}/{device_id} but ack timed out "
+            f"({timeout}s) waiting for status JSON"
+        )
+    return result
+
+
 async def _start_presence_republish(hass: HomeAssistant) -> None:
     """Watch fabric status topics and republish membership on online transitions."""
     if async_subscribe is None or parse_presence_payload is None:
@@ -393,10 +517,23 @@ def _register_services(hass: HomeAssistant) -> None:
             hass, call.data["kind"], call.data["device_id"]
         )
 
+    async def handle_force_republish(call: ServiceCall) -> None:
+        await async_force_republish_membership(
+            hass,
+            call.data["kind"],
+            call.data["device_id"],
+            timeout=float(call.data.get("timeout") or DEFAULT_FORCE_ACK_TIMEOUT),
+        )
+
     for name, handler, schema in (
         (SERVICE_SET_AREA, handle_set_area, _SET_AREA_SCHEMA),
         (SERVICE_SET_BROADCAST_GROUP, handle_set_bg, _SET_BG_SCHEMA),
         (SERVICE_CLEAR_BROADCAST_GROUP, handle_clear_bg, _CLEAR_BG_SCHEMA),
+        (
+            SERVICE_FORCE_REPUBLISH_MEMBERSHIP,
+            handle_force_republish,
+            _FORCE_REPUBLISH_SCHEMA,
+        ),
         (SERVICE_REMOVE_DEVICE, handle_remove_device, _REMOVE_DEVICE_SCHEMA),
     ):
         if not hass.services.has_service(DOMAIN, name):
@@ -481,11 +618,7 @@ async def _list_broadcast_groups(hass: HomeAssistant) -> list[dict]:
                 for row in rows:
                     if not isinstance(row, dict):
                         continue
-                    gid = (
-                        row.get("broadcast_group_id")
-                        or row.get("zone_id")
-                        or ""
-                    ).strip()
+                    gid = (row.get("broadcast_group_id") or "").strip()
                     if not gid:
                         continue
                     by_id[gid] = {
@@ -528,6 +661,33 @@ async def ws_get_membership(hass: HomeAssistant, connection, msg) -> None:
     connection.send_result(msg["id"], {"membership": _membership_map(hass)})
 
 
+@websocket_api.websocket_command(
+    {
+        vol.Required("type"): WS_FORCE_REPUBLISH_MEMBERSHIP,
+        vol.Required("kind"): vol.In(list(SUPPORTED_KINDS)),
+        vol.Required("device_id"): cv.string,
+        vol.Optional("timeout", default=DEFAULT_FORCE_ACK_TIMEOUT): vol.All(
+            vol.Coerce(float), vol.Range(min=1, max=60)
+        ),
+    }
+)
+@websocket_api.async_response
+async def ws_force_republish_membership(
+    hass: HomeAssistant, connection, msg
+) -> None:
+    try:
+        result = await async_force_republish_membership(
+            hass,
+            msg["kind"],
+            msg["device_id"],
+            timeout=float(msg.get("timeout") or DEFAULT_FORCE_ACK_TIMEOUT),
+        )
+    except HomeAssistantError as err:
+        connection.send_error(msg["id"], "force_republish_failed", str(err))
+        return
+    connection.send_result(msg["id"], result)
+
+
 @callback
 def _register_ws(hass: HomeAssistant) -> None:
     store = hass.data.setdefault(DOMAIN, {})
@@ -537,4 +697,5 @@ def _register_ws(hass: HomeAssistant) -> None:
     websocket_api.async_register_command(hass, ws_list_areas)
     websocket_api.async_register_command(hass, ws_list_broadcast_groups)
     websocket_api.async_register_command(hass, ws_get_membership)
+    websocket_api.async_register_command(hass, ws_force_republish_membership)
     store["ws_registered"] = True

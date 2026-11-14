@@ -55,6 +55,6 @@ False:
 - A new app with its own Central fetch
 - A second MQTT publish path for the same command
 - GBN defining Role
-- Digital Node Nexus scraping AlleycatTV for Broadcast Group membership (`/api/zones` or any sibling HTTP)
+- Digital Node Nexus scraping AlleycatTV for Broadcast Group membership (`/api/broadcast_groups` or any sibling HTTP)
 - `rest.yaml` as a shadow Registration
 - Proxmox guests or media files living inside Home Assistant

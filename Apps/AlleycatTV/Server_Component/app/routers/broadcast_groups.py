@@ -1,7 +1,7 @@
 """Broadcast group CRUD for content / playlist organization.
 
 Does NOT publish MQTT playback commands — Home Assistant owns that path.
-Legacy /api/zones routes are aliases of /api/broadcast_groups.
+Legacy /api/zones/* returns 404 (list/CRUD) or 410 (playback command).
 """
 from __future__ import annotations
 
@@ -92,5 +92,26 @@ def _register(prefix: str) -> None:
         )
 
 
+def _command_gone_detail(group_id: str) -> str:
+    return (
+        "Playback commands are owned by Home Assistant "
+        "(alleycattv.play_broadcast_group / stop_broadcast_group / …). "
+        f"group_id={group_id}"
+    )
+
+
+@router.get("/zones/")
+@router.get("/zones")
+async def legacy_zones_list_gone():
+    raise HTTPException(
+        status_code=404,
+        detail="Use /api/broadcast_groups/ — /api/zones is removed.",
+    )
+
+
+@router.post("/zones/{group_id}/command")
+async def legacy_zone_command_gone(group_id: str):
+    raise HTTPException(status_code=410, detail=_command_gone_detail(group_id))
+
+
 _register("/broadcast_groups")
-_register("/zones")  # legacy alias for manage.html

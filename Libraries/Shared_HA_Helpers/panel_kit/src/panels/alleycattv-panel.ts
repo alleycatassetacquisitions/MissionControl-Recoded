@@ -182,30 +182,34 @@ class AlleycatTVPanel extends window.McPanel.Base {
   }
 
   _resolveDeviceZoneId(device) {
-    const raw = String(device.zone || device.broadcast_zone || "").trim();
+    const raw = String(
+      device.broadcast_group_id || device.zone || device.broadcast_zone || ""
+    ).trim();
     if (!raw) return "unassigned";
     const server = this._serverZones || {};
     if (server[raw]) return raw;
     const needle = this._normZone(raw);
     const match = Object.values(server).find(
-      (z) => this._normZone(z.zone_id) === needle || this._normZone(z.name) === needle
+      (z) =>
+        this._normZone(z.broadcast_group_id || z.zone_id) === needle ||
+        this._normZone(z.name) === needle
     );
-    return match ? match.zone_id : raw;
+    return match ? match.broadcast_group_id || match.zone_id : raw;
   }
 
   async _fetchServerZones() {
     try {
-      let raw;
-      try { raw = await this._apiGet("/api/broadcast_groups/"); }
-      catch (_) { raw = await this._apiGet("/api/zones"); }
-      const zones = Array.isArray(raw) ? raw : Array.isArray(raw?.zones) ? raw.zones : [];
+      const raw = await this._apiGet("/api/broadcast_groups/");
+      const zones = Array.isArray(raw) ? raw : [];
       this._serverZones = this._serverZones || {};
       zones.forEach((z) => {
-        if (z?.zone_id) this._serverZones[z.zone_id] = z;
+        const id = z?.broadcast_group_id || z?.zone_id;
+        if (!id) return;
+        this._serverZones[id] = { ...z, zone_id: id, broadcast_group_id: id };
       });
-      console.info("[AlleycatTV] Loaded", zones.length, "server zone(s)");
+      console.info("[AlleycatTV] Loaded", zones.length, "broadcast group(s)");
     } catch (err) {
-      console.warn("[AlleycatTV] Could not fetch server zones:", err);
+      console.warn("[AlleycatTV] Could not fetch broadcast groups:", err);
     }
   }
 
@@ -252,29 +256,28 @@ class AlleycatTVPanel extends window.McPanel.Base {
 
   async _createZone(zoneId, zoneName) {
     try {
-      try {
-        await this._apiPost("/api/broadcast_groups/", { broadcast_group_id: zoneId, name: zoneName || zoneId });
-      } catch (_) {
-        await this._apiPost("/api/zones", { zone_id: zoneId, name: zoneName || zoneId });
-      }
+      await this._apiPost("/api/broadcast_groups/", {
+        broadcast_group_id: zoneId,
+        name: zoneName || zoneId,
+      });
       if (!this._serverZones) this._serverZones = {};
-      this._serverZones[zoneId] = { zone_id: zoneId, name: zoneName || zoneId };
+      this._serverZones[zoneId] = {
+        zone_id: zoneId,
+        broadcast_group_id: zoneId,
+        name: zoneName || zoneId,
+      };
       this._buildZones();
       this._renderZoneList();
-      this._showFeedback(`Zone "${zoneId}" created`, "success");
+      this._showFeedback(`Broadcast group "${zoneId}" created`, "success");
     } catch (err) {
-      this._showFeedback(`Failed to create zone: ${err.message}`, "error");
+      this._showFeedback(`Failed to create broadcast group: ${err.message}`, "error");
     }
   }
 
   async _deleteZone(zoneId) {
-    if (!confirm(`Delete zone "${zoneId}"? This cannot be undone.`)) return;
+    if (!confirm(`Delete broadcast group "${zoneId}"? This cannot be undone.`)) return;
     try {
-      try {
-        await this._apiDelete(`/api/broadcast_groups/${encodeURIComponent(zoneId)}`);
-      } catch (_) {
-        await this._apiDelete(`/api/zones/${encodeURIComponent(zoneId)}`);
-      }
+      await this._apiDelete(`/api/broadcast_groups/${encodeURIComponent(zoneId)}`);
       delete this._serverZones?.[zoneId];
       delete this._zones[zoneId];
       if (this._selectedZone === zoneId) {
