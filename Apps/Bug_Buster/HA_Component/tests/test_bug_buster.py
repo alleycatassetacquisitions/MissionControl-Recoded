@@ -79,7 +79,7 @@ async def test_health_probe_uses_async_request(hass: HomeAssistant):
 
     with (
         patch.object(health_mod, "get_url", side_effect=lambda h, k: f"http://{k}.local"),
-        patch.object(health_mod, "get_extra", return_value="tok"),
+        patch.object(health_mod, "get_mcs_token", return_value="tok"),
         patch.object(health_mod, "async_request", new_callable=AsyncMock, return_value=mock_resp) as req,
     ):
         rows = await health_mod.probe_companions(hass)
@@ -95,7 +95,7 @@ async def test_health_not_configured(hass: HomeAssistant):
 
     with (
         patch.object(health_mod, "get_url", return_value=""),
-        patch.object(health_mod, "get_extra", return_value=""),
+        patch.object(health_mod, "get_mcs_token", return_value=""),
         patch.object(health_mod, "async_request", new_callable=AsyncMock) as req,
     ):
         rows = await health_mod.probe_companions(hass)
@@ -183,7 +183,7 @@ async def test_fetch_device_logs_uses_async_request(hass: HomeAssistant):
     mock_resp.release = MagicMock()
 
     with (
-        patch.object(logs_mod, "get_extra", return_value="tok"),
+        patch.object(logs_mod, "get_mcs_token", return_value="tok"),
         patch.object(
             logs_mod, "async_request", new_callable=AsyncMock, return_value=mock_resp
         ) as req,
@@ -204,7 +204,7 @@ async def test_fetch_device_logs_missing_token(hass: HomeAssistant):
     from custom_components.bug_buster import device_logs as logs_mod
 
     with (
-        patch.object(logs_mod, "get_extra", return_value=""),
+        patch.object(logs_mod, "get_mcs_token", return_value=""),
         patch.object(logs_mod, "async_request", new_callable=AsyncMock) as req,
     ):
         result = await logs_mod.fetch_device_logs(hass)
