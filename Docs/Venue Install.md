@@ -165,6 +165,23 @@ Same as Offline step 1 (Git Bash / WSL). Output:
 
 CI publishes the same artifacts on every push to `main` (workflow `venue-release.yml`). Packaging fetches `custom-sidebar` + `card-mod` into `HomeAssist/www/mc-shell/`.
 
+## Venue LAN IP moved
+
+When a companion LXC or host IP changes, update **Core Configurator** only (then Save / `registration.sync_now` so MCS fans out). Panels use HA proxies; media stamps follow the proxied Host.
+
+| CC key | What breaks if stale |
+|---|---|
+| `alleycattv` | Content proxy, stamped media URLs, Pi retained `server_url` (`mc/tv/cmd/all/config`) |
+| `gbn` | GBN proxy, poster/media stamps, MCS→GBN `public_base` fan-out |
+| `master_control_server` (+ token) | Registration / Game Master / Bug Buster / peer hub |
+| `net_time` (+ token) | Net Time card + MCS→Net Time fan-out |
+| `proxmox` | Host clock URL derivation, Bug Buster console |
+| `venue_updater` | Venue update agent |
+| `rtsp` | Live interrupt overlay (not content-server media base) |
+| `central_primary` / `central_secondary` | Central only (not venue CT DHCP) |
+
+**Residual:** playlist webpage rows that baked an absolute `{old-gbn}/poster-cycle` URL need **+ Poster cycle** re-clicked (or edit the item) after a GBN IP change.
+
 ## Per-app scripts
 
 Individual installers remain available under [`ProxmoxInstallFiles/`](../ProxmoxInstallFiles/) for partial installs. Prefer the venue orchestrator for a full site.

@@ -292,7 +292,7 @@ async function loadAll() {
   const [zonesRes, playlistsRes, contentRes] = await Promise.all([
     apiFetch('/api/zones').then(r => r.json()).catch(() => []),
     apiFetch('/api/playlists').then(r => r.json()).catch(() => ({})),
-    apiFetch(`/api/content/?base_url=${encodeURIComponent(location.origin)}`).then(r => r.json()).catch(() => []),
+    apiFetch('/api/content/').then(r => r.json()).catch(() => []),
   ]);
   zones = zonesRes;
   playlists = playlistsRes;

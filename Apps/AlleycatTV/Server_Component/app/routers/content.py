@@ -18,6 +18,7 @@ from app.config import (
     ALLOWED_PHOTO_EXT,
     ALLOWED_BUMPER_EXT,
     MAX_UPLOAD_MB,
+    public_base_for,
 )
 from app.models import AnnouncementUrlEntry, ContentFile, MediaType
 from app.playlist_store import find_zones_with_file, load_playlists, remove_file_from_all_playlists, save_playlists
@@ -110,8 +111,16 @@ async def content_manifest():
 
 
 @router.get("/", response_model=List[ContentFile])
-async def list_content(base_url: str = "http://localhost:8000"):
-    """Return all media files across videos, photos, announcements, and URL entries."""
+async def list_content(
+    request: Request,
+    base_url: Optional[str] = None,
+):
+    """Return all media files across videos, photos, announcements, and URL entries.
+
+    Media URLs use the request Host (HA proxy / Core Configurator ``alleycattv``).
+    Optional ``base_url`` query remains for back-compat with old panels.
+    """
+    stamp = (base_url or "").strip().rstrip("/") or public_base_for(request)
     files: List[ContentFile] = []
     for subdir in ("videos", "photos", "announcements"):
         folder = Path(MEDIA_BASE) / subdir
@@ -139,7 +148,7 @@ async def list_content(base_url: str = "http://localhost:8000"):
                 filename=f.name,
                 media_type=mt,
                 size_bytes=f.stat().st_size,
-                url=f"{base_url}/media/{subdir}/{quote(f.name)}",
+                url=f"{stamp}/media/{subdir}/{quote(f.name)}",
                 subdir=subdir,
                 duration=duration,
             ))
@@ -162,8 +171,12 @@ async def list_content(base_url: str = "http://localhost:8000"):
 
 
 @router.get("/bumpers")
-async def list_bumpers(base_url: str = "http://localhost:8000"):
+async def list_bumpers(
+    request: Request,
+    base_url: Optional[str] = None,
+):
     """Return all files in the bumpers folder with their server URLs."""
+    stamp = (base_url or "").strip().rstrip("/") or public_base_for(request)
     folder = Path(MEDIA_BASE) / "bumpers"
     folder.mkdir(parents=True, exist_ok=True)
     results = []
@@ -176,7 +189,7 @@ async def list_bumpers(base_url: str = "http://localhost:8000"):
         results.append({
             "filename": f.name,
             "size_bytes": stat.st_size,
-            "url": f"{base_url}/media/bumpers/{quote(f.name)}",
+            "url": f"{stamp}/media/bumpers/{quote(f.name)}",
         })
     return results
 

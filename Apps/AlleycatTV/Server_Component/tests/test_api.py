@@ -82,3 +82,17 @@ def test_cache_report_http(client):
 def test_cache_mqtt_endpoints_gone(client):
     assert client.post("/api/devices/pi-1/cache/purge").status_code == 410
     assert client.post("/api/devices/pi-1/cache/sync").status_code == 410
+
+
+def test_content_urls_stamp_from_request_host(client, tmp_path, monkeypatch):
+    media = Path(os.environ["ALLEYCATV_MEDIA"])
+    videos = media / "videos"
+    videos.mkdir(parents=True, exist_ok=True)
+    (videos / "clip.mp4").write_bytes(b"x")
+
+    resp = client.get("/api/content/")
+    assert resp.status_code == 200
+    rows = resp.json()
+    assert rows
+    assert rows[0]["url"].startswith("http://testserver/media/videos/")
+    assert "base_url" not in rows[0]["url"]

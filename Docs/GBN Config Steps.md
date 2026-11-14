@@ -179,7 +179,7 @@ Display machine: open `http://<gbn-ip>:8100/active-players` (iframe paths are sa
 - [ ] `GET /api/players/{id}` on GBN returns **404** (removed)
 - [ ] Registration Poster column shows thumb after create (active Event only)
 - [ ] Core Configurator is the only place the GBN URL is stored
-- [ ] After a CT IP change, updating Core Configurator `gbn` is enough for new poster live links
+- [ ] After a CT IP change, updating Core Configurator `gbn` is enough for new poster live links (see Venue Install → Venue LAN IP moved)
 - [ ] Desktop browser: `/poster-cycle` rotates active-event posters with no Event/player/counter overlay
-- [ ] After `systemctl restart gbn`, set active in Registration once → Pi `/poster-cycle` recovers without a desktop visit
-- [ ] AlleycatTV Content **+ Poster cycle** adds the GBN cycle URL to a broadcast group; Pi shows the same posters
+- [ ] After `systemctl restart gbn`, set active in **Game Master** once → Pi `/poster-cycle` recovers without a desktop visit
+- [ ] AlleycatTV Content **+ Poster cycle** adds the GBN cycle URL to a broadcast group; Pi shows the same posters (re-click after a GBN IP change if the playlist baked the old absolute URL)

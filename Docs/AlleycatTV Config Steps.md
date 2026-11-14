@@ -96,7 +96,9 @@ curl http://<IP>/health
 
 Seed via [`HomeAssist/secrets.yaml.example`](../HomeAssist/secrets.yaml.example) on first boot, or edit the Core Configurator sidebar after the entry exists.
 
-AlleycatTV and AlleycatTV Content panels **read** this URL (and Live RTSP) from Core Configurator only — they have no server-IP / RTSP settings UI.
+Content / bumper lists stamp absolute media URLs from the **request Host** (HA proxy uses this CC `alleycattv` URL). Panels no longer pass `base_url=` or Directory-fetch a second LAN base for proxied APIs. Live RTSP still comes from the CC `rtsp` key via the HA overlay.
+
+If the content LXC IP moves: update CC `alleycattv` → Save (see [`Venue Install.md`](Venue%20Install.md#venue-lan-ip-moved)). Pis pick up `server_url` from retained MQTT after that Save.
 
 On Core Configurator Save for `alleycattv` or `master_control_server` (and on AlleycatTV setup), the HA integration publishes a **retained** MQTT config to `mc/tv/cmd/all/config` (`server_url`, `mqtt_host`, `mqtt_port`) so Pis pick up year-1 network settings without a separate MCS MQTT client.
 
