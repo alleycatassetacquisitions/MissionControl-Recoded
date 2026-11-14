@@ -6,7 +6,7 @@ syntax = "proto3";
 // using these field numbers without renaming topics.
 //
 // Topics (see Docs/MQTT Communication Principles.md):
-//   mc/dnn/cmd/{DEVICE_ID}/page|led|haptic
+//   mc/dnn/cmd/device/{DEVICE_ID}/page|led|haptic
 //   mc/dnn/cmd/all/page|led|haptic
 //   mc/dnn/cmd/broadcast/{id}/page|led|haptic
 //   mc/dnn/status/{DEVICE_ID}

@@ -20,7 +20,6 @@ from homeassistant.helpers.typing import ConfigType
 
 from .const import DOMAIN, MQTT_KIND, WS_GET_DEVICES
 from .payloads import encode_haptic_cmd, encode_led_cmd, encode_page_cmd
-from .routing import resolve_cmd_segments
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -31,7 +30,11 @@ from custom_components.shared_libraries.fabric import (
     async_stop_presence_tracking,
     get_presence_tracker,
 )
-from custom_components.shared_libraries.mqtt import async_ensure_mqtt, async_publish
+from custom_components.shared_libraries.mqtt import (
+    async_ensure_mqtt,
+    async_publish,
+    resolve_cmd_segments,
+)
 
 
 _PAGE_SCHEMA = vol.Schema(

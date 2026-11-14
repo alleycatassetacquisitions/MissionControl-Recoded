@@ -53,6 +53,7 @@ from custom_components.shared_libraries.mqtt import (
     async_ensure_mqtt,
     async_publish,
     async_subscribe,
+    resolve_cmd_segments,
 )
 
 
@@ -136,12 +137,11 @@ async def _publish_membership(
     payload = json.dumps(
         {"broadcast_group_id": broadcast_group_id or None}
     ).encode("utf-8")
+    segments = resolve_cmd_segments(device_id=device_id)
     await async_publish(
         hass,
         kind,
-        "cmd",
-        "device",
-        device_id,
+        *segments,
         "membership",
         payload=payload,
         qos=1,
@@ -153,12 +153,11 @@ async def _clear_retained_membership(
     hass: HomeAssistant, kind: str, device_id: str
 ) -> None:
     """Wipe the retained membership topic entirely (empty payload)."""
+    segments = resolve_cmd_segments(device_id=device_id)
     await async_publish(
         hass,
         kind,
-        "cmd",
-        "device",
-        device_id,
+        *segments,
         "membership",
         payload=b"",
         qos=1,

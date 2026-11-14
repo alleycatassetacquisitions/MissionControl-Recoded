@@ -24,6 +24,7 @@ from custom_components.shared_libraries.mqtt import (
     async_subscribe,
     async_subscribe_presence,
     mc_topic,
+    resolve_cmd_segments,
 )
 
 
@@ -40,7 +41,7 @@ class TestMcTopic:
         assert mc_topic("dnn", "cmd") == "mc/dnn/cmd"
 
     def test_device_command_topic(self):
-        assert mc_topic("dnn", "cmd", "abc123") == "mc/dnn/cmd/abc123"
+        assert mc_topic("dnn", "cmd", "device", "abc123") == "mc/dnn/cmd/device/abc123"
 
     def test_all_command_topic(self):
         assert mc_topic("dnn", "cmd", "all") == "mc/dnn/cmd/all"
@@ -74,6 +75,26 @@ class TestMcTopic:
 
     def test_empty_segments_yields_kind_only(self):
         assert mc_topic("tv") == "mc/tv"
+
+
+class TestResolveCmdSegments:
+    def test_device_id_uses_device_scope(self):
+        assert resolve_cmd_segments(device_id="fdn-1") == ["cmd", "device", "fdn-1"]
+
+    def test_pi_id_alias(self):
+        assert resolve_cmd_segments(pi_id="pi-1") == ["cmd", "device", "pi-1"]
+
+    def test_broadcast_and_all(self):
+        assert resolve_cmd_segments(broadcast_group_id="lobby") == [
+            "cmd",
+            "broadcast",
+            "lobby",
+        ]
+        assert resolve_cmd_segments(target="all") == ["cmd", "all"]
+
+    def test_requires_target(self):
+        with pytest.raises(ValueError):
+            resolve_cmd_segments()
 
 
 # ---------------------------------------------------------------------------

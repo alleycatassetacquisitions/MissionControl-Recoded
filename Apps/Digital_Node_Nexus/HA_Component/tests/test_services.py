@@ -63,7 +63,7 @@ async def test_page_device_publishes_cmd_topic(hass: HomeAssistant, loaded_entry
     args, kwargs = mock_pub.await_args
     assert args[0] is hass
     assert args[1] == "dnn"
-    assert args[2:] == ("cmd", "fdn-1", "page")
+    assert args[2:] == ("cmd", "device", "fdn-1", "page")
     body = json.loads(kwargs["payload"].decode("utf-8"))
     assert body["text"] == "Hello FDN"
     assert body["duration"] == 8

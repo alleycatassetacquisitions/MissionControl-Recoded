@@ -30,7 +30,7 @@ page:
         boolean:
     device_id:
       name: Device ID
-      description: Target a single FDN (mc/dnn/cmd/{device_id}/page).
+      description: Target a single FDN (mc/dnn/cmd/device/{device_id}/page).
       required: false
       selector:
         text:

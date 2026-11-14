@@ -10,7 +10,7 @@ from custom_components.digital_node_nexus.payloads import (
     encode_led_cmd,
     encode_page_cmd,
 )
-from custom_components.digital_node_nexus.routing import resolve_cmd_segments
+from custom_components.shared_libraries.mqtt import resolve_cmd_segments
 
 
 def test_encode_page_cmd_includes_stamps():
@@ -43,7 +43,7 @@ def test_encode_led_and_haptic_shapes():
 
 
 def test_resolve_cmd_segments_priority():
-    assert resolve_cmd_segments(device_id="fdn-1") == ["cmd", "fdn-1"]
+    assert resolve_cmd_segments(device_id="fdn-1") == ["cmd", "device", "fdn-1"]
     assert resolve_cmd_segments(broadcast_group_id="bg-9") == [
         "cmd",
         "broadcast",

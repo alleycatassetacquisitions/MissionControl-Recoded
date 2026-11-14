@@ -24,10 +24,12 @@ FDN hardware uses the Digital Node Nexus (`dnn`) topic namespace.
 
 | Who it is for | Topic | How it is assigned |
 | --- | --- | --- |
-| This device | `mc/dnn/cmd/{DEVICE_ID}/#` | Built from the node's own ID |
+| This device | `mc/dnn/cmd/device/{DEVICE_ID}/#` | Built from the node's own ID (same `device` scope as TV) |
 | Every FDN | `mc/dnn/cmd/all/#` | The same constant on every FDN, not a per-device list |
 | Active alert | `mc/dnn/desired/alert` | One shared name for all nodes |
 | This Broadcast Group | `mc/dnn/cmd/broadcast/{id}/#` | Not hardcoded. Broadcast Group Controller assigns the group after the node appears |
+
+**Firmware:** pdn/FDN must subscribe to `mc/dnn/cmd/device/{id}/#` (not the old flat `mc/dnn/cmd/{id}/#`). HA publishers already use the unified grammar.
 
 
 When a node is moved to a new Broadcast Group, firmware subscribes to the new `cmd/broadcast/{id}/#` topic and unsubscribes from the old one.

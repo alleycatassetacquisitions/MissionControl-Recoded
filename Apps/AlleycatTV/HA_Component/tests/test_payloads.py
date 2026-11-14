@@ -10,7 +10,7 @@ from custom_components.alleycattv.payloads import (
     encode_interrupt_cmd,
     encode_volume_cmd,
 )
-from custom_components.alleycattv.routing import resolve_cmd_segments
+from custom_components.shared_libraries.mqtt import resolve_cmd_segments
 
 
 def test_resolve_device_uses_device_segment():

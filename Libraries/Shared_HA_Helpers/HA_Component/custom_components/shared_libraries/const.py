@@ -8,7 +8,5 @@ never hard-code either string.
 DOMAIN = "shared_libraries"
 
 # Root prefix for all Mission Control MQTT topics.
-# Topic pattern: MC_TOPIC_ROOT/{kind}/…
-# e.g.  mc/dnn/cmd/{device_id}
-#       mc/tv/cmd/all
+# e.g. mc/dnn/cmd/device/{id}/page · mc/tv/cmd/all/stop
 MC_TOPIC_ROOT = "mc"
