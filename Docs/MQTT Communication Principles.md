@@ -10,7 +10,7 @@ Topics are **not** hardcoded per device at flash time. Each device builds its ow
 - Home Assistant is the **only** MQTT command publisher. The AlleycatTV server must not publish the same commands.
 - Apps use Home Assistant’s `mqtt` integration (`async_subscribe` / `async_publish`). Do not open a second broker client inside Digital Node Nexus, AlleycatTV, or Bug Buster.
 - Status and LWT create a Home Assistant device and a presence entity (`online` / `offline` / `unknown`). Status topics are retained; retiring a device requires clearing that retain (Broadcast Group Controller **Remove from fabric** / `remove_device` on offline devices only).
-- Commands target this device, `all`, or a Broadcast Group. Membership comes from Broadcast Group Controller, not from firmware flash and not from a scrape of another app. Membership assign topics are also retained; remove clears them.
+- Commands target this device, `all`, or a Broadcast Group. Membership comes from Broadcast Group Controller, not from firmware flash and not from a scrape of another app. Membership assign topics are also retained; remove clears them. Delivery policy (D8): (1) retain on assign, (2) republish on offline→online, (3) operator `force_republish_membership` with tv status-JSON ack — no silent periodic watchdog.
 - Digital Node Nexus owns FDN payloads (LED, haptic, page, protobuf). AlleycatTV owns playback payloads. The MQTT fabric owns presence and routing.
 
 Bug Buster’s MQTT spy is debug-only. It does not become a second command path.
@@ -57,7 +57,7 @@ AlleycatTV Pis use the `tv` topic namespace.
 | Broadcast Group playback | `mc/tv/desired/broadcast/{id}/playback` | Shared desired state for that Broadcast Group |
 
 
-The playback topic exists so a Pi that was powered off can still start in the right state. When it comes online, it should already be playing or stopped at the Broadcast Group's current volume.
+**Desired vs cmd (D4):** Retained `mc/tv/desired/broadcast/{id}/playback` is the authority for play/stop/volume after reconnect or membership change. `cmd/.../play|stop|volume` remain optional nudges for already-online Pis (HA still publishes both). Interrupt, reload, and cache are cmd-only nudges and do not write desired. On connect / membership resubscribe, the Pi prefers retained desired for a short window and drops duplicate play/stop/volume cmds. Volume updates merge into the retained desired body and must not force `state=playing` on a stopped group.
 
 Command action segments under those wildcards (Phase 6 AlleycatTV):
 
@@ -70,4 +70,4 @@ Command action segments under those wildcards (Phase 6 AlleycatTV):
 | Volume | `…/volume` | JSON `{"volume": 0-100}` |
 | Cache | `…/cache_delete` etc. | JSON |
 
-Presence: plain `online` / `offline` (or empty LWT) on `mc/tv/status/{PI_ID}` (**retain=True**). Optional playback telemetry on `mc/tv/status/{PI_ID}/json`. To reuse or drop a Pi ID that no longer publishes, remove it from the fabric while offline (clears the retained status + membership topics).
+Presence: plain `online` / `offline` (or empty LWT) on `mc/tv/status/{PI_ID}` (**retain=True**). Optional playback telemetry on `mc/tv/status/{PI_ID}/json` (includes `broadcast_group_id` for membership ack). To reuse or drop a Pi ID that no longer publishes, remove it from the fabric while offline (clears the retained status + membership topics).

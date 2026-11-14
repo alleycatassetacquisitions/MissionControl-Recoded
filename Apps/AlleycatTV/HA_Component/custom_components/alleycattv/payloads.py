@@ -30,11 +30,17 @@ def encode_volume_cmd(*, volume: int) -> bytes:
 
 def encode_desired_playback(
     *,
-    state: str,
+    state: str | None = None,
     volume: int | None = None,
 ) -> bytes:
-    """Retained desired playback for mc/tv/desired/broadcast/{id}/playback."""
-    body: dict = {"state": state}
+    """Retained desired playback for mc/tv/desired/broadcast/{id}/playback.
+
+    Play/stop pass ``state``. Volume-only updates omit ``state`` so a stopped
+    group is not rewritten as playing.
+    """
+    body: dict = {}
+    if state is not None:
+        body["state"] = state
     if volume is not None:
         body["volume"] = int(volume)
     return json.dumps(body, separators=(",", ":")).encode("utf-8")

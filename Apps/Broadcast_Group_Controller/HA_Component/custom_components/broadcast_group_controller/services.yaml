@@ -71,6 +71,37 @@ clear_broadcast_group:
       selector:
         text:
 
+force_republish_membership:
+  name: Force republish membership
+  description: >
+    Re-publish stored Broadcast Group membership for an online device and wait
+    for ack (tv: status JSON broadcast_group_id; dnn: soft online-only).
+  fields:
+    kind:
+      name: Kind
+      required: true
+      example: "tv"
+      selector:
+        select:
+          options:
+            - "tv"
+            - "dnn"
+    device_id:
+      name: Device ID
+      required: true
+      selector:
+        text:
+    timeout:
+      name: Ack timeout (seconds)
+      required: false
+      example: 10
+      selector:
+        number:
+          min: 1
+          max: 60
+          step: 1
+          mode: box
+
 remove_device:
   name: Remove Device
   description: >

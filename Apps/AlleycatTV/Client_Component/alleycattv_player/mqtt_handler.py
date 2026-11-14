@@ -22,6 +22,7 @@ import json
 import logging
 import queue
 import threading
+import time
 from typing import Any, Optional
 
 import paho.mqtt.client as mqtt
@@ -48,6 +49,14 @@ _LOGGER = logging.getLogger(__name__)
 
 _CACHE_ACTIONS = {"cache_delete", "cache_purge", "cache_sync"}
 _PLAYBACK_ACTIONS = {"play", "stop", "interrupt", "reload", "volume"}
+# Cmd play/stop/volume are nudges; drop them while waiting for retained desired.
+_NUDGE_PLAYBACK_ACTIONS = frozenset({"play", "stop", "volume"})
+DESIRED_FIRST_SECONDS = 2.0
+
+
+def drop_playback_nudge(action: str, *, until: float, now: float) -> bool:
+    """True when a cmd play/stop/volume should yield to retained desired."""
+    return action in _NUDGE_PLAYBACK_ACTIONS and now < until
 
 
 class MQTTHandler:
@@ -64,7 +73,16 @@ class MQTTHandler:
         self._broadcast_group_id: str = get_broadcast_group_id()
         self._topic_cmd_broadcast: Optional[str] = None
         self._topic_desired: Optional[str] = None
+        self._desired_first_until: float = 0.0
         self._apply_group_topics(self._broadcast_group_id)
+
+    def _enter_desired_first_window(self) -> None:
+        """Prefer retained desired over cmd nudges after connect/membership."""
+        if not self._topic_desired:
+            self._desired_first_until = 0.0
+            return
+        self._desired_first_until = time.monotonic() + DESIRED_FIRST_SECONDS
+
 
     @property
     def broadcast_group_id(self) -> str:
@@ -178,14 +196,21 @@ class MQTTHandler:
                     _LOGGER.debug("unsubscribe desired failed: %s", err)
         self._apply_group_topics(new_id)
         if self._connected.is_set():
-            if self._topic_cmd_broadcast:
-                self._client.subscribe(self._topic_cmd_broadcast, qos=1)
-                _LOGGER.info("Subscribed %s", self._topic_cmd_broadcast)
+            # Desired first so retained authority arrives before broadcast nudges.
             if self._topic_desired:
                 self._client.subscribe(self._topic_desired, qos=1)
                 _LOGGER.info("Subscribed %s", self._topic_desired)
+            if self._topic_cmd_broadcast:
+                self._client.subscribe(self._topic_cmd_broadcast, qos=1)
+                _LOGGER.info("Subscribed %s", self._topic_cmd_broadcast)
+            self._enter_desired_first_window()
         # Ask playlist manager to reload for the new group key.
         self.cmd_queue.put({"action": "reload", "payload": {}})
+        # Stamp membership into status JSON so BGC force-ack can confirm promptly.
+        try:
+            self.publish_status_json({})
+        except Exception as err:  # noqa: BLE001
+            _LOGGER.debug("membership status publish failed: %s", err)
         _LOGGER.info("Broadcast Group membership set to %r", new_id or None)
 
     def _on_connect(self, client, userdata, flags, rc) -> None:
@@ -193,13 +218,14 @@ class MQTTHandler:
             _LOGGER.error("MQTT connect failed rc=%s", rc)
             return
         topics = [TOPIC_CMD_DEVICE, TOPIC_CMD_ALL]
-        if self._topic_cmd_broadcast:
-            topics.append(self._topic_cmd_broadcast)
         if self._topic_desired:
             topics.append(self._topic_desired)
+        if self._topic_cmd_broadcast:
+            topics.append(self._topic_cmd_broadcast)
         for t in topics:
             client.subscribe(t, qos=1)
             _LOGGER.info("Subscribed %s", t)
+        self._enter_desired_first_window()
         self.publish_presence(True)
         self._connected.set()
 
@@ -211,12 +237,13 @@ class MQTTHandler:
         topic = msg.topic
         raw = msg.payload or b""
 
-        # Desired playback retained state
+        # Desired playback retained state (authority)
         if self._topic_desired and topic == self._topic_desired:
             try:
                 data = json.loads(raw.decode("utf-8") or "{}")
             except Exception:
                 return
+            self._desired_first_until = 0.0
             state = (data.get("state") or "").lower()
             if state == "playing":
                 self.cmd_queue.put({"action": "play", "payload": {}})
@@ -267,6 +294,13 @@ class MQTTHandler:
             return
 
         if action in _PLAYBACK_ACTIONS:
+            if drop_playback_nudge(
+                action,
+                until=self._desired_first_until,
+                now=time.monotonic(),
+            ):
+                _LOGGER.debug("Dropping cmd %s during desired-first window", action)
+                return
             self.cmd_queue.put({"action": action, "payload": payload})
             return
 

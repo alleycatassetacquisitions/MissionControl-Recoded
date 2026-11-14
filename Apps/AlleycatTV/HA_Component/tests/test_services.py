@@ -135,3 +135,36 @@ async def test_interrupt_pi_uses_device_segment(hass: HomeAssistant, loaded_entr
     )
     body = json.loads(mock_pub.await_args.kwargs["payload"].decode("utf-8"))
     assert body["file_url"].endswith("a.mp4")
+
+
+@pytest.mark.asyncio
+async def test_volume_merges_desired_without_forcing_playing(
+    hass: HomeAssistant, loaded_entry
+):
+    with patch(
+        "custom_components.alleycattv.async_publish",
+        new=AsyncMock(),
+    ) as mock_pub:
+        await hass.services.async_call(
+            DOMAIN,
+            "stop_broadcast_group",
+            {"broadcast_group_id": "lobby"},
+            blocking=True,
+        )
+        await hass.async_block_till_done()
+        mock_pub.reset_mock()
+        await hass.services.async_call(
+            DOMAIN,
+            "set_volume_broadcast_group",
+            {"broadcast_group_id": "lobby", "volume": 40},
+            blocking=True,
+        )
+        await hass.async_block_till_done()
+
+    assert mock_pub.await_count == 2
+    cmd_call = mock_pub.await_args_list[0]
+    desired_call = mock_pub.await_args_list[1]
+    assert cmd_call.args[2:] == ("cmd", "broadcast", "lobby", "volume")
+    body = json.loads(desired_call.kwargs["payload"].decode("utf-8"))
+    assert body["volume"] == 40
+    assert body["state"] == "stopped"

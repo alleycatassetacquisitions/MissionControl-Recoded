@@ -10,6 +10,7 @@ if str(_ha_component_dir) not in sys.path:
 
 _repo_root = _ha_component_dir.parent.parent.parent
 for extra in [
+    _repo_root / "Apps" / "Core_Configurator" / "HA_Component",
     _repo_root / "Libraries" / "Shared_HA_Helpers" / "HA_Component",
 ]:
     if str(extra) not in sys.path:

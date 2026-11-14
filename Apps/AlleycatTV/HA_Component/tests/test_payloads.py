@@ -38,3 +38,6 @@ def test_payloads_json():
     assert json.loads(encode_volume_cmd(volume=42)) == {"volume": 42}
     body = json.loads(encode_desired_playback(state="playing", volume=80))
     assert body == {"state": "playing", "volume": 80}
+    volume_only = json.loads(encode_desired_playback(volume=55))
+    assert volume_only == {"volume": 55}
+    assert "state" not in volume_only

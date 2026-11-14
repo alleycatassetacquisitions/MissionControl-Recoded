@@ -14,6 +14,7 @@ from custom_components.broadcast_group_controller.const import (
     DOMAIN,
     KIND_DOMAIN,
     KIND_TV,
+    SERVICE_FORCE_REPUBLISH_MEMBERSHIP,
     SERVICE_REMOVE_DEVICE,
     SERVICE_SET_BROADCAST_GROUP,
     SUPPORTED_KINDS,
@@ -33,6 +34,7 @@ def test_constants():
     assert KIND_TV in SUPPORTED_KINDS
     assert KIND_DOMAIN["tv"] == "alleycattv"
     assert SERVICE_SET_BROADCAST_GROUP == "set_broadcast_group"
+    assert SERVICE_FORCE_REPUBLISH_MEMBERSHIP == "force_republish_membership"
     assert SERVICE_REMOVE_DEVICE == "remove_device"
 
 
@@ -199,18 +201,11 @@ def test_list_broadcast_groups_merges_content_and_membership():
             async def json(self):
                 return [
                     {"broadcast_group_id": "lobby", "name": "Lobby"},
-                    {"zone_id": "bar", "name": "Bar"},
+                    {"broadcast_group_id": "bar", "name": "Bar"},
                 ]
 
         mock_request = AsyncMock(return_value=_Resp())
-        with patch.dict(
-            "sys.modules",
-            {
-                "custom_components.shared_libraries.http": SimpleNamespace(
-                    async_request=mock_request
-                )
-            },
-        ):
+        with patch.object(bgc_mod, "async_request", mock_request):
             groups = await bgc_mod._list_broadcast_groups(hass)
 
         ids = [g["broadcast_group_id"] for g in groups]
@@ -220,6 +215,174 @@ def test_list_broadcast_groups_merges_content_and_membership():
         mock_request.assert_awaited_once_with(
             hass, "alleycattv", "GET", "/api/broadcast_groups/"
         )
+
+    asyncio.run(_run())
+
+
+def test_force_republish_refuses_offline():
+    async def _run():
+        hass = MagicMock()
+        hass.data = {
+            DOMAIN: {
+                "membership": {
+                    "tv:pi-01": {
+                        "kind": "tv",
+                        "device_id": "pi-01",
+                        "broadcast_group_id": "lobby",
+                    }
+                }
+            }
+        }
+        tracker = MagicMock()
+        tracked = MagicMock()
+        tracked.presence = "offline"
+        tracker.devices = {"pi-01": tracked}
+        with (
+            patch.object(bgc_mod, "get_presence_tracker", return_value=tracker),
+            patch.object(bgc_mod, "PRESENCE_ONLINE", "online"),
+        ):
+            with pytest.raises(HomeAssistantError, match="not online"):
+                await bgc_mod.async_force_republish_membership(
+                    hass, "tv", "pi-01", timeout=1
+                )
+
+    asyncio.run(_run())
+
+
+def test_force_republish_requires_stored_membership():
+    async def _run():
+        hass = MagicMock()
+        hass.data = {DOMAIN: {"membership": {}}}
+        tracker = MagicMock()
+        tracked = MagicMock()
+        tracked.presence = "online"
+        tracker.devices = {"pi-01": tracked}
+        with (
+            patch.object(bgc_mod, "get_presence_tracker", return_value=tracker),
+            patch.object(bgc_mod, "PRESENCE_ONLINE", "online"),
+        ):
+            with pytest.raises(HomeAssistantError, match="No stored"):
+                await bgc_mod.async_force_republish_membership(
+                    hass, "tv", "pi-01", timeout=1
+                )
+
+    asyncio.run(_run())
+
+
+def test_force_republish_tv_acks_on_status_json():
+    async def _run():
+        hass = MagicMock()
+        hass.data = {
+            DOMAIN: {
+                "membership": {
+                    "tv:pi-01": {
+                        "kind": "tv",
+                        "device_id": "pi-01",
+                        "broadcast_group_id": "lobby",
+                    }
+                }
+            }
+        }
+        tracker = MagicMock()
+        tracked = MagicMock()
+        tracked.presence = "online"
+        tracker.devices = {"pi-01": tracked}
+
+        async def fake_subscribe(hass_arg, kind, *segments, callback=None, qos=0):
+            assert kind == "tv"
+            assert segments == ("status", "pi-01", "json")
+            callback(
+                SimpleNamespace(
+                    payload=json.dumps({"broadcast_group_id": "lobby"}).encode()
+                )
+            )
+            return MagicMock(name="unsub")
+
+        with (
+            patch.object(bgc_mod, "get_presence_tracker", return_value=tracker),
+            patch.object(bgc_mod, "PRESENCE_ONLINE", "online"),
+            patch.object(bgc_mod, "_publish_membership", new=AsyncMock()) as mock_pub,
+            patch.object(bgc_mod, "async_subscribe", side_effect=fake_subscribe),
+        ):
+            result = await bgc_mod.async_force_republish_membership(
+                hass, "tv", "pi-01", timeout=2
+            )
+
+        mock_pub.assert_awaited_once_with(hass, "tv", "pi-01", "lobby")
+        assert result["acked"] is True
+        assert result["ack_supported"] is True
+        assert result["broadcast_group_id"] == "lobby"
+
+    asyncio.run(_run())
+
+
+def test_force_republish_tv_timeout():
+    async def _run():
+        hass = MagicMock()
+        hass.data = {
+            DOMAIN: {
+                "membership": {
+                    "tv:pi-01": {
+                        "kind": "tv",
+                        "device_id": "pi-01",
+                        "broadcast_group_id": "lobby",
+                    }
+                }
+            }
+        }
+        tracker = MagicMock()
+        tracked = MagicMock()
+        tracked.presence = "online"
+        tracker.devices = {"pi-01": tracked}
+
+        async def fake_subscribe(hass_arg, kind, *segments, callback=None, qos=0):
+            return MagicMock(name="unsub")
+
+        with (
+            patch.object(bgc_mod, "get_presence_tracker", return_value=tracker),
+            patch.object(bgc_mod, "PRESENCE_ONLINE", "online"),
+            patch.object(bgc_mod, "_publish_membership", new=AsyncMock()),
+            patch.object(bgc_mod, "async_subscribe", side_effect=fake_subscribe),
+        ):
+            with pytest.raises(HomeAssistantError, match="ack timed out"):
+                await bgc_mod.async_force_republish_membership(
+                    hass, "tv", "pi-01", timeout=0.2
+                )
+
+    asyncio.run(_run())
+
+
+def test_force_republish_dnn_soft_ack():
+    async def _run():
+        hass = MagicMock()
+        hass.data = {
+            DOMAIN: {
+                "membership": {
+                    "dnn:fdn-1": {
+                        "kind": "dnn",
+                        "device_id": "fdn-1",
+                        "broadcast_group_id": "lobby",
+                    }
+                }
+            }
+        }
+        tracker = MagicMock()
+        tracked = MagicMock()
+        tracked.presence = "online"
+        tracker.devices = {"fdn-1": tracked}
+        with (
+            patch.object(bgc_mod, "get_presence_tracker", return_value=tracker),
+            patch.object(bgc_mod, "PRESENCE_ONLINE", "online"),
+            patch.object(bgc_mod, "_publish_membership", new=AsyncMock()) as mock_pub,
+        ):
+            result = await bgc_mod.async_force_republish_membership(
+                hass, "dnn", "fdn-1", timeout=1
+            )
+
+        mock_pub.assert_awaited_once_with(hass, "dnn", "fdn-1", "lobby")
+        assert result["ack_supported"] is False
+        assert result["acked"] is None
+        assert result["republished"] is True
 
     asyncio.run(_run())
 
