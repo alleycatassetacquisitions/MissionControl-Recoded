@@ -16,17 +16,18 @@ integration.
 |---|---|
 | Guest list (console picker) | Thin Proxmox API poll — vmid / node / kind / status |
 | Termproxy console | xterm.js via HA websocket; inline preview + **Pop out** overlay (reparents the live session) |
-| MQTT spy | Debug-only subscribe (default `#`); inline preview + **Pop out** for a larger live stream |
+| MQTT spy | Debug-only subscribe (default `mc/#`); topic filter presets + **Pop out** |
 | Companion health | `GET /health` on MCS, AlleycatTV, GBN via `shared_libraries.http` |
 | Device logs | WS `bug_buster/device_logs` → MCS `GET /device-logs` (Central crash logs; read-only); inline preview + **Pop out** |
 
 ## Credentials
 
 Proxmox URL, node, `token_id`, and `token_secret` live in **Core Configurator**
-only. Enter the same API token again when adding Core Proxmox VE for monitoring
-entities. Device logs use the **MCS Bearer** (`master_control_server` → API
-token) — same token Registration uses. Bug Buster never talks to Central
-directly and does not POST logs (devices do that themselves).
+only. Saving those credentials one-shots HA Core Proxmox VE for monitoring
+(manual Add Integration only if bootstrap skips). Device logs use the **MCS
+Bearer** (`master_control_server` → API token) — same token Registration uses.
+Bug Buster never talks to Central directly and does not POST logs (devices do
+that themselves).
 
 ## Deploy
 
@@ -52,7 +53,7 @@ When you rename an identity string, update this section and `const.py` in the sa
 |---|---|
 | Domain `bug_buster` | HA `custom_components/` folder, `manifest.json`, entity_id prefix, `www/bug_buster/` |
 | CC key `master_control_server` | Bug Buster `KEY_MCS`, Registration `KEY_MCS`, Game Master `KEY_MCS`, DNN `KEY_MCS`, install scripts, secrets |
-| MQTT spy default topic `#` | Only `DEFAULT_MQTT_TOPIC` in `const.py` — operator can override at config time |
+| MQTT spy default topic `mc/#` | Only `DEFAULT_MQTT_TOPIC` in `const.py` — operator can override at config time; panel filter presets are display-only |
 
 ### Identity checklist
 
@@ -60,7 +61,7 @@ When you rename an identity string, update this section and `const.py` in the sa
 |---|---|---|
 | HA domain | `bug_buster` | `DOMAIN` in `const.py` |
 | CC key (MCS) | `master_control_server` | `KEY_MCS` in `const.py` |
-| MQTT spy default | `#` (all topics) | `DEFAULT_MQTT_TOPIC` in `const.py` |
+| MQTT spy default | `mc/#` | `DEFAULT_MQTT_TOPIC` in `const.py` |
 | MQTT buffer size | 200 messages | `MQTT_BUFFER_SIZE` in `const.py` |
 | WS (device logs) | `bug_buster/device_logs` | `WS_DEVICE_LOGS` in `const.py` |
 | Health probe keys | `master_control_server`, `alleycattv`, `gbn`, `net_time` | `HEALTH_KEYS` tuple in `const.py` |

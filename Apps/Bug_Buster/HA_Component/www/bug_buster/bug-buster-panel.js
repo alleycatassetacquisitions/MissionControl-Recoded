@@ -11,6 +11,7 @@
       this._mqtt = [];
       this._mqttPaused = false;
       this._mqttFilter = "";
+      this._mqttTopic = "mc/#";
       this._mqttCount = 0;
       this._mqttWindow = [];
       this._polledAt = null;
@@ -128,6 +129,7 @@
         const res = await this._ws("bug_buster/mqtt_snapshot");
         this._mqtt = res.messages || [];
         this._mqttCount = res.received || this._mqtt.length;
+        if (res.topic) this._mqttTopic = res.topic;
         this._paintMqtt(true);
         this._paintHeader();
       } catch (err) {
@@ -182,7 +184,13 @@
         const otherId = ev.target.id === "mqtt-filter" ? "mqtt-filter-pop" : "mqtt-filter";
         const other = root.getElementById(otherId);
         if (other && other.value !== ev.target.value) other.value = ev.target.value;
+        this._syncMqttPresetButtons();
         this._paintMqtt(true);
+      };
+      const onMqttPreset = (ev) => {
+        const btn = ev.target.closest("[data-mqtt-prefix]");
+        if (!btn || btn.disabled) return;
+        this._setMqttFilter(btn.getAttribute("data-mqtt-prefix") || "");
       };
       root.getElementById("mqtt-pause")?.addEventListener("click", toggleMqttPause);
       root.getElementById("mqtt-pause-pop")?.addEventListener("click", toggleMqttPause);
@@ -190,6 +198,8 @@
       root.getElementById("mqtt-clear-pop")?.addEventListener("click", clearMqtt);
       root.getElementById("mqtt-filter")?.addEventListener("input", onMqttFilter);
       root.getElementById("mqtt-filter-pop")?.addEventListener("input", onMqttFilter);
+      root.getElementById("mqtt-presets")?.addEventListener("click", onMqttPreset);
+      root.getElementById("mqtt-presets-pop")?.addEventListener("click", onMqttPreset);
       root.getElementById("term-connect")?.addEventListener("click", () => this._connectTerm());
       root.getElementById("term-disconnect")?.addEventListener("click", () => this._closeTerm());
       root.getElementById("term-connect-pop")?.addEventListener("click", () => this._connectTerm());
@@ -611,7 +621,7 @@
       if (mqttMeta) {
         const cutoff = Date.now() - 5e3;
         this._mqttWindow = this._mqttWindow.filter((t) => t > cutoff);
-        mqttMeta.textContent = `${this._mqttCount} msgs \xB7 ${(this._mqttWindow.length / 5).toFixed(1)}/s`;
+        mqttMeta.textContent = `${this._mqttTopic} \xB7 ${this._mqttCount} msgs \xB7 ${(this._mqttWindow.length / 5).toFixed(1)}/s`;
       }
     }
     _emptyFleet() {
@@ -670,10 +680,39 @@
       });
       this._syncTermLabels();
     }
+    _setMqttFilter(prefix) {
+      this._mqttFilter = String(prefix || "");
+      const root = this.shadowRoot;
+      for (const id of ["mqtt-filter", "mqtt-filter-pop"]) {
+        const el = root.getElementById(id);
+        if (el) el.value = this._mqttFilter;
+      }
+      this._syncMqttPresetButtons();
+      this._paintMqtt(true);
+    }
+    _syncMqttPresetButtons() {
+      const root = this.shadowRoot;
+      for (const id of ["mqtt-presets", "mqtt-presets-pop"]) {
+        const wrap = root.getElementById(id);
+        if (!wrap) continue;
+        for (const btn of wrap.querySelectorAll("[data-mqtt-prefix]")) {
+          if (btn.disabled) {
+            btn.classList.remove("is-active");
+            continue;
+          }
+          const prefix = btn.getAttribute("data-mqtt-prefix") || "";
+          btn.classList.toggle("is-active", this._mqttFilter === prefix);
+        }
+      }
+    }
     _mqttMatch(item) {
       if (!this._mqttFilter) return true;
       const q = this._mqttFilter.toLowerCase();
-      return String(item.topic || "").toLowerCase().includes(q) || String(item.text || "").toLowerCase().includes(q);
+      const topic = String(item.topic || "").toLowerCase();
+      if (q.endsWith("/") || q.includes("/")) {
+        return topic.startsWith(q) || topic.includes(q);
+      }
+      return topic.includes(q) || String(item.text || "").toLowerCase().includes(q);
     }
     _mqttLogTargets() {
       const root = this.shadowRoot;
@@ -864,6 +903,37 @@ ${item.hex}` : "";
         }
         .hosts-head button, .pane-head button, .pane-head input {
           font-family: inherit;
+        }
+        .mqtt-presets {
+          display: flex;
+          flex-wrap: wrap;
+          gap: 6px;
+          align-items: center;
+        }
+        .mqtt-preset {
+          margin: 0;
+          background: transparent;
+          color: #9aa8c7;
+          border: 1px solid #2a3a5c;
+          border-radius: 4px;
+          padding: 3px 8px;
+          cursor: pointer;
+          font-size: 11px;
+          letter-spacing: 0.04em;
+          text-transform: none;
+        }
+        .mqtt-preset:hover:not(:disabled) {
+          color: var(--ac-cyan, #00e5ff);
+          border-color: rgba(0, 229, 255, 0.45);
+        }
+        .mqtt-preset.is-active {
+          color: var(--ac-cyan, #00e5ff);
+          border-color: rgba(0, 229, 255, 0.55);
+          background: rgba(0, 229, 255, 0.08);
+        }
+        .mqtt-preset:disabled {
+          opacity: 0.45;
+          cursor: not-allowed;
         }
         .ghost {
           margin-left: auto;
@@ -1127,6 +1197,12 @@ ${item.hex}` : "";
           <section class="mqtt">
             <div class="pane-head">
               <span>MQTT</span>
+              <div id="mqtt-presets" class="mqtt-presets">
+                <button type="button" class="mqtt-preset is-active" data-mqtt-prefix="" title="show all subscribed topics">All mc/#</button>
+                <button type="button" class="mqtt-preset" data-mqtt-prefix="mc/tv/" title="mc/tv/">AlleycatTV</button>
+                <button type="button" class="mqtt-preset" data-mqtt-prefix="mc/dnn/" title="mc/dnn/">FDN / DNN</button>
+                <button type="button" class="mqtt-preset" data-mqtt-prefix="" disabled title="Reserved for a later fabric slice">Coming Soon</button>
+              </div>
               <input id="mqtt-filter" type="text" placeholder="filter topic\u2026" />
               <button class="ghost" id="mqtt-pause" type="button">Pause</button>
               <button class="ghost" id="mqtt-clear" type="button">Clear</button>
@@ -1157,6 +1233,12 @@ ${item.hex}` : "";
           <div class="pane-popout-head">
             <h2 id="popout-title">Pop out</h2>
             <div class="pane-popout-tools" id="popout-mqtt-tools" hidden>
+              <div id="mqtt-presets-pop" class="mqtt-presets">
+                <button type="button" class="mqtt-preset is-active" data-mqtt-prefix="" title="show all subscribed topics">All mc/#</button>
+                <button type="button" class="mqtt-preset" data-mqtt-prefix="mc/tv/" title="mc/tv/">AlleycatTV</button>
+                <button type="button" class="mqtt-preset" data-mqtt-prefix="mc/dnn/" title="mc/dnn/">FDN / DNN</button>
+                <button type="button" class="mqtt-preset" data-mqtt-prefix="" disabled title="Reserved for a later fabric slice">Coming Soon</button>
+              </div>
               <input id="mqtt-filter-pop" type="text" placeholder="filter topic\u2026" />
               <button class="ghost" id="mqtt-pause-pop" type="button">Pause</button>
               <button class="ghost" id="mqtt-clear-pop" type="button">Clear</button>

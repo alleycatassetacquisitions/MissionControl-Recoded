@@ -23,7 +23,7 @@ Each key maps to one external service. Other integrations call `get_url(hass, ke
 | `rtsp` | Live RTSP | AlleycatTV live interrupt (`extra.label` / `extra.enabled`) |
 | `net_time` | Net Time | Attempt Online Sync, timezone dropdown, Offline Sync (`extra.token`); panel shows local wall time |
 
-> **Credentials live here.** MCS Bearer (`extra.token` on `master_control_server`), Net Time Bearer (`extra.token` on `net_time`), and Proxmox API tokens (`extra.token_id` / `extra.token_secret` on `proxmox`) are Core Configurator fields. Paste the same Proxmox token into HA Core **Proxmox VE** for monitoring entities. Bug Buster is Proxmox console, MQTT spy, and companion health — it does not own tokens. RTSP camera/encoder URLs also live here (not in AlleycatTV Content Manager).
+> **Credentials live here.** MCS Bearer (`extra.token` on `master_control_server`), Net Time Bearer (`extra.token` on `net_time`), and Proxmox API tokens (`extra.token_id` / `extra.token_secret` on `proxmox`) are Core Configurator fields. Saving a complete Proxmox URL + `user@realm!name` token one-shots HA Core **Proxmox VE** for monitoring (skipped if that host already has an entry). Bug Buster is Proxmox console, MQTT spy, and companion health — it does not own tokens. RTSP camera/encoder URLs also live here (not in AlleycatTV Content Manager).
 
 ---
 
@@ -49,8 +49,9 @@ HA_Component/custom_components/core_configurator/
 | `const.py` | `DOMAIN`, service keys, `SERVICE_CATALOG`, `YAML_KEYS` |
 | `urlutil.py` | `normalize_url`, `empty_services`, `services_from_mapping` (incl. MCS token) |
 | `helpers.py` | `get_url`, `get_extra`, `catalog_public`, `save_services`, `apply_service` |
+| `proxmoxve_bootstrap.py` | One-shot Core `proxmoxve` entry from CC Proxmox URL/token (D10) |
 | `config_flow.py` | One-time setup form; `async_step_import` for YAML seed; single-instance |
-| `__init__.py` | Setup, websocket commands, fires `core_configurator_updated` |
+| `__init__.py` | Setup, websocket commands, fires `core_configurator_updated`, schedules Proxmox VE bootstrap |
 | `strings.json` | UI labels and abort messages |
 
 ### JS panel
