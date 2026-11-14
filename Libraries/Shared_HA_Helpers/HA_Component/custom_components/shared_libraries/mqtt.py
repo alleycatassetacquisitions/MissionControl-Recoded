@@ -1,6 +1,11 @@
 """MQTT fabric helpers — build topics via mc_topic, subscribe/publish through HA's mqtt component.
 
 Never open a second broker client; never hard-code topic strings; use ``broadcast`` not ``zone``.
+
+Command address grammar (all kinds):
+  ``mc/{kind}/cmd/device/{id}/{action}``
+  ``mc/{kind}/cmd/all/{action}``
+  ``mc/{kind}/cmd/broadcast/{bg_id}/{action}``
 """
 from __future__ import annotations
 
@@ -33,44 +38,37 @@ async def async_ensure_mqtt(hass: HomeAssistant) -> None:
         )
 
 
-# ---------------------------------------------------------------------------
-# Topic builder
-# ---------------------------------------------------------------------------
-
-
 def mc_topic(kind: str, *segments: str) -> str:
-    """Build a Mission Control MQTT topic.
-
-    Parameters
-    ----------
-    kind:
-        Topic namespace, e.g. ``"dnn"`` or ``"tv"``.
-    *segments:
-        Additional path segments.
-
-    Returns
-    -------
-    str
-        Full topic string, e.g. ``"mc/dnn/cmd/abc123"``.
-
-    Examples
-    --------
-    >>> mc_topic("dnn", "cmd", "abc123")
-    'mc/dnn/cmd/abc123'
-    >>> mc_topic("tv", "cmd", "all")
-    'mc/tv/cmd/all'
-    >>> mc_topic("dnn", "cmd", "broadcast", "group-1")
-    'mc/dnn/cmd/broadcast/group-1'
-    >>> mc_topic("dnn", "status", "abc123")
-    'mc/dnn/status/abc123'
-    """
+    """Build ``mc/{kind}/…`` from path segments."""
     parts = [MC_TOPIC_ROOT, kind, *segments]
     return "/".join(parts)
 
 
-# ---------------------------------------------------------------------------
-# Subscribe / publish
-# ---------------------------------------------------------------------------
+def resolve_cmd_segments(
+    *,
+    device_id: str | None = None,
+    pi_id: str | None = None,
+    target: str | None = None,
+    broadcast_group_id: str | None = None,
+    default_all_for_stamps: bool = False,
+) -> list[str]:
+    """Build ``cmd/…`` segments under ``mc/{kind}/`` (shared by TV, DNN, BGC).
+
+    Priority: device (``device_id`` or AlleycatTV ``pi_id``) → broadcast_group_id →
+    target=all → optional all when only filter stamps are present.
+    """
+    device = (device_id or pi_id or "").strip() or None
+    if device:
+        return ["cmd", "device", device]
+    if broadcast_group_id:
+        return ["cmd", "broadcast", str(broadcast_group_id).strip()]
+    if target == "all":
+        return ["cmd", "all"]
+    if default_all_for_stamps:
+        return ["cmd", "all"]
+    raise ValueError(
+        "command requires device_id (or pi_id), target=all, or broadcast_group_id"
+    )
 
 
 async def async_subscribe(
@@ -80,26 +78,7 @@ async def async_subscribe(
     callback: Callable[[Any], None],
     qos: int = 0,
 ) -> Callable[[], None]:
-    """Subscribe to a Mission Control topic via HA's mqtt integration.
-
-    Parameters
-    ----------
-    hass:
-        The Home Assistant instance.
-    kind:
-        Topic namespace, e.g. ``"dnn"`` or ``"tv"``.
-    *segments:
-        Additional topic segments (see ``mc_topic``).
-    callback:
-        Callable invoked with each received ``mqtt.ReceiveMessage``.
-    qos:
-        MQTT QoS level (0, 1, or 2).  Defaults to 0.
-
-    Returns
-    -------
-    Callable
-        An unsubscribe function.  Call it to stop receiving messages.
-    """
+    """Subscribe to a Mission Control topic via HA's mqtt integration."""
     topic = mc_topic(kind, *segments)
     _LOGGER.debug("shared_libraries.mqtt: subscribing to %s", topic)
     return await mqtt.async_subscribe(hass, topic, callback, qos=qos)
@@ -113,31 +92,10 @@ async def async_publish(
     qos: int = 0,
     retain: bool = False,
 ) -> None:
-    """Publish a message to a Mission Control topic via HA's mqtt integration.
-
-    Parameters
-    ----------
-    hass:
-        The Home Assistant instance.
-    kind:
-        Topic namespace, e.g. ``"dnn"`` or ``"tv"``.
-    *segments:
-        Additional topic segments (see ``mc_topic``).
-    payload:
-        Message payload (string or bytes).
-    qos:
-        MQTT QoS level (0, 1, or 2).  Defaults to 0.
-    retain:
-        Whether the broker should retain the message.  Defaults to False.
-    """
+    """Publish a message to a Mission Control topic via HA's mqtt integration."""
     topic = mc_topic(kind, *segments)
     _LOGGER.debug("shared_libraries.mqtt: publishing to %s", topic)
     await mqtt.async_publish(hass, topic, payload, qos=qos, retain=retain)
-
-
-# ---------------------------------------------------------------------------
-# Presence helper
-# ---------------------------------------------------------------------------
 
 
 async def async_subscribe_presence(
@@ -147,30 +105,7 @@ async def async_subscribe_presence(
     callback: Callable[[Any], None],
     qos: int = 0,
 ) -> Callable[[], None]:
-    """Subscribe to the LWT / status topic for a single device.
-
-    The presence topic pattern is ``mc/{kind}/status/{device_id}``.
-    The callback receives the raw ``mqtt.ReceiveMessage``; payloads are
-    typically ``"online"`` or ``"offline"``.
-
-    Parameters
-    ----------
-    hass:
-        The Home Assistant instance.
-    kind:
-        Topic namespace, e.g. ``"dnn"`` or ``"tv"``.
-    device_id:
-        The unique identifier for the device.
-    callback:
-        Callable invoked on each status message.
-    qos:
-        MQTT QoS level.  Defaults to 0.
-
-    Returns
-    -------
-    Callable
-        An unsubscribe function.
-    """
+    """Subscribe to ``mc/{kind}/status/{device_id}``."""
     return await async_subscribe(
         hass,
         kind,

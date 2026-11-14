@@ -27,9 +27,9 @@ DNN never talks to Central Server. Registration owns player writes. DNN never op
 
 | Service | MQTT topic (under `mc/dnn/`) |
 |---|---|
-| `digital_node_nexus.page` | `cmd/{device\|all\|broadcast/{id}}/page` |
-| `digital_node_nexus.set_led` | `cmd/{device\|all}/led` |
-| `digital_node_nexus.trigger_haptic` | `cmd/{device\|all}/haptic` |
+| `digital_node_nexus.page` | `cmd/device/{id}/page` · `cmd/all/page` · `cmd/broadcast/{id}/page` |
+| `digital_node_nexus.set_led` | `cmd/device/{id}/led` · `cmd/all/led` |
+| `digital_node_nexus.trigger_haptic` | `cmd/device/{id}/haptic` · `cmd/all/haptic` |
 
 **Page targeting**
 
@@ -44,7 +44,7 @@ mc/dnn/cmd/device/{device_id}/membership
 {"broadcast_group_id": "lobby" | null}
 ```
 
-FDN firmware must resubscribe to `mc/dnn/cmd/broadcast/{id}/#` when this arrives.
+FDN firmware must subscribe to `mc/dnn/cmd/device/{id}/#` (same `device` scope as AlleycatTV) and resubscribe to `mc/dnn/cmd/broadcast/{id}/#` when membership arrives.
 Placement and membership are set in the Broadcast Groups sidebar — not in DNN.
 
 - `player_id` / `role` / `neocorp` → stamped into the payload; routes via `cmd/all` when no device/broadcast is set  
@@ -74,7 +74,6 @@ HA_Component/
 │   ├── config_flow.py
 │   ├── const.py
 │   ├── payloads.py
-│   ├── routing.py
 │   ├── services.yaml
 │   ├── strings.json
 │   └── manifest.json
@@ -129,5 +128,5 @@ When you rename an identity string, update this section and `const.py` in the sa
 | NeoCorp values | `freelancer`, `helix`, `endline`, `reboot` | `NEOCORPS` tuple in `const.py` |
 | WS namespace | `digital_node_nexus/get_devices` | `WS_GET_DEVICES` in `const.py` |
 | Panel url_path | `digital-node-nexus` | bare literal in `HomeAssist/configuration.yaml` |
-| MQTT topic root | `mc/dnn/cmd/…`, `mc/dnn/status/…` | built via `mc_topic("dnn", …)` in `Shared_HA_Helpers` |
-| **Note — asymmetry** | `dnn` vs `tv` are intentionally different segment names | Intentional until a unified fabric kind scheme is adopted |
+| MQTT topic root | `mc/dnn/cmd/device/…`, `mc/dnn/status/…` | `mc_topic` + `resolve_cmd_segments` in `Shared_HA_Helpers` |
+| Device cmd grammar | `mc/{kind}/cmd/device/{id}/…` | shared with AlleycatTV / BGC — FDN firmware must match |

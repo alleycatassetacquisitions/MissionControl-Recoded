@@ -16,7 +16,7 @@ Modules other integrations import directly:
 |---|---|
 | `http.py` | `async_request` + `get_mcs_token` — bearer-auth HTTP via HA's managed session + Core Configurator URL/token |
 | `proxy.py` | `async_proxy_lan` / `proxy_request_parts` — authenticated HA→LAN companion forward (GBN / AlleycatTV) |
-| `mqtt.py` | `mc_topic` topic builder, `async_subscribe` / `async_publish` / `async_subscribe_presence` wrappers |
+| `mqtt.py` | `mc_topic`, `resolve_cmd_segments`, `async_subscribe` / `async_publish` / `async_subscribe_presence` |
 | `fabric.py` | Presence tracking: `mc/{kind}/status/#` → device_registry + `online`/`offline`/`unknown` sensor; `async_forget_device` clears tracker + retained status |
 | `www/shared_libraries/mc-panel.js` | Lit + TypeScript McPanel kit (`window.McPanel`) — build from `panel_kit/` |
 
@@ -80,14 +80,16 @@ async def async_request(
 ```python
 from custom_components.shared_libraries.mqtt import (
     mc_topic,
+    resolve_cmd_segments,
     async_subscribe,
     async_publish,
     async_subscribe_presence,
 )
 
-# Topic builder (pure function — no hass needed)
-topic = mc_topic("dnn", "cmd", device_id)
-# → "mc/dnn/cmd/<device_id>"
+segments = resolve_cmd_segments(device_id=device_id)
+# → ["cmd", "device", "<id>"]
+topic = mc_topic("dnn", *segments, "page")
+# → "mc/dnn/cmd/device/<id>/page"
 
 mc_topic("tv", "cmd", "all")
 # → "mc/tv/cmd/all"
@@ -95,20 +97,14 @@ mc_topic("tv", "cmd", "all")
 mc_topic("dnn", "cmd", "broadcast", group_id)
 # → "mc/dnn/cmd/broadcast/<group_id>"
 
-# Subscribe — returns an unsubscribe callable
-unsub = await async_subscribe(hass, "dnn", "cmd", device_id, callback=handle_msg)
-
-# Publish
-await async_publish(hass, "tv", "cmd", "all", payload=json.dumps(cmd))
-
-# Presence / LWT — subscribes to mc/{kind}/status/{device_id}
+unsub = await async_subscribe(hass, "dnn", *segments, "#", callback=handle_msg)
+await async_publish(hass, "tv", "cmd", "all", "stop", payload=json.dumps(cmd))
 unsub = await async_subscribe_presence(hass, "dnn", device_id, callback=on_presence)
-# payload is typically "online" or "offline"
 ```
 
 **Rules:**
-- Always build topics through `mc_topic`. Never hard-code topic strings.
-- Use `"broadcast"` as the group-command segment. Never use `"zone"`.
+- Build command paths with `resolve_cmd_segments` + `mc_topic`. Never hard-code topic strings.
+- Device scope is always `cmd/device/{id}` (TV and DNN). Use `"broadcast"` for groups — never `"zone"`.
 - Never open a private MQTT client inside an integration. These wrappers delegate to HA's `mqtt` component.
 
 ### 4. Fabric presence
@@ -256,14 +252,14 @@ When you rename an identity string, update this section and `const.py` in the sa
 | MQTT topic root | `mc` | `MC_TOPIC_ROOT` in `const.py` |
 | TV fabric kind | `tv` | used in `mc_topic("tv", …)`; named in AlleycatTV `MQTT_KIND` |
 | DNN fabric kind | `dnn` | used in `mc_topic("dnn", …)`; named in DNN `MQTT_KIND` |
-| Topic: device command | `mc/{kind}/cmd/{device_id}` | `mc_topic(kind, "cmd", device_id)` |
-| Topic: broadcast group | `mc/{kind}/cmd/broadcast/{group_id}` | `mc_topic(kind, "cmd", "broadcast", group_id)` — always `broadcast`, never `zone` |
+| Topic: device command | `mc/{kind}/cmd/device/{device_id}` | `resolve_cmd_segments(device_id=…)` → `mc_topic(kind, *segments, action)` |
+| Topic: all / broadcast | `mc/{kind}/cmd/all/…`, `mc/{kind}/cmd/broadcast/{id}/…` | same helper — always `broadcast`, never `zone` |
 | Topic: presence / LWT | `mc/{kind}/status/{device_id}` | `mc_topic(kind, "status", device_id)` |
 | Topic: desired state | `mc/{kind}/desired/…` | `mc_topic(kind, "desired", …)` |
 | Presence: online | `online` | `PRESENCE_ONLINE` in `fabric.py` |
 | Presence: offline | `offline` | `PRESENCE_OFFLINE` in `fabric.py` |
 | Presence: unknown | `unknown` | `PRESENCE_UNKNOWN` in `fabric.py` |
-| **Note — MQTT asymmetry** | `tv` vs `dnn` are intentionally different fabric kind names | AlleycatTV uses `tv`; FDNs use `dnn`. Intentional until a unified naming scheme is adopted. |
+| Kind names | `tv` vs `dnn` | different kind segments; **same** `cmd/device/{id}` address grammar |
 
 ---
 

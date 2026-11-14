@@ -48,8 +48,6 @@ from .payloads import (
     encode_stop_cmd,
     encode_volume_cmd,
 )
-from .routing import resolve_cmd_segments
-
 _LOGGER = logging.getLogger(__name__)
 
 PLATFORMS: list[Platform] = [Platform.MEDIA_PLAYER]
@@ -68,6 +66,7 @@ from custom_components.shared_libraries.mqtt import (
     async_ensure_mqtt,
     async_publish,
     async_subscribe,
+    resolve_cmd_segments,
 )
 
 
