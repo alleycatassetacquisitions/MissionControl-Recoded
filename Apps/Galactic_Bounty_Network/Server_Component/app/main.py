@@ -117,7 +117,7 @@ async def startup() -> None:
             )
         else:
             _LOGGER.warning(
-                "No active event at startup — set one in Registration "
+                "No active event at startup — set one in Game Master "
                 "(pushes to GBN) or Pis show NO ACTIVE EVENT until then"
             )
     except Exception as exc:  # noqa: BLE001

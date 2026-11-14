@@ -75,7 +75,7 @@ async def _require_active_event_id(fallback: str | None = None) -> str:
     if not eid:
         raise HTTPException(
             status_code=409,
-            detail="No active event — set one in Registration before creating posters",
+            detail="No active event — set one in Game Master before creating posters",
         )
     return eid
 

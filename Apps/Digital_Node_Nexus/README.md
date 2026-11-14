@@ -16,10 +16,10 @@ devices here; LED and haptic are secondary skeleton tools.
 | Official **Mosquitto broker** add-on | Venue MQTT broker on HAOS — install before DNN |
 | HA `mqtt` integration | Client path for subscribe/publish (auto-wire to Mosquitto add-on) |
 | Shared HA Helpers | MQTT publish, fabric presence (`mc/dnn/status/#`) |
-| Core Configurator | MCS URL + Bearer for roster targeting |
-| Master Control Server | Read-only `GET /players` for player / role / NeoCorp pickers |
+| Registration | Roster for page targets via `registration/get_roster` (DNN does not own an MCS client) |
+| Broadcast Group Controller | Placement + membership for FDN devices |
 
-DNN never talks to Central Server. Registration owns player writes. DNN never opens a private MQTT socket — only HA’s `mqtt` integration against Mosquitto.
+DNN never talks to Central Server. Registration owns player writes and the MCS roster poll. DNN never opens a private MQTT socket — only HA’s `mqtt` integration against Mosquitto.
 
 ---
 

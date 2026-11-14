@@ -165,7 +165,7 @@ See [`File Structure.md` — On Home Assistant](File%20Structure.md#on-home-assi
 | Merge `HomeAssist/configuration.yaml` sections | `/config/configuration.yaml` |
 | Secrets from `secrets.yaml.example` | `/config/secrets.yaml` |
 
-### Phase 4 — Core Configurator + Shared Helpers + Registration
+### Phase 4 — Core Configurator + Shared Helpers + Registration + Game Master
 
 From PowerShell on your PC (`<HA-IP>` = LAN address of the HA VM):
 
@@ -178,9 +178,12 @@ scp -r "z:\CodingProjects\Alleycat\MissionControl\Apps\Core_Configurator\HA_Comp
 
 scp -r "z:\CodingProjects\Alleycat\MissionControl\Apps\Registration\HA_Component\custom_components\registration" root@<HA-IP>:/config/custom_components/
 scp -r "z:\CodingProjects\Alleycat\MissionControl\Apps\Registration\HA_Component\www\registration" root@<HA-IP>:/config/www/
+
+scp -r "z:\CodingProjects\Alleycat\MissionControl\Apps\Game_Master\HA_Component\custom_components\game_master" root@<HA-IP>:/config/custom_components/
+scp -r "z:\CodingProjects\Alleycat\MissionControl\Apps\Game_Master\HA_Component\www\game_master" root@<HA-IP>:/config/www/
 ```
 
-Then merge [`HomeAssist/configuration.yaml`](../HomeAssist/configuration.yaml) into `/config/configuration.yaml` (keep `default_config`, themes, automations includes; add `frontend.extra_module_url`, `core_configurator` seed, both `panel_custom` entries). **One** `frontend:` block only — extend an existing `extra_module_url` list; do not paste a second `frontend:` / `themes:` / `extra_module_url:` underneath. Fill `/config/secrets.yaml` from [`secrets.yaml.example`](../HomeAssist/secrets.yaml.example) with MCS URL/token and Central URLs.
+Then merge [`HomeAssist/configuration.yaml`](../HomeAssist/configuration.yaml) into `/config/configuration.yaml` (keep `default_config`, themes, automations includes; add `frontend.extra_module_url`, `core_configurator` seed, `registration` / `game_master` seeds, and their `panel_custom` entries). **One** `frontend:` block only — extend an existing `extra_module_url` list; do not paste a second `frontend:` / `themes:` / `extra_module_url:` underneath. Fill `/config/secrets.yaml` from [`secrets.yaml.example`](../HomeAssist/secrets.yaml.example) with MCS URL/token and Central URLs.
 
 Restart and hard-refresh the browser:
 
@@ -191,8 +194,8 @@ ha core restart
 ### After restart
 
 1. Core Configurator entry: delete + re-add (or first import) so YAML/secrets re-seed MCS URL + token.
-2. Settings → Devices & Services → Add **Registration** (install-only — no token field).
-3. Confirm sidebar panels: Core Configurator, Registration.
+2. Settings → Devices & Services → Add **Registration** and **Game Master** (install-only — no token field).
+3. Confirm sidebar panels: Core Configurator, Registration, Game Master.
 4. Registration **Sync Now** should load the roster (PDN / mode via MCS). Use **Game Master** to create an event and set it active before registering players (Central requires an active event; Registration is read-only for the active event).
 
 MCS itself is deployed on Proxmox, not HA — see [`Master Control Server Config Steps.md`](Master%20Control%20Server%20Config%20Steps.md).

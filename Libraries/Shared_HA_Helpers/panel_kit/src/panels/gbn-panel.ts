@@ -1003,7 +1003,7 @@ class GbnPanel extends window.McPanel.Base {
       el.textContent = `Active event: ${label}`;
       el.className = "event-chip ok";
     } else {
-      el.textContent = "No active event — set one in Registration before capture";
+      el.textContent = "No active event — set one in Game Master before capture";
       el.className = "event-chip warn";
     }
   }
@@ -1017,8 +1017,8 @@ class GbnPanel extends window.McPanel.Base {
   }
 
   async _loadEventMedia() {
-    // Pass Registration-known active id/name so GBN can seed the folder even when
-    // GBN_MCS_* is unset / unreachable (otherwise the table stays empty).
+    // Pass known active id/name (from Registration read-only WS / MCS) so GBN can
+    // seed the folder even when GBN_MCS_* is unset / unreachable.
     const params = new URLSearchParams();
     if (this._activeEventId) {
       params.set("ensure_event_id", this._activeEventId);
@@ -1054,7 +1054,7 @@ class GbnPanel extends window.McPanel.Base {
     if (!this._eventMedia.length) {
       const hint = this._activeEventId
         ? "No folders on the GBN server yet — Refresh again after redeploy, or create a poster"
-        : "No event media folders yet — set an active event in Registration";
+        : "No event media folders yet — set an active event in Game Master";
       body.innerHTML = `<tr><td colspan="4" class="muted">${hint}</td></tr>`;
       return;
     }
@@ -1463,7 +1463,7 @@ class GbnPanel extends window.McPanel.Base {
       await this._loadActiveEvent();
       if (!this._activeEventId) {
         return this._feedback(
-          "No active event — set one in Registration before creating a poster",
+          "No active event — set one in Game Master before creating a poster",
           "warn"
         );
       }

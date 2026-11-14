@@ -50,7 +50,8 @@ Panels talk to **Home Assistant** (services / websocket). They do not `fetch` LA
 | App | Path | What it does |
 | --- | --- | --- |
 | **Core Configurator** | [`Apps/Core_Configurator/`](Apps/Core_Configurator/) | Single catalog of service URLs and API tokens. Other apps call `get_url` / `get_extra` — they do not store their own IPs. |
-| **Registration** | [`Apps/Registration/`](Apps/Registration/) | HA face of events + player roster via Master Control Server (never opens a Central socket itself). |
+| **Registration** | [`Apps/Registration/`](Apps/Registration/) | HA face of the player roster via Master Control Server (active event is read-only here; never opens a Central socket itself). |
+| **Game Master** | [`Apps/Game_Master/`](Apps/Game_Master/) | HA face of event create/edit/set-active, scoring live/off, delayed scores, and affiliation catalog CRUD. |
 | **Master Control Server** | [`Apps/Master_Control_Server/`](Apps/Master_Control_Server/) | Proxmox FastAPI companion (`/opt/mcs/`). Only Central HTTP adapter (players, events, device-logs). Not an HA process. |
 | **Digital Node Nexus** | [`Apps/Digital_Node_Nexus/`](Apps/Digital_Node_Nexus/) | FDN paging / LED / haptic over the MQTT fabric (`mc/dnn`). |
 | **AlleycatTV** | [`Apps/AlleycatTV/`](Apps/AlleycatTV/) | Event display playback: HA MQTT commands (`mc/tv`), Proxmox content server, Pi client. |

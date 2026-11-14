@@ -170,7 +170,7 @@ Display machine: open `http://<gbn-ip>:8100/active-players` (iframe paths are sa
 - [ ] `/health` returns `service: gbn`
 - [ ] `GET /api/poster-templates` returns hunter + bounty built-ins (not 404)
 - [ ] `/etc/gbn.env` has `GBN_MCS_BASE` + `GBN_MCS_TOKEN` matching Core Configurator MCS
-- [ ] Active event set in Game Master; `GET /api/events/active` returns that id/name (`source` may be `registration`, `mcs`, or `gbn_cache`)
+- [ ] Active event set in Game Master; `GET /api/events/active` returns that id/name (`source` may be `game_master`, `mcs`, or `gbn_cache`)
 - [ ] GBN panel shows active-event chip; Event media shows **Event name** (not only UUID) with ACTIVE badge
 - [ ] Create poster in HA panel for a known MCS player (clips land under `media/events/{id}/videos/`)
 - [ ] Hunter / Bounty auto-select built-in templates; neither-role player picks a template (create via Manage templates if needed) before Create

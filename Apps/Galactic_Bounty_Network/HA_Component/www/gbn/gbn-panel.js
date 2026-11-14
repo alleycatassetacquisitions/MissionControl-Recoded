@@ -929,7 +929,7 @@
         el.textContent = `Active event: ${label}`;
         el.className = "event-chip ok";
       } else {
-        el.textContent = "No active event \u2014 set one in Registration before capture";
+        el.textContent = "No active event \u2014 set one in Game Master before capture";
         el.className = "event-chip warn";
       }
     }
@@ -973,7 +973,7 @@
       const body = this.shadowRoot?.getElementById("event-media-body");
       if (!body) return;
       if (!this._eventMedia.length) {
-        const hint = this._activeEventId ? "No folders on the GBN server yet \u2014 Refresh again after redeploy, or create a poster" : "No event media folders yet \u2014 set an active event in Registration";
+        const hint = this._activeEventId ? "No folders on the GBN server yet \u2014 Refresh again after redeploy, or create a poster" : "No event media folders yet \u2014 set an active event in Game Master";
         body.innerHTML = `<tr><td colspan="4" class="muted">${hint}</td></tr>`;
         return;
       }
@@ -1326,7 +1326,7 @@
         await this._loadActiveEvent();
         if (!this._activeEventId) {
           return this._feedback(
-            "No active event \u2014 set one in Registration before creating a poster",
+            "No active event \u2014 set one in Game Master before creating a poster",
             "warn"
           );
         }

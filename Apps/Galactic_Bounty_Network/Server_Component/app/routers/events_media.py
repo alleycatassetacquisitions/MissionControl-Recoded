@@ -83,7 +83,7 @@ async def api_active_event() -> ActiveEventInfo:
 async def api_set_active_event(
     body: ActiveEventSet, request: Request
 ) -> ActiveEventInfo:
-    """Registration push — remember active event for /poster-cycle kiosks."""
+    """Game Master (HA) push — remember active event for /poster-cycle kiosks."""
     try:
         eid = sanitize_event_id(body.active_event_id)
     except ValueError as exc:
@@ -94,13 +94,13 @@ async def api_set_active_event(
         _event_stores(request).for_event(eid)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
-    remember_active_event(eid, name, source="registration")
-    _LOGGER.info("Active event set by Registration: %s (%s)", eid, name or "unnamed")
+    remember_active_event(eid, name, source="game_master")
+    _LOGGER.info("Active event set by Game Master: %s (%s)", eid, name or "unnamed")
     return ActiveEventInfo(
         ready=True,
         active_event_id=eid,
         event_name=name or "",
-        source="registration",
+        source="game_master",
     )
 
 
@@ -110,7 +110,7 @@ async def api_list_event_media(
     ensure_event_id: str | None = Query(
         default=None,
         description=(
-            "Event id known to the panel (e.g. Registration active). "
+            "Event id known to the panel (active event from Game Master). "
             "Seeds that folder when MCS active-event is unavailable."
         ),
     ),

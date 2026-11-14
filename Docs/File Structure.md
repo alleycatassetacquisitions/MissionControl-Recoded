@@ -158,6 +158,8 @@ After deploy, Mission Control lives under HAOS **`/config/`** (SSH as `root` to 
 | `Apps\Core_Configurator\HA_Component\www\core_configurator\` | `/config/www/core_configurator/` |
 | `Apps\Registration\HA_Component\custom_components\registration\` | `/config/custom_components/registration/` |
 | `Apps\Registration\HA_Component\www\registration\` | `/config/www/registration/` |
+| `Apps\Game_Master\HA_Component\custom_components\game_master\` | `/config/custom_components/game_master/` |
+| `Apps\Game_Master\HA_Component\www\game_master\` | `/config/www/game_master/` |
 | `Apps\Digital_Node_Nexus\HA_Component\custom_components\digital_node_nexus\` | `/config/custom_components/digital_node_nexus/` |
 | `Apps\Digital_Node_Nexus\HA_Component\www\digital_node_nexus\` | `/config/www/digital_node_nexus/` |
 | `Apps\Net_Time\HA_Component\custom_components\net_time\` | `/config/custom_components/net_time/` |
@@ -184,6 +186,7 @@ Runtime tree (Phase 10 Mission Control shell):
 │   ├── core_configurator/
 │   ├── shared_libraries/
 │   ├── registration/
+│   ├── game_master/
 │   ├── digital_node_nexus/
 │   ├── alleycattv/
 │   ├── broadcast_group_controller/
@@ -196,6 +199,7 @@ Runtime tree (Phase 10 Mission Control shell):
     ├── shared_libraries/
     │   └── mc-panel.js         ← Lit kit (built from panel_kit/)
     ├── registration/
+    ├── game_master/
     ├── digital_node_nexus/
     ├── broadcast_group_controller/
     ├── alleycattv/
@@ -253,7 +257,7 @@ Single source of truth for Alleycat service **URLs and API tokens** (MCS URL + B
 
 ### Digital Node Nexus
 
-Manages communications with FDNs (Fixed Data Nodes). Mission Control talks to FDNs here first, and later to PDNs (Portable Data Nodes) as well. Phase 5 ships a paging-first HA integration on the MQTT fabric; MCS supplies read-only roster for player/mode (role alias) targeting; NeoCorp pending Central.
+Manages communications with FDNs (Fixed Data Nodes). Mission Control talks to FDNs here first, and later to PDNs (Portable Data Nodes) as well. Phase 5 ships a paging-first HA integration on the MQTT fabric; roster targeting comes from Registration (`registration/get_roster`). Legacy NeoCorp/mode chrome can use MCS-derived overlays when present.
 
 **Path:** `Apps\Digital_Node_Nexus\`  
 **On HA:** `/config/custom_components/digital_node_nexus/` + `/config/www/digital_node_nexus/`  
@@ -261,7 +265,7 @@ Manages communications with FDNs (Fixed Data Nodes). Mission Control talks to FD
 
 ### Galactic Bounty Network
 
-Manages bounty posters, bounty boards, and poster capture. In code this is `gbn` — not Photobooth or `bounty`. Poster chrome templates (hunter/bounty built-ins + customs) live on the guest as `data/poster_templates.json`; clips/posters are **per Event** under `data/events/{id}/` and `media/events/{id}/videos/`; `data/active_event.json` caches the active Event for kiosks (Registration `PUT /api/events/active`). Public poster links follow the request Host (Core Configurator `gbn` URL). Kiosk pages: `/poster-cycle` (**active-event** posters, 30s) and `/active-players` (game-server list). AlleycatTV Content **+ Poster cycle** plays the former as a webpage playlist item.
+Manages bounty posters, bounty boards, and poster capture. In code this is `gbn` — not Photobooth or `bounty`. Poster chrome templates (hunter/bounty built-ins + customs) live on the guest as `data/poster_templates.json`; clips/posters are **per Event** under `data/events/{id}/` and `media/events/{id}/videos/`; `data/active_event.json` caches the active Event for kiosks (Game Master `PUT /api/events/active`). Public poster links follow the request Host (Core Configurator `gbn` URL). Kiosk pages: `/poster-cycle` (**active-event** posters, 30s) and `/active-players` (game-server list). AlleycatTV Content **+ Poster cycle** plays the former as a webpage playlist item.
 
 **Path:** `Apps\Galactic_Bounty_Network\`  
 **On HA:** `/config/custom_components/gbn/` + `/config/www/gbn/`  
@@ -271,7 +275,7 @@ Manages bounty posters, bounty boards, and poster capture. In code this is `gbn`
 
 ### Registration
 
-Home Assistant face of Master Control Server: events strip, roster sensor, services (`sync_now`, `register_player`, `create_event`, `update_event`, `set_active_event`, `update_player`, soft-deactivate `delete_player`), and sidebar panel. Talks to MCS for players/events; **set_active_event** (and restore-on-start) also pushes the active Event to GBN (`PUT /api/events/active`) so AlleycatTV `/poster-cycle` stays in sync. Never opens a Central socket. MCS URL/token and GBN URL come from Core Configurator.
+Home Assistant face of Master Control Server for **players**: roster sensor, services (`sync_now`, `register_player`, `update_player`, soft-deactivate `delete_player`), and sidebar panel. Active event is **read-only** here (`get_active` / coordinator); event create/edit/set-active lives on **Game Master**. Never opens a Central socket. MCS URL/token and GBN URL come from Core Configurator.
 
 **Path:** `Apps\Registration\`  
 **On HA:** `/config/custom_components/registration/` + `/config/www/registration/`  
@@ -279,7 +283,7 @@ Home Assistant face of Master Control Server: events strip, roster sensor, servi
 
 ### Game Master
 
-Home Assistant gameplay panel: active-event status from MCS `GET /game-state`, toggle scoring (“game live”) and delayed scores. Event select and player desk stay on Registration. Hours of operation / specials gated until Central APIs exist.
+Home Assistant gameplay panel: event create/edit/set-active (Phase 1c), active-event status from MCS `GET /game-state`, toggle scoring (“game live”) and delayed scores, affiliation catalog CRUD. **set_active_event** (and restore-on-start) pushes the active Event to GBN (`PUT /api/events/active`) so AlleycatTV `/poster-cycle` stays in sync. Hours of operation / specials gated until Central APIs exist.
 
 **Path:** `Apps\Game_Master\`  
 **On HA:** `/config/custom_components/game_master/` + `/config/www/game_master/`  

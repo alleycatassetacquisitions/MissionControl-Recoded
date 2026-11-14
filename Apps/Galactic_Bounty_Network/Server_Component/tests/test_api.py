@@ -396,7 +396,7 @@ def test_put_active_event_from_registration(client, monkeypatch):
     )
     assert put.status_code == 200
     assert put.json()["active_event_id"] == "evt-reg-push"
-    assert put.json()["source"] == "registration"
+    assert put.json()["source"] == "game_master"
     assert read_cached_active_event()["active_event_id"] == "evt-reg-push"
 
     async def _from_cache():
