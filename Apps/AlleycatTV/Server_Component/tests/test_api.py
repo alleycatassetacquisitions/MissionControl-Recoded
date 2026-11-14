@@ -20,7 +20,7 @@ def client(tmp_path, monkeypatch):
     media.mkdir()
     monkeypatch.setenv("ALLEYCATV_MEDIA", str(media))
     monkeypatch.setenv("ALLEYCATV_PLAYLISTS", str(tmp_path / "playlists.json"))
-    monkeypatch.setenv("ALLEYCATV_ZONES", str(tmp_path / "groups.json"))
+    monkeypatch.setenv("ALLEYCATV_BROADCAST_GROUPS", str(tmp_path / "groups.json"))
     monkeypatch.setenv("ALLEYCATV_DEVICES", str(tmp_path / "devices.json"))
     monkeypatch.setenv("ALLEYCATV_SETTINGS", str(tmp_path / "settings.json"))
 

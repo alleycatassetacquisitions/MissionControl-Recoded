@@ -6,8 +6,8 @@
       super();
       this.legacyPaint = true;
       this._devices = {};
-      this._zones = {};
-      this._selectedZone = null;
+      this._broadcastGroups = {};
+      this._selectedBroadcastGroup = null;
       this._eventUnsubscribe = null;
       this._contentFiles = [];
       this._areas = [];
@@ -23,13 +23,13 @@
       }
     }
     async _boot() {
-      await this._fetchServerZones();
+      await this._fetchServerBroadcastGroups();
       await this._loadDevices();
       await this._loadAreas();
       await this._subscribeToEvents();
       await this._loadContent();
-      this._buildZones();
-      this._renderZoneList();
+      this._buildBroadcastGroups();
+      this._renderBroadcastGroupList();
     }
     // ── Server API helpers ────────────────────────────────────────────────────
     _token() {
@@ -127,9 +127,9 @@
             const d = event.data;
             if (!d || !d.pi_id) return;
             this._devices[d.pi_id] = { ...this._devices[d.pi_id], ...d };
-            this._buildZones();
-            this._renderZoneList();
-            if (this._selectedZone) this._renderZoneDetail(this._selectedZone);
+            this._buildBroadcastGroups();
+            this._renderBroadcastGroupList();
+            if (this._selectedBroadcastGroup) this._renderBroadcastGroupDetail(this._selectedBroadcastGroup);
           },
           "alleycattv_device_update"
         );
@@ -159,31 +159,31 @@
         };
       });
     }
-    _normZone(value) {
+    _normBroadcastGroup(value) {
       return String(value || "").trim().toLowerCase().replace(/[\s_]+/g, "-");
     }
-    _resolveDeviceZoneId(device) {
+    _resolveDeviceBroadcastGroupId(device) {
       const raw = String(
         device.broadcast_group_id || device.zone || device.broadcast_zone || ""
       ).trim();
       if (!raw) return "unassigned";
-      const server = this._serverZones || {};
+      const server = this._serverBroadcastGroups || {};
       if (server[raw]) return raw;
-      const needle = this._normZone(raw);
+      const needle = this._normBroadcastGroup(raw);
       const match = Object.values(server).find(
-        (z) => this._normZone(z.broadcast_group_id || z.zone_id) === needle || this._normZone(z.name) === needle
+        (z) => this._normBroadcastGroup(z.broadcast_group_id || z.zone_id) === needle || this._normBroadcastGroup(z.name) === needle
       );
       return match ? match.broadcast_group_id || match.zone_id : raw;
     }
-    async _fetchServerZones() {
+    async _fetchServerBroadcastGroups() {
       try {
         const raw = await this._apiGet("/api/broadcast_groups/");
-        const zones = Array.isArray(raw) ? raw : [];
-        this._serverZones = this._serverZones || {};
-        zones.forEach((z) => {
+        const groups = Array.isArray(raw) ? raw : [];
+        this._serverBroadcastGroups = this._serverBroadcastGroups || {};
+        groups.forEach((z) => {
           const id = z?.broadcast_group_id || z?.zone_id;
           if (!id) return;
-          this._serverZones[id] = { ...z, zone_id: id, broadcast_group_id: id };
+          this._serverBroadcastGroups[id] = { ...z, zone_id: id, broadcast_group_id: id };
         });
         console.info("[AlleycatTV] Loaded", zones.length, "broadcast group(s)");
       } catch (err) {
@@ -202,62 +202,63 @@
         console.warn("[AlleycatTV] Could not load content from server:", err);
       }
     }
-    _buildZones() {
-      const zones = {};
-      Object.values(this._serverZones || {}).forEach((z) => {
-        zones[z.zone_id] = { zone_id: z.zone_id, name: z.name, pis: [] };
+    _buildBroadcastGroups() {
+      const groups = {};
+      Object.values(this._serverBroadcastGroups || {}).forEach((z) => {
+        const id = z.broadcast_group_id || z.zone_id;
+        groups[id] = { zone_id: id, broadcast_group_id: id, name: z.name, pis: [] };
       });
       Object.values(this._devices).forEach((d) => {
         if (!d?.pi_id) return;
-        const z = this._resolveDeviceZoneId(d);
-        if (!zones[z]) zones[z] = { zone_id: z, name: z, pis: [] };
-        const existing = zones[z].pis.findIndex((p) => p.pi_id === d.pi_id);
-        if (existing >= 0) zones[z].pis[existing] = d;
-        else zones[z].pis.push(d);
+        const z = this._resolveDeviceBroadcastGroupId(d);
+        if (!groups[z]) groups[z] = { zone_id: z, broadcast_group_id: z, name: z, pis: [] };
+        const existing = groups[z].pis.findIndex((p) => p.pi_id === d.pi_id);
+        if (existing >= 0) groups[z].pis[existing] = d;
+        else groups[z].pis.push(d);
       });
-      this._zones = zones;
+      this._broadcastGroups = groups;
     }
-    _missingPiHint(zoneId) {
-      const reports = Object.values(this._devices).filter((d) => d?.pi_id).map((d) => `${d.pi_id} (MQTT zone: ${d.zone || d.broadcast_zone || "none"})`);
+    _missingPiHint(broadcastGroupId) {
+      const reports = Object.values(this._devices).filter((d) => d?.pi_id).map((d) => `${d.pi_id} (MQTT group: ${d.zone || d.broadcast_zone || "none"})`);
       if (!reports.length) {
-        return "No Pis have reported in via MQTT yet. Zone Play/Stop still goes out on the zone topic.";
+        return "No Pis have reported in via MQTT yet. Play/Stop still publishes on the broadcast-group topic.";
       }
-      return `No Pi matched zone id "${zoneId}". Reporting: ${reports.join("; ")}`;
+      return `No Pi matched broadcast group id "${broadcastGroupId}". Reporting: ${reports.join("; ")}`;
     }
-    async _createZone(zoneId, zoneName) {
+    async _createBroadcastGroup(broadcastGroupId, broadcastGroupName) {
       try {
         await this._apiPost("/api/broadcast_groups/", {
-          broadcast_group_id: zoneId,
-          name: zoneName || zoneId
+          broadcast_group_id: broadcastGroupId,
+          name: broadcastGroupName || broadcastGroupId
         });
-        if (!this._serverZones) this._serverZones = {};
-        this._serverZones[zoneId] = {
-          zone_id: zoneId,
-          broadcast_group_id: zoneId,
-          name: zoneName || zoneId
+        if (!this._serverBroadcastGroups) this._serverBroadcastGroups = {};
+        this._serverBroadcastGroups[broadcastGroupId] = {
+          zone_id: broadcastGroupId,
+          broadcast_group_id: broadcastGroupId,
+          name: broadcastGroupName || broadcastGroupId
         };
-        this._buildZones();
-        this._renderZoneList();
-        this._showFeedback(`Broadcast group "${zoneId}" created`, "success");
+        this._buildBroadcastGroups();
+        this._renderBroadcastGroupList();
+        this._showFeedback(`Broadcast group "${broadcastGroupId}" created`, "success");
       } catch (err) {
         this._showFeedback(`Failed to create broadcast group: ${err.message}`, "error");
       }
     }
-    async _deleteZone(zoneId) {
-      if (!confirm(`Delete broadcast group "${zoneId}"? This cannot be undone.`)) return;
+    async _deleteBroadcastGroup(broadcastGroupId) {
+      if (!confirm(`Delete broadcast group "${broadcastGroupId}"? This cannot be undone.`)) return;
       try {
-        await this._apiDelete(`/api/broadcast_groups/${encodeURIComponent(zoneId)}`);
-        delete this._serverZones?.[zoneId];
-        delete this._zones[zoneId];
-        if (this._selectedZone === zoneId) {
-          this._selectedZone = null;
+        await this._apiDelete(`/api/broadcast_groups/${encodeURIComponent(broadcastGroupId)}`);
+        delete this._serverBroadcastGroups?.[broadcastGroupId];
+        delete this._broadcastGroups[broadcastGroupId];
+        if (this._selectedBroadcastGroup === broadcastGroupId) {
+          this._selectedBroadcastGroup = null;
           this.shadowRoot.getElementById("zone-detail").style.display = "none";
           this.shadowRoot.getElementById("main-placeholder").style.display = "block";
         }
-        this._renderZoneList();
-        this._showFeedback(`Zone "${zoneId}" deleted`, "success");
+        this._renderBroadcastGroupList();
+        this._showFeedback(`Broadcast group "${broadcastGroupId}" deleted`, "success");
       } catch (err) {
-        this._showFeedback(`Failed to delete zone: ${err.message}`, "error");
+        this._showFeedback(`Failed to delete broadcast group: ${err.message}`, "error");
       }
     }
     // ── Service calls ─────────────────────────────────────────────────────────
@@ -270,36 +271,36 @@
         this._showFeedback(`\u2717 ${err.message}`, "error");
       }
     }
-    _playZone(zone_id) {
-      this._callService("play_broadcast_group", { broadcast_group_id: zone_id });
+    _playBroadcastGroup(broadcast_group_id) {
+      this._callService("play_broadcast_group", { broadcast_group_id });
     }
-    _stopZone(zone_id) {
-      this._callService("stop_broadcast_group", { broadcast_group_id: zone_id });
+    _stopBroadcastGroup(broadcast_group_id) {
+      this._callService("stop_broadcast_group", { broadcast_group_id });
     }
-    _interruptZone(zone_id) {
+    _interruptBroadcastGroup(broadcast_group_id) {
       const url = this._buildInterruptUrl(this._getSelectedFileUrl(), "file-picker");
       if (!url) return this._showFeedback("Select an announcement file first", "warn");
-      this._callService("interrupt_broadcast_group", { broadcast_group_id: zone_id, file_url: url });
+      this._callService("interrupt_broadcast_group", { broadcast_group_id, file_url: url });
     }
-    _startZoneBroadcast(zone_id) {
+    _startBroadcastGroupInterrupt(broadcast_group_id) {
       const base = this._getSelectedFileUrl();
       if (!base) return this._showFeedback("Select an RTSP source first", "warn");
       const url = `${base.split("#")[0]}#acv_hold=1`;
-      this._callService("interrupt_broadcast_group", { broadcast_group_id: zone_id, file_url: url });
+      this._callService("interrupt_broadcast_group", { broadcast_group_id, file_url: url });
     }
-    _stopZoneBroadcast(zone_id) {
-      this._callService("play_broadcast_group", { broadcast_group_id: zone_id });
+    _stopBroadcastGroupInterrupt(broadcast_group_id) {
+      this._callService("play_broadcast_group", { broadcast_group_id });
     }
     _interruptPi(pi_id) {
       const url = this._buildInterruptUrl(this._getSelectedFileUrl(), "file-picker");
       if (!url) return this._showFeedback("Select an announcement file first", "warn");
       this._callService("interrupt_pi", { pi_id, file_url: url });
     }
-    _reloadPlaylist(zone_id) {
-      this._callService("reload_playlist", { broadcast_group_id: zone_id });
+    _reloadBroadcastGroupPlaylist(broadcast_group_id) {
+      this._callService("reload_playlist", { broadcast_group_id });
     }
-    _setVolume(zone_id, volume) {
-      this._callService("set_volume_broadcast_group", { broadcast_group_id: zone_id, volume: parseInt(volume) });
+    _setBroadcastGroupVolume(broadcast_group_id, volume) {
+      this._callService("set_volume_broadcast_group", { broadcast_group_id, volume: parseInt(volume) });
     }
     // ── Content picker helpers ────────────────────────────────────────────────
     _getSelectedFileUrl() {
@@ -415,17 +416,17 @@
       if (!base) return this._showFeedback("Select an RTSP source", "warn");
       const url = `${base.split("#")[0]}#acv_hold=1`;
       const vol = parseInt(this.shadowRoot.getElementById("bcast-rtsp-volume")?.value || "80", 10);
-      const zones = Object.keys(this._zones);
-      if (!zones.length) return this._showFeedback("No zones available", "warn");
-      for (const zid of zones) {
+      const zones2 = Object.keys(this._broadcastGroups);
+      if (!zones2.length) return this._showFeedback("No broadcast groups available", "warn");
+      for (const zid of zones2) {
         await this.hass?.callService("alleycattv", "set_volume_broadcast_group", { broadcast_group_id: zid, volume: vol });
         await this.hass?.callService("alleycattv", "interrupt_broadcast_group", { broadcast_group_id: zid, file_url: url });
       }
-      this._showFeedback(`Live RTSP started on ${zones.length} zone(s)`, "success");
+      this._showFeedback(`Live RTSP started on ${zones2.length} broadcast group(s)`, "success");
     }
     async _broadcastStopRtsp() {
-      const zones = Object.keys(this._zones);
-      for (const zid of zones) {
+      const zones2 = Object.keys(this._broadcastGroups);
+      for (const zid of zones2) {
         await this.hass?.callService("alleycattv", "play_broadcast_group", { broadcast_group_id: zid });
       }
       this._showFeedback("Broadcasting stopped \u2014 playlists resumed", "success");
@@ -444,16 +445,16 @@
       }, 3500);
     }
     // ── Render ────────────────────────────────────────────────────────────────
-    _renderZoneList() {
+    _renderBroadcastGroupList() {
       const container = this.shadowRoot.getElementById("zone-list");
       if (!container) return;
-      const zoneIds = Object.keys(this._zones);
+      const zoneIds = Object.keys(this._broadcastGroups);
       if (zoneIds.length === 0) {
         container.innerHTML = `<p class="empty-hint">Waiting for devices\u2026<br><span>Pis publish to <code>alleycattv/pi/{id}/status</code></span></p>`;
         return;
       }
       container.innerHTML = zoneIds.map((zid) => {
-        const z = this._zones[zid];
+        const z = this._broadcastGroups[zid];
         const total = z.pis.length;
         const onlineCount = z.pis.filter((p) => p.online !== false).length;
         const allPlaying = total > 0 && z.pis.every((p) => p.state === "playing");
@@ -461,7 +462,7 @@
         const dotClass = allPlaying ? "playing" : onlineCount > 0 ? "online" : "offline";
         const subLabel = isEmpty ? "no devices" : `${onlineCount}/${total} online`;
         return `
-        <div class="zone-chip ${this._selectedZone === zid ? "active" : ""} ${isEmpty ? "zone-empty" : ""}" data-zone="${zid}">
+        <div class="zone-chip ${this._selectedBroadcastGroup === zid ? "active" : ""} ${isEmpty ? "zone-empty" : ""}" data-zone="${zid}">
           <span class="zone-dot ${isEmpty ? "empty" : dotClass}"></span>
           <div class="zone-info">
             <span class="zone-name">${z.name || zid}</span>
@@ -471,26 +472,26 @@
       }).join("");
       container.querySelectorAll(".zone-chip").forEach((chip) => {
         chip.addEventListener("click", () => {
-          this._selectedZone = chip.dataset.zone;
-          this._renderZoneList();
-          this._renderZoneDetail(chip.dataset.zone);
+          this._selectedBroadcastGroup = chip.dataset.zone;
+          this._renderBroadcastGroupList();
+          this._renderBroadcastGroupDetail(chip.dataset.zone);
           this.shadowRoot.getElementById("main-placeholder").style.display = "none";
           this.shadowRoot.getElementById("zone-detail").style.display = "block";
         });
       });
     }
-    _renderZoneDetail(zone_id) {
+    _renderBroadcastGroupDetail(broadcast_group_id) {
       const detail = this.shadowRoot.getElementById("zone-detail");
       if (!detail) return;
-      const zone = this._zones[zone_id];
+      const zone = this._broadcastGroups[broadcast_group_id];
       if (!zone) return;
-      const serverZone = (this._serverZones || {})[zone_id];
-      detail.querySelector("#zone-title").textContent = serverZone?.name || zone_id;
+      const serverZone = (this._serverBroadcastGroups || {})[broadcast_group_id];
+      detail.querySelector("#zone-title").textContent = serverZone?.name || broadcast_group_id;
       const playingPis = (zone.pis || []).filter((p) => p.online !== false && p.state === "playing");
       const summaryPi = playingPis[0] || (zone.pis || []).find((p) => p.online !== false);
       const nowEl = detail.querySelector("#now-playing-summary");
       const noPis = !(zone.pis || []).length;
-      const hint = noPis ? this._missingPiHint(zone_id) : "";
+      const hint = noPis ? this._missingPiHint(broadcast_group_id) : "";
       if (nowEl) {
         if (noPis) {
           nowEl.innerHTML = `<p class="playback-idle">${hint}</p>`;
@@ -499,7 +500,7 @@
           <div class="playback-row"><span class="playback-label">Now Playing</span><span class="playback-value">${summaryPi.current_file}</span></div>
           <div class="playback-row"><span class="playback-label">Up Next</span><span class="playback-value">${summaryPi.next_file || "\u2014"}</span></div>`;
         } else {
-          nowEl.innerHTML = `<p class="playback-idle">${summaryPi ? "Nothing playing" : "No devices online in this zone"}</p>`;
+          nowEl.innerHTML = `<p class="playback-idle">${summaryPi ? "Nothing playing" : "No devices online in this broadcast group"}</p>`;
         }
       }
       const pis = this.shadowRoot.getElementById("pi-cards");
@@ -547,7 +548,7 @@
       });
       const volInput = this.shadowRoot.getElementById("vol-slider");
       if (volInput) {
-        volInput.dataset.zone = zone_id;
+        volInput.dataset.zone = broadcast_group_id;
       }
     }
     _render() {
@@ -761,7 +762,7 @@
         </div>
         <div>
           <h1>AlleycatTV</h1>
-          <p class="subtitle">Zone video distribution</p>
+          <p class="subtitle">Broadcast group video distribution</p>
         </div>
         <span id="feedback"></span>
       </div>
@@ -773,7 +774,7 @@
             <button class="btn-icon" id="btn-new-zone" title="Create group">+</button>
           </div>
           <div id="new-zone-form" style="display:none;margin-bottom:12px;">
-            <input id="new-zone-id" type="text" placeholder="Zone ID (e.g. zone-lobby)" style="margin-bottom:6px;" />
+            <input id="new-zone-id" type="text" placeholder="Broadcast group ID (e.g. lobby)" style="margin-bottom:6px;" />
             <input id="new-zone-name" type="text" placeholder="Display name (optional)" style="margin-bottom:8px;" />
             <div style="display:flex;gap:6px;">
               <button class="btn btn-primary btn-sm" id="btn-zone-save" style="flex:1">Create</button>
@@ -818,7 +819,7 @@
             <svg width="64" height="64" viewBox="0 0 24 24" fill="currentColor">
               <path d="M21 3H3c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h18c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zm0 16H3V5h18v14zM10 8l6 4-6 4V8z"/>
             </svg>
-            <p>Select a zone from the sidebar to manage it.</p>
+            <p>Select a broadcast group from the sidebar to manage it.</p>
           </div>
 
           <!-- Per-zone detail panel -->
@@ -827,14 +828,14 @@
               <h2 id="zone-title">\u2014</h2>
               <div class="zone-controls">
                 <button class="btn btn-success" id="btn-play" title="Resume playlist playback">\u25B6 Play</button>
-                <button class="btn btn-danger"  id="btn-stop" title="Stop playback on all displays in this zone">\u25A0 Stop</button>
+                <button class="btn btn-danger"  id="btn-stop" title="Stop playback on all displays in this broadcast group">\u25A0 Stop</button>
                 <button class="btn btn-warning" id="btn-reload" title="Reload playlist from server">\u21BA Reload</button>
                 <button class="btn btn-secondary" id="btn-delete-zone" style="margin-left:8px;color:#e24b4a;">\u{1F5D1} Delete group</button>
               </div>
             </div>
 
             <div class="now-playing-box" id="now-playing-summary">
-              <p class="playback-idle">Select a zone to see playback status</p>
+              <p class="playback-idle">Select a broadcast group to see playback status</p>
             </div>
 
             <!-- Interrupt card -->
@@ -888,22 +889,22 @@
     _attachEventListeners() {
       const root = this.shadowRoot;
       root.getElementById("btn-play")?.addEventListener("click", () => {
-        if (this._selectedZone) this._playZone(this._selectedZone);
+        if (this._selectedBroadcastGroup) this._playBroadcastGroup(this._selectedBroadcastGroup);
       });
       root.getElementById("btn-stop")?.addEventListener("click", () => {
-        if (this._selectedZone) this._stopZone(this._selectedZone);
+        if (this._selectedBroadcastGroup) this._stopBroadcastGroup(this._selectedBroadcastGroup);
       });
       root.getElementById("btn-reload")?.addEventListener("click", () => {
-        if (this._selectedZone) this._reloadPlaylist(this._selectedZone);
+        if (this._selectedBroadcastGroup) this._reloadBroadcastGroupPlaylist(this._selectedBroadcastGroup);
       });
       root.getElementById("btn-interrupt")?.addEventListener("click", () => {
-        if (this._selectedZone) this._interruptZone(this._selectedZone);
+        if (this._selectedBroadcastGroup) this._interruptBroadcastGroup(this._selectedBroadcastGroup);
       });
       root.getElementById("btn-rtsp-start")?.addEventListener("click", () => {
-        if (this._selectedZone) this._startZoneBroadcast(this._selectedZone);
+        if (this._selectedBroadcastGroup) this._startBroadcastGroupInterrupt(this._selectedBroadcastGroup);
       });
       root.getElementById("btn-rtsp-stop")?.addEventListener("click", () => {
-        if (this._selectedZone) this._stopZoneBroadcast(this._selectedZone);
+        if (this._selectedBroadcastGroup) this._stopBroadcastGroupInterrupt(this._selectedBroadcastGroup);
       });
       root.getElementById("file-picker")?.addEventListener("change", () => {
         this._syncInterruptUi("file-picker");
@@ -913,7 +914,7 @@
       });
       root.getElementById("btn-vol")?.addEventListener("click", () => {
         const slider = root.getElementById("vol-slider");
-        if (this._selectedZone && slider) this._setVolume(this._selectedZone, slider.value);
+        if (this._selectedBroadcastGroup && slider) this._setBroadcastGroupVolume(this._selectedBroadcastGroup, slider.value);
       });
       root.getElementById("btn-new-zone")?.addEventListener("click", () => {
         const form = root.getElementById("new-zone-form");
@@ -928,20 +929,20 @@
       root.getElementById("btn-zone-save")?.addEventListener("click", () => {
         const id = root.getElementById("new-zone-id").value.trim();
         const name = root.getElementById("new-zone-name").value.trim();
-        if (!id) return this._showFeedback("Zone ID is required", "warn");
+        if (!id) return this._showFeedback("Broadcast group ID is required", "warn");
         root.getElementById("new-zone-form").style.display = "none";
         root.getElementById("new-zone-id").value = "";
         root.getElementById("new-zone-name").value = "";
-        this._createZone(id, name);
+        this._createBroadcastGroup(id, name);
       });
       root.getElementById("btn-delete-zone")?.addEventListener("click", () => {
-        if (this._selectedZone) this._deleteZone(this._selectedZone);
+        if (this._selectedBroadcastGroup) this._deleteBroadcastGroup(this._selectedBroadcastGroup);
       });
       root.getElementById("bcast-interrupt")?.addEventListener("click", () => {
         const sel = root.getElementById("file-picker-global");
         const url = this._buildInterruptUrl(sel ? sel.value : "", "file-picker-global");
         if (!url) return this._showFeedback("Select an announcement file", "warn");
-        Object.keys(this._zones).forEach((zid) => {
+        Object.keys(this._broadcastGroups).forEach((zid) => {
           this.hass?.callService("alleycattv", "interrupt_broadcast_group", { broadcast_group_id: zid, file_url: url });
         });
         this._showFeedback("Broadcast interrupt sent to all zones", "success");

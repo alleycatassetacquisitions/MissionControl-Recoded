@@ -21,7 +21,12 @@ from app.config import (
     public_base_for,
 )
 from app.models import AnnouncementUrlEntry, ContentFile, MediaType
-from app.playlist_store import find_zones_with_file, load_playlists, remove_file_from_all_playlists, save_playlists
+from app.playlist_store import (
+    find_broadcast_groups_with_file,
+    load_playlists,
+    remove_file_from_all_playlists,
+    save_playlists,
+)
 
 
 def _resolve_broadcast_group_id(
@@ -29,17 +34,18 @@ def _resolve_broadcast_group_id(
     broadcast_group_id: Optional[str] = None,
     zone_id: Optional[str] = None,
 ) -> Optional[str]:
+    # zone_id remains an API/Form read-compat alias for older clients.
     raw = (broadcast_group_id or zone_id or "").strip()
     return raw or None
 
 
-def _notify_zones_reload(zone_ids: List[str]) -> None:
+def _notify_broadcast_groups_reload(broadcast_group_ids: List[str]) -> None:
     """Playlist changed — operators reload via Home Assistant (no MQTT from this server)."""
-    if not zone_ids:
+    if not broadcast_group_ids:
         return
     _LOGGER.info(
         "Playlist(s) updated for %s — use alleycattv.reload_playlist in Home Assistant",
-        ", ".join(zone_ids),
+        ", ".join(broadcast_group_ids),
     )
 
 router = APIRouter(prefix="/content", tags=["content"])
@@ -424,7 +430,7 @@ async def content_usage_post(body: FileRef):
     """Return zone playlists that reference a library file (JSON body â€” avoids long URL issues)."""
     if body.subdir not in ("videos", "photos"):
         raise HTTPException(status_code=400, detail="Usage lookup only applies to videos and photos")
-    zones = find_zones_with_file(body.filename, body.subdir)
+    zones = find_broadcast_groups_with_file(body.filename, body.subdir)
     return {"filename": body.filename, "subdir": body.subdir, "zones": zones}
 
 
@@ -478,7 +484,7 @@ async def content_usage(subdir: str, filename: str):
     """Return zone playlists that reference a library file (for delete confirmation)."""
     if subdir not in ("videos", "photos"):
         raise HTTPException(status_code=400, detail="Usage lookup only applies to videos and photos")
-    groups = find_zones_with_file(filename, subdir)
+    groups = find_broadcast_groups_with_file(filename, subdir)
     return {"filename": filename, "subdir": subdir, "broadcast_groups": groups}
 
 
@@ -501,6 +507,8 @@ async def _delete_library_file(subdir: str, filename: str):
         raise HTTPException(status_code=404, detail=f"File not found: {filename}")
     removed_from = remove_file_from_all_playlists(filename, subdir)
     target.unlink()
-    _notify_zones_reload(removed_from)
-    _LOGGER.info("Deleted file: %s (removed from zones: %s)", target, removed_from)
+    _notify_broadcast_groups_reload(removed_from)
+    _LOGGER.info(
+        "Deleted file: %s (removed from broadcast groups: %s)", target, removed_from
+    )
     return {"deleted": filename, "subdir": subdir, "removed_from_broadcast_groups": removed_from}

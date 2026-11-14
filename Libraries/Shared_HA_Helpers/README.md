@@ -18,7 +18,10 @@ Modules other integrations import directly:
 | `proxy.py` | `async_proxy_lan` / `proxy_request_parts` — authenticated HA→LAN companion forward (GBN / AlleycatTV) |
 | `mqtt.py` | `mc_topic`, `resolve_cmd_segments`, `async_subscribe` / `async_publish` / `async_subscribe_presence` |
 | `fabric.py` | Presence tracking: `mc/{kind}/status/#` → device_registry + `online`/`offline`/`unknown` sensor; `async_forget_device` clears tracker + retained status |
+| `mc_codec.py` | MQTT payload encode/decode — `.proto` field numbers SoR; default wire UTF-8 JSON; dual-read `MC\x01` + proto3 |
 | `www/shared_libraries/mc-panel.js` | Lit + TypeScript McPanel kit (`window.McPanel`) — build from `panel_kit/` |
+
+**Codec sync:** `HA_Component/custom_components/shared_libraries/mc_codec.py` and the Pi mirror `Apps/AlleycatTV/Client_Component/alleycattv_player/mc_codec.py` must stay **byte-identical**. Change one → copy to the other in the same PR.
 
 Declared deps (`core_configurator`, `shared_libraries`) are hard-imported — missing packages fail import/setup loudly.
 

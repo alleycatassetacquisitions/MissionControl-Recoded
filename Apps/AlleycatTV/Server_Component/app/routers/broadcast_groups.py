@@ -11,22 +11,22 @@ from typing import Dict, List
 
 from fastapi import APIRouter, HTTPException
 
-from app.config import ZONES_FILE
+from app.config import BROADCAST_GROUPS_FILE
 from app.models import BroadcastGroup
 
 router = APIRouter(tags=["broadcast_groups"])
 
 
 def _load() -> Dict[str, dict]:
-    p = Path(ZONES_FILE)
+    p = Path(BROADCAST_GROUPS_FILE)
     if p.exists():
         return json.loads(p.read_text(encoding="utf-8"))
     return {}
 
 
 def _save(data: Dict[str, dict]) -> None:
-    Path(ZONES_FILE).parent.mkdir(parents=True, exist_ok=True)
-    Path(ZONES_FILE).write_text(json.dumps(data, indent=2), encoding="utf-8")
+    Path(BROADCAST_GROUPS_FILE).parent.mkdir(parents=True, exist_ok=True)
+    Path(BROADCAST_GROUPS_FILE).write_text(json.dumps(data, indent=2), encoding="utf-8")
 
 
 def _normalize_row(key: str, row: dict) -> BroadcastGroup:
