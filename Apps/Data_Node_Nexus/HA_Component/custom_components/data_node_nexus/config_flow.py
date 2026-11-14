@@ -12,7 +12,7 @@ from homeassistant.config_entries import ConfigFlow, ConfigFlowResult
 from .const import DOMAIN
 
 
-class DigitalNodeNexusConfigFlow(ConfigFlow, domain=DOMAIN):
+class DataNodeNexusConfigFlow(ConfigFlow, domain=DOMAIN):
     """Single-instance config flow for Data Node Nexus."""
 
     VERSION = 1
