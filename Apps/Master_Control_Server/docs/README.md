@@ -87,7 +87,7 @@ Player roster from Central (active event), normalized to MCS fields. Optional `p
 }
 ```
 
-`role` / `mode` are HA-facing aliases derived from Central `team_name` (substring Hunter/Bounty → that mode; else `unassigned`). Legacy `hunter` int: `1→hunter`, `2→bounty`. Roster also includes `team_id`, `team_name`, `active`, `event_id`. NeoCorp / faction / neo_id stay empty until Central’s affiliation API ships.
+`role` / `mode` are HA-facing aliases derived from Central `team_name` (substring Hunter/Bounty → that mode; else `unassigned`). Legacy `hunter` int: `1→hunter`, `2→bounty`. Roster also includes `team_id`, `team_name`, `active`, `event_id`, and `affiliations[]` from Central. Legacy `neocorp` / `faction` overlays are derived from Allegiance/NeoCorp and Faction category choices when present (MCS may map known NeoCorp names to logo slugs `reboot` / `helix` / `endline` / `freelancer`); unknown names are stored as-is. `neo_id` stays empty unless Central supplies it.
 
 ### `GET /players/{player_id}` — Bearer required
 

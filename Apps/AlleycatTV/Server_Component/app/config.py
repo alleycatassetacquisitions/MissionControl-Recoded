@@ -6,10 +6,12 @@ import os
 
 MEDIA_BASE = os.getenv("ALLEYCATV_MEDIA", "/opt/alleycattv/media")
 PLAYLISTS_FILE = os.getenv("ALLEYCATV_PLAYLISTS", "/opt/alleycattv/playlists.json")
-ZONES_FILE = os.getenv(
-    "ALLEYCATV_ZONES",
-    os.getenv("ALLEYCATV_BROADCAST_GROUPS", "/opt/alleycattv/broadcast_groups.json"),
+# Prefer ALLEYCATV_BROADCAST_GROUPS; ALLEYCATV_ZONES is a one-release alias.
+BROADCAST_GROUPS_FILE = os.getenv(
+    "ALLEYCATV_BROADCAST_GROUPS",
+    os.getenv("ALLEYCATV_ZONES", "/opt/alleycattv/broadcast_groups.json"),
 )
+ZONES_FILE = BROADCAST_GROUPS_FILE  # alias — remove after venues migrate env
 DEVICES_FILE = os.getenv("ALLEYCATV_DEVICES", "/opt/alleycattv/devices.json")
 SETTINGS_FILE = os.getenv("ALLEYCATV_SETTINGS", "/opt/alleycattv/settings.json")
 ANNOUNCEMENTS_URLS_FILE = os.getenv(

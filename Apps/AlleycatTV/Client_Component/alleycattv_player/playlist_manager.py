@@ -147,12 +147,12 @@ class PlaylistManager:
     # ── Public API ──────────────────────────────────────────────────────────────
 
     def fetch_playlist(self) -> bool:
-        """Fetch/refresh the zone playlist from the server.  Returns True on success."""
-        zone_id = get_broadcast_group_id()
-        if not zone_id:
+        """Fetch/refresh the broadcast-group playlist from the server. Returns True on success."""
+        broadcast_group_id = get_broadcast_group_id()
+        if not broadcast_group_id:
             _LOGGER.warning("No Broadcast Group assigned — playlist fetch skipped")
-            return
-        url = f"{SERVER_URL}/api/playlists/{urllib.parse.quote(zone_id, safe='')}"
+            return False
+        url = f"{SERVER_URL}/api/playlists/{urllib.parse.quote(broadcast_group_id, safe='')}"
         try:
             with urllib.request.urlopen(url, timeout=10) as resp:
                 data = json.loads(resp.read())

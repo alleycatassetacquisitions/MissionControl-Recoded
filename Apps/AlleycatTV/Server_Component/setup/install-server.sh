@@ -74,7 +74,7 @@ cat > "$INSTALL_DIR/alleycattv.env" <<EOF
 ALLEYCATV_MAX_UPLOAD_MB=${MAX_UPLOAD_MB}
 ALLEYCATV_MEDIA=/opt/alleycattv/media
 ALLEYCATV_PLAYLISTS=/opt/alleycattv/playlists.json
-ALLEYCATV_ZONES=/opt/alleycattv/broadcast_groups.json
+ALLEYCATV_BROADCAST_GROUPS=/opt/alleycattv/broadcast_groups.json
 ALLEYCATV_DEVICES=/opt/alleycattv/devices.json
 ALLEYCATV_SETTINGS=/opt/alleycattv/settings.json
 EOF

@@ -47,12 +47,12 @@ Data on the guest:
 | --- | --- |
 | `/opt/gbn/data/events/{event_id}/posters.json` | Poster metadata per Event |
 | `/opt/gbn/data/events/{event_id}/meta.json` | Display name for that Event (Event media card) |
-| `/opt/gbn/data/active_event.json` | Last-known active Event (kiosk cache; Registration push + MCS) |
+| `/opt/gbn/data/active_event.json` | Last-known active Event (kiosk cache; Game Master push + MCS) |
 | `/opt/gbn/media/events/{event_id}/videos/{player_id}.*` | Capture clips per Event |
 | `/opt/gbn/data/poster_templates.json` | Chrome templates (auto-seeded hunter/bounty) |
 | `/opt/gbn/app/` | Python package (`uvicorn app.main:app`) |
 
-**MCS on the guest is required for live Player overlays** and is the backup path for active Event. Set both in `/etc/gbn.env` to the same MCS URL/token as Core Configurator. Registration also pushes active Event to GBN (`PUT /api/events/active`) whenever operators set active — that is what keeps AlleycatTV `/poster-cycle` working after restarts without opening the page in a desktop browser.
+**MCS on the guest is required for live Player overlays** and is the backup path for active Event. Set both in `/etc/gbn.env` to the same MCS URL/token as Core Configurator. Game Master also pushes active Event to GBN (`PUT /api/events/active`) whenever operators set active — that is what keeps AlleycatTV `/poster-cycle` working after restarts without opening the page in a desktop browser.
 
 ### Upgrade app on an existing CT
 
@@ -100,7 +100,7 @@ Merge from [`HomeAssist/configuration.yaml`](../HomeAssist/configuration.yaml):
 Restart HA (Registration custom component change needs a restart). Hard-refresh the browser after updating `www/gbn/` / `www/registration/`.
 
 1. Settings → Devices & services → Add **Galactic Bounty Network** (install-only).
-2. In **Registration**, set an **active Event** before capture — this also pushes the Event id/name to GBN for AlleycatTV kiosks.
+2. In **Game Master**, set an **active Event** before capture — this also pushes the Event id/name to GBN for AlleycatTV kiosks. Registration is read-only for the active event.
 3. Sidebar **Galactic Bounty Network**: confirm the active-event chip → pick a Registration roster player → Generate → record/upload → create poster.
 4. **Subject:** affiliation control is labeled **Allegiance/NeoCorp** (same values as before).
 5. **Poster copy** + **Manage templates:**
@@ -133,13 +133,13 @@ Active Event (proxied): `GET/PUT /api/gbn/proxy/api/events/active`.
 
 In AlleycatTV Content, **+ Poster cycle** adds `{gbn}/poster-cycle` as a webpage playlist item (**24 hour** slot — AlleycatTV advances after `duration` seconds; GBN rotates posters inside the page every 30s). The GBN page:
 
-1. `GET /api/events/active` (MCS → else `data/active_event.json` cache from Registration push)
+1. `GET /api/events/active` (MCS → else `data/active_event.json` cache from Game Master push)
 2. `GET /api/posters?event_id=…` for that Event only (never the legacy global store)
 3. Rotates every 30s; re-fetches the list every 15s
 
 No on-screen Event/player/counter chrome while posters play (full-bleed art). Empty/error states only: `NO ACTIVE EVENT`, `NO POSTERS FOR EVENT`, etc.
 
-**Active Event sources (in order):** MCS `GET /events/active` when `GBN_MCS_*` works; otherwise GBN disk cache. Registration **set active event**, create-with-set-active, and HA restore-on-start all `PUT /api/events/active` on GBN so AlleycatTV Pis do not need a desktop browser visit to “wake” the cycle after a GBN restart.
+**Active Event sources (in order):** MCS `GET /events/active` when `GBN_MCS_*` works; otherwise GBN disk cache. Game Master `set_active_event`, create-with-set-active, and HA restore-on-start all `PUT /api/events/active` on GBN so AlleycatTV Pis do not need a desktop browser visit to “wake” the cycle after a GBN restart.
 
 Ops fallback (`/manage`): paste `http://<gbn-ip>:8100/poster-cycle` via **+ Poster cycle**.
 
@@ -170,7 +170,7 @@ Display machine: open `http://<gbn-ip>:8100/active-players` (iframe paths are sa
 - [ ] `/health` returns `service: gbn`
 - [ ] `GET /api/poster-templates` returns hunter + bounty built-ins (not 404)
 - [ ] `/etc/gbn.env` has `GBN_MCS_BASE` + `GBN_MCS_TOKEN` matching Core Configurator MCS
-- [ ] Active event set in Registration; `GET /api/events/active` returns that id/name (`source` may be `registration`, `mcs`, or `gbn_cache`)
+- [ ] Active event set in Game Master; `GET /api/events/active` returns that id/name (`source` may be `registration`, `mcs`, or `gbn_cache`)
 - [ ] GBN panel shows active-event chip; Event media shows **Event name** (not only UUID) with ACTIVE badge
 - [ ] Create poster in HA panel for a known MCS player (clips land under `media/events/{id}/videos/`)
 - [ ] Hunter / Bounty auto-select built-in templates; neither-role player picks a template (create via Manage templates if needed) before Create

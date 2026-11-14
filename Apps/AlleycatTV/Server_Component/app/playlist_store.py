@@ -31,28 +31,28 @@ def media_type_for_subdir(subdir: str) -> Optional[str]:
     return _SUBDIR_MEDIA_TYPE.get(subdir)
 
 
-def find_zones_with_file(filename: str, subdir: str) -> List[str]:
-    """Return zone IDs whose playlist contains this file (matched by filename + media type)."""
+def find_broadcast_groups_with_file(filename: str, subdir: str) -> List[str]:
+    """Return broadcast_group_ids whose playlist contains this file (filename + media type)."""
     expected = media_type_for_subdir(subdir)
     if not expected:
         return []
-    zones: List[str] = []
-    for zone_id, playlist in load_playlists().items():
+    groups: List[str] = []
+    for broadcast_group_id, playlist in load_playlists().items():
         for item in playlist.get("items", []):
             if item.get("filename") == filename and item.get("media_type") == expected:
-                zones.append(zone_id)
+                groups.append(broadcast_group_id)
                 break
-    return zones
+    return groups
 
 
 def remove_file_from_all_playlists(filename: str, subdir: str) -> List[str]:
-    """Remove matching playlist entries; return zone IDs that were updated."""
+    """Remove matching playlist entries; return broadcast_group_ids that were updated."""
     expected = media_type_for_subdir(subdir)
     if not expected:
         return []
     data = load_playlists()
     updated: List[str] = []
-    for zone_id, playlist in data.items():
+    for broadcast_group_id, playlist in data.items():
         items = playlist.get("items", [])
         kept = [
             i for i in items
@@ -60,8 +60,8 @@ def remove_file_from_all_playlists(filename: str, subdir: str) -> List[str]:
         ]
         if len(kept) != len(items):
             playlist["items"] = kept
-            data[zone_id] = playlist
-            updated.append(zone_id)
+            data[broadcast_group_id] = playlist
+            updated.append(broadcast_group_id)
     if updated:
         save_playlists(data)
     return updated
