@@ -150,22 +150,20 @@ wait_for_network() {
 }
 
 install_atv_into_ct() {
-  say "Installing nginx + AlleycatTV content server inside CT $CTID"
+  say "Installing AlleycatTV via pct exec → setup/install-server.sh"
   pct exec "$CTID" -- bash -lc '
     set -euo pipefail
     export DEBIAN_FRONTEND=noninteractive
     apt-get update -qq
-    apt-get install -y -qq nginx python3 python3-pip python3-venv ca-certificates curl
-    mkdir -p /opt/alleycattv/{media/{videos,photos,announcements,bumpers},server,venv}
-    if ! id alleycattv &>/dev/null; then
-      useradd --system --no-create-home --shell /usr/sbin/nologin alleycattv
-    fi
+    apt-get install -y -qq ca-certificates curl
+    rm -rf /root/alleycattv-src
+    mkdir -p /root/alleycattv-src
   '
 
   if [[ -n "$ATV_SRC" ]]; then
     [[ -d "$ATV_SRC" ]] || die "ATV_SRC is not a directory: $ATV_SRC"
     say "Copying AlleycatTV Server_Component from $ATV_SRC"
-    tar -C "$ATV_SRC" -cf - . | pct exec "$CTID" -- tar -C /opt/alleycattv/server -xf -
+    tar -C "$ATV_SRC" -cf - . | pct exec "$CTID" -- tar -C /root/alleycattv-src -xf -
   else
     say "Cloning AlleycatTV from $REPO_URL"
     pct exec "$CTID" -- bash -lc "
@@ -174,92 +172,16 @@ install_atv_into_ct() {
       apt-get install -y -qq git
       rm -rf /tmp/mc-src
       git clone --depth 1 '$REPO_URL' /tmp/mc-src
-      cp -a /tmp/mc-src/Apps/AlleycatTV/Server_Component/. /opt/alleycattv/server/
+      cp -a /tmp/mc-src/Apps/AlleycatTV/Server_Component/. /root/alleycattv-src/
       rm -rf /tmp/mc-src
     "
   fi
 
-  pct exec "$CTID" -- bash -lc "
-    set -euo pipefail
-    REQ=/opt/alleycattv/server/requirements.txt
-    [[ -f \"\$REQ\" ]] || REQ=/opt/alleycattv/server/app/requirements.txt
-    python3 -m venv /opt/alleycattv/venv
-    /opt/alleycattv/venv/bin/pip install -q --upgrade pip
-    /opt/alleycattv/venv/bin/pip install -q -r \"\$REQ\"
-    cat > /opt/alleycattv/alleycattv.env <<EOF
-ALLEYCATV_MAX_UPLOAD_MB=${MAX_UPLOAD_MB}
-ALLEYCATV_MEDIA=/opt/alleycattv/media
-ALLEYCATV_PLAYLISTS=/opt/alleycattv/playlists.json
-ALLEYCATV_ZONES=/opt/alleycattv/broadcast_groups.json
-ALLEYCATV_DEVICES=/opt/alleycattv/devices.json
-ALLEYCATV_SETTINGS=/opt/alleycattv/settings.json
-EOF
-    chown -R alleycattv:alleycattv /opt/alleycattv
-  "
-
-  # systemd unit
-  pct exec "$CTID" -- bash -lc 'cat > /etc/systemd/system/alleycattv-server.service <<'"'"'UNIT'"'"'
-[Unit]
-Description=AlleycatTV content server
-After=network-online.target
-Wants=network-online.target
-
-[Service]
-Type=simple
-EnvironmentFile=-/opt/alleycattv/alleycattv.env
-User=alleycattv
-WorkingDirectory=/opt/alleycattv/server
-ExecStart=/opt/alleycattv/venv/bin/uvicorn app.main:app --host 127.0.0.1 --port 8000 --access-log
-Restart=on-failure
-RestartSec=5
-ReadWritePaths=/opt/alleycattv
-
-[Install]
-WantedBy=multi-user.target
-UNIT'
-
-  # nginx
-  pct exec "$CTID" -- bash -lc '
-    set -euo pipefail
-    if [[ -f /opt/alleycattv/server/nginx/alleycattv.conf ]]; then
-      cp /opt/alleycattv/server/nginx/alleycattv.conf /etc/nginx/sites-available/alleycattv
-    else
-      cat > /etc/nginx/sites-available/alleycattv <<'"'"'NGX'"'"'
-server {
-    listen 80;
-    server_name _;
-    location /media/ {
-        alias /opt/alleycattv/media/;
-        autoindex off;
-        sendfile on;
-        client_max_body_size 512M;
-    }
-    location /api/ {
-        proxy_pass http://127.0.0.1:8000/api/;
-        proxy_http_version 1.1;
-        proxy_set_header Host $host;
-        proxy_set_header X-Real-IP $remote_addr;
-        proxy_read_timeout 120s;
-        client_max_body_size 512M;
-    }
-    location /health { proxy_pass http://127.0.0.1:8000/health; }
-    location /manage {
-        proxy_pass http://127.0.0.1:8000/manage;
-        proxy_http_version 1.1;
-        proxy_set_header Host $host;
-    }
-    location / { return 404; }
-}
-NGX
-    fi
-    ln -sfn /etc/nginx/sites-available/alleycattv /etc/nginx/sites-enabled/alleycattv
-    rm -f /etc/nginx/sites-enabled/default
-    nginx -t
-    systemctl enable nginx
-    systemctl restart nginx
-    systemctl daemon-reload
-    systemctl enable --now alleycattv-server
-  '
+  pct exec "$CTID" -- env \
+    DEBIAN_FRONTEND=noninteractive \
+    SKIP_CONFIRM=1 \
+    ALLEYCATV_MAX_UPLOAD_MB="${MAX_UPLOAD_MB}" \
+    bash /root/alleycattv-src/setup/install-server.sh
 }
 
 # ---------------------------------------------------------------------------

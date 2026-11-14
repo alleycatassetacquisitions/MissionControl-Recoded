@@ -23,22 +23,34 @@ echo ""
 
 HOSTNAME_FQDN="$(hostname -f 2>/dev/null || hostname)"
 DEFAULT_PUBLIC="http://${HOSTNAME_FQDN}:8100"
-read -rp "Public base URL for poster links [${DEFAULT_PUBLIC}]: " PUBLIC_BASE
-PUBLIC_BASE="${PUBLIC_BASE:-$DEFAULT_PUBLIC}"
-PUBLIC_BASE="${PUBLIC_BASE%/}"
 
-read -rp "Master Control Server base URL (blank = no live overlay): " MCS_BASE
-MCS_BASE="${MCS_BASE%/}"
-read -rp "MCS API token (blank if MCS_BASE empty): " MCS_TOKEN
+if [[ "${SKIP_CONFIRM:-0}" == "1" ]]; then
+  PUBLIC_BASE="${GBN_PUBLIC_BASE:-$DEFAULT_PUBLIC}"
+  PUBLIC_BASE="${PUBLIC_BASE%/}"
+  MCS_BASE="${GBN_MCS_BASE:-}"
+  MCS_BASE="${MCS_BASE%/}"
+  MCS_TOKEN="${GBN_MCS_TOKEN:-}"
+  echo "Non-interactive install (SKIP_CONFIRM=1)"
+  echo "  Public base:   $PUBLIC_BASE"
+  echo "  MCS:           ${MCS_BASE:-<none>}"
+else
+  read -rp "Public base URL for poster links [${DEFAULT_PUBLIC}]: " PUBLIC_BASE
+  PUBLIC_BASE="${PUBLIC_BASE:-$DEFAULT_PUBLIC}"
+  PUBLIC_BASE="${PUBLIC_BASE%/}"
 
-echo ""
-echo "Configuration:"
-echo "  Install dir:   $INSTALL_DIR"
-echo "  Public base:   $PUBLIC_BASE"
-echo "  MCS:           ${MCS_BASE:-<none>}"
-echo ""
-read -rp "Continue? [y/N]: " CONFIRM
-[[ "${CONFIRM,,}" == "y" ]] || { echo "Aborted."; exit 0; }
+  read -rp "Master Control Server base URL (blank = no live overlay): " MCS_BASE
+  MCS_BASE="${MCS_BASE%/}"
+  read -rp "MCS API token (blank if MCS_BASE empty): " MCS_TOKEN
+
+  echo ""
+  echo "Configuration:"
+  echo "  Install dir:   $INSTALL_DIR"
+  echo "  Public base:   $PUBLIC_BASE"
+  echo "  MCS:           ${MCS_BASE:-<none>}"
+  echo ""
+  read -rp "Continue? [y/N]: " CONFIRM
+  [[ "${CONFIRM,,}" == "y" ]] || { echo "Aborted."; exit 0; }
+fi
 
 export DEBIAN_FRONTEND=noninteractive
 apt-get update -qq
@@ -69,7 +81,6 @@ GBN_PORT=8100
 GBN_PUBLIC_BASE=${PUBLIC_BASE}
 GBN_MEDIA=${INSTALL_DIR}/media
 GBN_DATA=${INSTALL_DIR}/data
-GBN_POSTERS=${INSTALL_DIR}/data/posters.json
 GBN_MCS_BASE=${MCS_BASE}
 GBN_MCS_TOKEN=${MCS_TOKEN}
 EOF

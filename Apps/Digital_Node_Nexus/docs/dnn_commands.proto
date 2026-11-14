@@ -1,9 +1,8 @@
 syntax = "proto3";
 
-// Digital Node Nexus MQTT command contract (Phase 5).
-// HA currently publishes UTF-8 JSON with the same field names.
-// Firmware may consume JSON now and later switch to binary protobuf
-// using these field numbers without renaming topics.
+// Digital Node Nexus MQTT command contract (D16).
+// Field numbers are SoR for shared_libraries.mc_codec.
+// Default wire: UTF-8 JSON. Binary: MC\x01 + proto3 (dual-read on endpoints).
 //
 // Topics (see Docs/MQTT Communication Principles.md):
 //   mc/dnn/cmd/device/{DEVICE_ID}/page|led|haptic

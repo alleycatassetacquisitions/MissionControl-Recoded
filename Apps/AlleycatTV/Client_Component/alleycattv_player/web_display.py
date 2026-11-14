@@ -26,6 +26,8 @@ _CHROMIUM_BINS = [
     "google-chrome",
 ]
 _KIOSK_EXT_DIR = "/opt/alleycattv/kiosk_ext"
+_READY_TIMEOUT_S = 5.0
+_READY_POLL_S = 0.05
 
 
 def _find_chromium() -> str:
@@ -100,16 +102,38 @@ class WebDisplay:
         """True if Chromium exited before the scheduled duration ended."""
         return self._chromium_died
 
+    def _wait_until_running(self, timeout: float = _READY_TIMEOUT_S) -> bool:
+        """Poll until Chromium is alive (or timeout / cancel)."""
+        deadline = time.monotonic() + max(0.1, float(timeout))
+        while time.monotonic() < deadline:
+            if self._cancel.is_set():
+                return False
+            with self._lock:
+                proc = self._proc
+                if proc is None:
+                    return False
+                if proc.poll() is None:
+                    return True
+            time.sleep(_READY_POLL_S)
+        with self._lock:
+            return self._proc is not None and self._proc.poll() is None
+
     def show(self, url: str, duration: int) -> None:
         """Open URL, display for `duration` seconds (blocking), then close.
 
         Returns early if Chromium exits or ``close()`` is called (playlist reload).
+        Duration starts only after Chromium is running (D18 readiness await).
         """
         self.close()
         self._cancel.clear()
         self._cancelled = False
         self._chromium_died = False
         self._launch(url)
+        if not self._wait_until_running():
+            self._chromium_died = True
+            _LOGGER.warning("Chromium failed to start for webpage %s", url)
+            self.close()
+            return
         deadline = time.monotonic() + max(1, int(duration))
         while time.monotonic() < deadline:
             if self._cancel.is_set():
@@ -127,7 +151,8 @@ class WebDisplay:
                     url,
                 )
                 break
-            time.sleep(0.5)
+            remaining = deadline - time.monotonic()
+            self._cancel.wait(timeout=min(0.5, max(0.05, remaining)))
         self.close()
 
     def open(self, url: str) -> bool:
@@ -140,9 +165,7 @@ class WebDisplay:
         self._cancelled = False
         self._chromium_died = False
         self._launch(url)
-        time.sleep(2)
-        with self._lock:
-            return self._proc is not None and self._proc.poll() is None
+        return self._wait_until_running(timeout=2.0)
 
     def close(self) -> None:
         """Kill the running Chromium process and abort an in-flight ``show()``."""

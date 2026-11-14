@@ -46,7 +46,6 @@ def client(tmp_path, monkeypatch):
 
     monkeypatch.setenv("GBN_MEDIA", str(media))
     monkeypatch.setenv("GBN_DATA", str(data))
-    monkeypatch.setenv("GBN_POSTERS", str(posters))
     monkeypatch.setenv("GBN_TEMPLATES", str(templates))
     monkeypatch.setenv("GBN_PUBLIC_BASE", "http://test.local:8100")
     monkeypatch.setenv("GBN_MCS_BASE", "http://mcs.test")
@@ -173,7 +172,7 @@ def test_poster_cycle_page(client):
 
 
 def test_list_posters_empty_without_active_event(client, monkeypatch):
-    """Without an active event, do not leak legacy global posters into the cycle."""
+    """Without an active event, list is empty (legacy global store removed — D17)."""
     import app.routers.posters as posters_mod
 
     async def _none():
@@ -181,38 +180,11 @@ def test_list_posters_empty_without_active_event(client, monkeypatch):
 
     monkeypatch.setattr(posters_mod, "resolve_active_event_id", _none)
 
-    # Seed legacy store directly
-    from app.main import app
-
-    stores = app.state.event_stores
-    from app.models import PosterRecord, PosterStats, PosterStatus
-
-    stores.legacy.save(
-        PosterRecord(
-            id="legacy-1",
-            player_id="legacy-1",
-            name="Old Poster",
-            role="bounty",
-            neocorp="freelancer",
-            faction="",
-            bounty_amount=1,
-            crimes=[],
-            stats=PosterStats(),
-            flavor_text="",
-            status=PosterStatus(),
-            video_filename="",
-            created_at="2020-01-01T00:00:00Z",
-            updated_at="2020-01-01T00:00:00Z",
-        )
-    )
-
     listed = client.get("/api/posters")
     assert listed.status_code == 200
     assert listed.json() == []
-
-    legacy = client.get("/api/posters?include_legacy=true")
-    assert legacy.status_code == 200
-    assert any(p["player_id"] == "legacy-1" for p in legacy.json())
+    assert client.get("/api/posters?include_legacy=true").status_code == 200
+    assert client.get("/api/posters?include_legacy=true").json() == []
 
 
 def test_intake_stub_501(client):

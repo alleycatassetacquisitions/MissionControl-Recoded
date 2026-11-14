@@ -9,7 +9,6 @@ _SERVER_DIR = _APP_DIR.parent
 
 DATA_DIR = Path(os.getenv("GBN_DATA", str(_SERVER_DIR / "data")))
 MEDIA_BASE = Path(os.getenv("GBN_MEDIA", str(_SERVER_DIR / "media")))
-POSTERS_FILE = Path(os.getenv("GBN_POSTERS", str(DATA_DIR / "posters.json")))
 TEMPLATES_FILE = Path(
     os.getenv("GBN_TEMPLATES", str(DATA_DIR / "poster_templates.json"))
 )

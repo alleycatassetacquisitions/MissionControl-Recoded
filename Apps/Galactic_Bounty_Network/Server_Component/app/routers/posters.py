@@ -450,28 +450,16 @@ async def list_posters(
         default=None,
         description="Panel-known active event when GBN→MCS cannot resolve one",
     ),
-    include_legacy: bool = Query(
-        default=False,
-        description="If true and no active event, list pre-event global posters.json",
-    ),
 ) -> List[PosterPublic]:
-    """List posters for the active Event (not the legacy global store).
-
-    ``/poster-cycle`` and Registration thumbs depend on this staying
-    event-scoped so AlleycatTV does not rotate old flat ``data/posters.json``.
-    """
+    """List posters for the active Event only (D17 — no legacy global store)."""
     out: List[PosterPublic] = []
     active = await _resolve_event_id(event_id)
     stores = _event_stores(request)
-    if active:
-        for poster in stores.for_event(active).list():
-            display = await _apply_live_overlay(poster.model_copy(deep=True))
-            out.append(_to_public(display, request, event_id=active))
+    if not active:
         return out
-    if include_legacy:
-        for poster in stores.legacy.list():
-            display = await _apply_live_overlay(poster.model_copy(deep=True))
-            out.append(_to_public(display, request, event_id=None))
+    for poster in stores.for_event(active).list():
+        display = await _apply_live_overlay(poster.model_copy(deep=True))
+        out.append(_to_public(display, request, event_id=active))
     return out
 
 
@@ -498,18 +486,13 @@ async def get_poster(
         raise HTTPException(status_code=404, detail="Poster not found")
     stores = _event_stores(request)
     active = await _resolve_event_id(event_id)
-    poster = None
-    eid: str | None = None
-    if active:
-        poster = stores.for_event(active).get(poster_id)
-        eid = active if poster else None
-    if not poster:
-        poster = stores.legacy.get(poster_id)
-        eid = None
+    if not active:
+        raise HTTPException(status_code=404, detail="Poster not found")
+    poster = stores.for_event(active).get(poster_id)
     if not poster:
         raise HTTPException(status_code=404, detail="Poster not found")
     display = await _apply_live_overlay(poster.model_copy(deep=True))
-    return _to_public(display, request, event_id=eid)
+    return _to_public(display, request, event_id=active)
 
 
 @router.post("/api/posters", response_model=PosterPublic)
@@ -677,24 +660,14 @@ async def poster_page_by_player(player_id: str, request: Request):
 async def poster_page(poster_id: str, request: Request):
     stores = _event_stores(request)
     active = await resolve_active_event_id()
-    by_player = None
-    eid: str | None = None
-    if active:
-        by_player = stores.for_event(active).get_by_player(poster_id)
-        eid = active if by_player else None
-    if not by_player:
-        by_player = stores.legacy.get_by_player(poster_id)
-        eid = None
-    if by_player:
-        return await _render_poster(request, by_player, event_id=eid)
+    if not active:
+        raise HTTPException(status_code=404, detail="Poster not found")
 
-    poster = None
-    if active:
-        poster = stores.for_event(active).get(poster_id)
-        eid = active if poster else None
-    if not poster:
-        poster = stores.legacy.get(poster_id)
-        eid = None
+    by_player = stores.for_event(active).get_by_player(poster_id)
+    if by_player:
+        return await _render_poster(request, by_player, event_id=active)
+
+    poster = stores.for_event(active).get(poster_id)
     if not poster:
         raise HTTPException(status_code=404, detail="Poster not found")
 
@@ -704,4 +677,4 @@ async def poster_page(poster_id: str, request: Request):
             status_code=302,
         )
 
-    return await _render_poster(request, poster, event_id=eid)
+    return await _render_poster(request, poster, event_id=active)

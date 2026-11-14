@@ -44,6 +44,7 @@ from config import (
     get_broadcast_group_id,
     set_broadcast_group_id,
 )
+from mc_codec import decode_action_payload
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -237,12 +238,9 @@ class MQTTHandler:
         topic = msg.topic
         raw = msg.payload or b""
 
-        # Desired playback retained state (authority)
+        # Desired playback retained state (authority) — JSON until in alleycattv.proto
         if self._topic_desired and topic == self._topic_desired:
-            try:
-                data = json.loads(raw.decode("utf-8") or "{}")
-            except Exception:
-                return
+            data = decode_action_payload(raw, "desired")
             self._desired_first_until = 0.0
             state = (data.get("state") or "").lower()
             if state == "playing":
@@ -256,11 +254,8 @@ class MQTTHandler:
             return
 
         action = topic.rstrip("/").split("/")[-1]
-        try:
-            text = raw.decode("utf-8") if raw else "{}"
-            payload = json.loads(text) if text.strip() else {}
-        except Exception:
-            payload = {}
+        # Dual-read JSON or MC\x01 protobuf for registered command actions (D16).
+        payload = decode_action_payload(raw, action)
 
         if action == "membership":
             bg = payload.get("broadcast_group_id")

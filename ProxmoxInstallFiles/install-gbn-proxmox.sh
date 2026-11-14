@@ -143,72 +143,38 @@ IP="$(wait_for_network || true)"
 
 PUBLIC="${GBN_PUBLIC_BASE:-http://${IP}:${GBN_PORT}}"
 
-say "Installing GBN into CT $CTID"
+say "Installing GBN into CT $CTID (pct exec → setup/install-server.sh)"
 pct exec "$CTID" -- bash -lc '
   set -euo pipefail
   export DEBIAN_FRONTEND=noninteractive
   apt-get update -qq
-  apt-get install -y -qq python3 python3-pip python3-venv ca-certificates curl
-  useradd --system --no-create-home --shell /usr/sbin/nologin gbn 2>/dev/null || true
-  mkdir -p /opt/gbn
+  apt-get install -y -qq ca-certificates curl
+  rm -rf /root/gbn-src
+  mkdir -p /root/gbn-src
 '
 
 if [[ -n "$GBN_SRC" ]]; then
   [[ -d "$GBN_SRC" ]] || die "GBN_SRC is not a directory: $GBN_SRC"
-  tar -C "$GBN_SRC" -cf - . | pct exec "$CTID" -- tar -C /opt/gbn -xf -
+  tar -C "$GBN_SRC" -cf - . | pct exec "$CTID" -- tar -C /root/gbn-src -xf -
 else
   pct exec "$CTID" -- bash -lc "
     set -euo pipefail
+    export DEBIAN_FRONTEND=noninteractive
     apt-get install -y -qq git
     rm -rf /tmp/mc-src
     git clone --depth 1 '$REPO_URL' /tmp/mc-src
-    cp -a /tmp/mc-src/Apps/Galactic_Bounty_Network/Server_Component/. /opt/gbn/
+    cp -a /tmp/mc-src/Apps/Galactic_Bounty_Network/Server_Component/. /root/gbn-src/
     rm -rf /tmp/mc-src
   "
 fi
 
-pct exec "$CTID" -- bash -lc "
-  set -euo pipefail
-  cd /opt/gbn
-  python3 -m venv /opt/gbn/.venv
-  /opt/gbn/.venv/bin/pip install -q --upgrade pip
-  /opt/gbn/.venv/bin/pip install -q -r requirements.txt
-  mkdir -p media/videos media/assets/neocorp media/assets/animations media/assets/marks data
-  chown -R gbn:gbn /opt/gbn
-  cat > /etc/gbn.env <<EOF
-GBN_HOST=0.0.0.0
-GBN_PORT=${GBN_PORT}
-GBN_PUBLIC_BASE=${PUBLIC}
-GBN_MEDIA=/opt/gbn/media
-GBN_DATA=/opt/gbn/data
-GBN_POSTERS=/opt/gbn/data/posters.json
-GBN_MCS_BASE=${GBN_MCS_BASE}
-GBN_MCS_TOKEN=${GBN_MCS_TOKEN}
-EOF
-  chmod 640 /etc/gbn.env
-  chown root:gbn /etc/gbn.env
-  cat > /etc/systemd/system/gbn.service <<UNIT
-[Unit]
-Description=Galactic Bounty Network poster server
-After=network-online.target
-Wants=network-online.target
-
-[Service]
-Type=simple
-User=gbn
-Group=gbn
-WorkingDirectory=/opt/gbn
-EnvironmentFile=-/etc/gbn.env
-ExecStart=/opt/gbn/.venv/bin/uvicorn app.main:app --host 0.0.0.0 --port ${GBN_PORT}
-Restart=on-failure
-RestartSec=3
-
-[Install]
-WantedBy=multi-user.target
-UNIT
-  systemctl daemon-reload
-  systemctl enable --now gbn
-"
+pct exec "$CTID" -- env \
+  DEBIAN_FRONTEND=noninteractive \
+  SKIP_CONFIRM=1 \
+  GBN_PUBLIC_BASE="$PUBLIC" \
+  GBN_MCS_BASE="${GBN_MCS_BASE:-}" \
+  GBN_MCS_TOKEN="${GBN_MCS_TOKEN:-}" \
+  bash /root/gbn-src/setup/install-server.sh
 
 say "GBN ready"
 echo "  CTID:   $CTID"

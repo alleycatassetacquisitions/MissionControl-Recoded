@@ -8,7 +8,7 @@ import shutil
 from pathlib import Path
 from typing import List, Optional
 
-from app.config import ALLOWED_VIDEO_EXT, DATA_DIR, MEDIA_BASE, POSTERS_FILE
+from app.config import ALLOWED_VIDEO_EXT, DATA_DIR, MEDIA_BASE
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -232,7 +232,3 @@ def delete_event_storage(event_id: str) -> dict:
         removed["data"] = True
         _LOGGER.info("Deleted event data %s", data_root)
     return {"event_id": eid, "removed": removed}
-
-
-def legacy_posters_path() -> Path:
-    return Path(POSTERS_FILE)

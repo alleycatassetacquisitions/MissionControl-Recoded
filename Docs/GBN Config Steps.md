@@ -13,7 +13,9 @@ App README: [`Apps/Galactic_Bounty_Network/README.md`](../Apps/Galactic_Bounty_N
 
 ## A. Proxmox LXC (poster server)
 
-Copy `ProxmoxInstallFiles/install-gbn-proxmox.sh` to `/root/` on the Proxmox host, then on the **node** shell:
+Copy `ProxmoxInstallFiles/install-gbn-proxmox.sh` to `/root/` on the Proxmox host, then on the **node** shell.
+
+The host script creates the CT, seeds `Server_Component` to `/root/gbn-src`, then runs guest bootstrap via `pct exec … SKIP_CONFIRM=1 bash setup/install-server.sh` (D19 — one installer, not inlined apt/venv/unit).
 
 ```bash
 bash install-gbn-proxmox.sh
@@ -48,7 +50,6 @@ Data on the guest:
 | `/opt/gbn/data/active_event.json` | Last-known active Event (kiosk cache; Registration push + MCS) |
 | `/opt/gbn/media/events/{event_id}/videos/{player_id}.*` | Capture clips per Event |
 | `/opt/gbn/data/poster_templates.json` | Chrome templates (auto-seeded hunter/bounty) |
-| `/opt/gbn/data/posters.json` | Legacy global poster store (opt-in via `?include_legacy=true` only) |
 | `/opt/gbn/app/` | Python package (`uvicorn app.main:app`) |
 
 **MCS on the guest is required for live Player overlays** and is the backup path for active Event. Set both in `/etc/gbn.env` to the same MCS URL/token as Core Configurator. Registration also pushes active Event to GBN (`PUT /api/events/active`) whenever operators set active — that is what keeps AlleycatTV `/poster-cycle` working after restarts without opening the page in a desktop browser.

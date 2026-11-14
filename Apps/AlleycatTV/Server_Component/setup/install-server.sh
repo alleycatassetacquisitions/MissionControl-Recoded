@@ -24,16 +24,22 @@ echo ""
 echo "  Deploy root: $DEPLOY_ROOT"
 echo ""
 
-read -rp "Max upload size in MB (default 500): " MAX_UPLOAD_MB
-MAX_UPLOAD_MB="${MAX_UPLOAD_MB:-500}"
+if [[ "${SKIP_CONFIRM:-0}" == "1" ]]; then
+  MAX_UPLOAD_MB="${ALLEYCATV_MAX_UPLOAD_MB:-${MAX_UPLOAD_MB:-500}}"
+  echo "Non-interactive install (SKIP_CONFIRM=1)"
+  echo "  Max upload:     ${MAX_UPLOAD_MB} MB"
+else
+  read -rp "Max upload size in MB (default 500): " MAX_UPLOAD_MB
+  MAX_UPLOAD_MB="${MAX_UPLOAD_MB:-500}"
 
-echo ""
-echo "Configuration:"
-echo "  Max upload:     ${MAX_UPLOAD_MB} MB"
-echo "  MQTT:           none (Home Assistant publishes commands)"
-echo ""
-read -rp "Continue? [y/N]: " CONFIRM
-[[ "${CONFIRM,,}" == "y" ]] || { echo "Aborted."; exit 0; }
+  echo ""
+  echo "Configuration:"
+  echo "  Max upload:     ${MAX_UPLOAD_MB} MB"
+  echo "  MQTT:           none (Home Assistant publishes commands)"
+  echo ""
+  read -rp "Continue? [y/N]: " CONFIRM
+  [[ "${CONFIRM,,}" == "y" ]] || { echo "Aborted."; exit 0; }
+fi
 
 echo ""
 echo "Installing system packages..."

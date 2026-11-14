@@ -25,7 +25,6 @@ from app.config import (
     DATA_DIR,
     MEDIA_BASE,
     MEDIA_SUBDIRS,
-    POSTERS_FILE,
     STATIC_DIR,
     TEMPLATES_FILE,
 )
@@ -101,9 +100,7 @@ async def startup() -> None:
         Path(MEDIA_BASE, sub).mkdir(parents=True, exist_ok=True)
     Path(MEDIA_BASE, "events").mkdir(parents=True, exist_ok=True)
     STATIC_DIR.mkdir(parents=True, exist_ok=True)
-    app.state.event_stores = EventPosterStores(POSTERS_FILE)
-    # Back-compat alias for any code still expecting poster_store
-    app.state.poster_store = app.state.event_stores.legacy
+    app.state.event_stores = EventPosterStores()
     app.state.template_store = TemplateStore(TEMPLATES_FILE)
     app.state.active_playlist = ActivePlayersState()
     # Warm active-event cache from MCS (or keep disk cache) so /poster-cycle
@@ -126,9 +123,8 @@ async def startup() -> None:
     except Exception as exc:  # noqa: BLE001
         _LOGGER.warning("Active event warmup failed: %s", exc)
     _LOGGER.info(
-        "GBN started. Media: %s Legacy posters: %s Templates: %s",
+        "GBN started. Media: %s Templates: %s",
         MEDIA_BASE,
-        POSTERS_FILE,
         TEMPLATES_FILE,
     )
 

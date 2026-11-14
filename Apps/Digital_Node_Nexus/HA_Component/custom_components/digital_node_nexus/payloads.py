@@ -1,13 +1,11 @@
-"""JSON MQTT payloads for Digital Node Nexus commands.
+"""DNN MQTT payloads — field names/numbers from docs/dnn_commands.proto (D16).
 
-Field names match the Phase 5 contract (evolved from esp32_commander MessageCmd /
-LedCmd / HapticCmd). Firmware may later switch to binary protobuf using the
-same field numbers documented in docs/dnn_commands.proto.
+Default wire is JSON so FDN firmware stays compatible. Binary (``MC\\x01`` +
+protobuf) is available via ``wire=\"protobuf\"``; consumers dual-read both.
 """
 from __future__ import annotations
 
-import json
-from typing import Any
+from custom_components.shared_libraries.mc_codec import encode_message
 
 
 def encode_page_cmd(
@@ -18,17 +16,20 @@ def encode_page_cmd(
     player_id: str = "",
     role: str = "",
     neocorp: str = "",
+    wire: str = "json",
 ) -> bytes:
-    """Encode a PageCmd as UTF-8 JSON bytes."""
-    body: dict[str, Any] = {
-        "text": text,
-        "duration": int(duration),
-        "scroll": bool(scroll),
-        "player_id": player_id or "",
-        "role": role or "",
-        "neocorp": neocorp or "",
-    }
-    return json.dumps(body, separators=(",", ":")).encode("utf-8")
+    return encode_message(
+        "PageCmd",
+        {
+            "text": text,
+            "duration": duration,
+            "scroll": scroll,
+            "player_id": player_id or "",
+            "role": role or "",
+            "neocorp": neocorp or "",
+        },
+        wire=wire,  # type: ignore[arg-type]
+    )
 
 
 def encode_led_cmd(
@@ -39,17 +40,20 @@ def encode_led_cmd(
     g: int = 255,
     b: int = 255,
     effect: str = "solid",
+    wire: str = "json",
 ) -> bytes:
-    """Encode a LedCmd as UTF-8 JSON bytes."""
-    body = {
-        "state": bool(state),
-        "brightness": int(brightness),
-        "r": int(r),
-        "g": int(g),
-        "b": int(b),
-        "effect": effect or "solid",
-    }
-    return json.dumps(body, separators=(",", ":")).encode("utf-8")
+    return encode_message(
+        "LedCmd",
+        {
+            "state": state,
+            "brightness": brightness,
+            "r": r,
+            "g": g,
+            "b": b,
+            "effect": effect or "solid",
+        },
+        wire=wire,  # type: ignore[arg-type]
+    )
 
 
 def encode_haptic_cmd(
@@ -58,12 +62,15 @@ def encode_haptic_cmd(
     intensity: int = 255,
     duration_ms: int = 100,
     repeat: int = 1,
+    wire: str = "json",
 ) -> bytes:
-    """Encode a HapticCmd as UTF-8 JSON bytes."""
-    body = {
-        "pattern": pattern or "short",
-        "intensity": int(intensity),
-        "duration_ms": int(duration_ms),
-        "repeat": int(repeat),
-    }
-    return json.dumps(body, separators=(",", ":")).encode("utf-8")
+    return encode_message(
+        "HapticCmd",
+        {
+            "pattern": pattern or "short",
+            "intensity": intensity,
+            "duration_ms": duration_ms,
+            "repeat": repeat,
+        },
+        wire=wire,  # type: ignore[arg-type]
+    )

@@ -42,7 +42,7 @@ Command action segments under those wildcards (Phase 5 DNN):
 | LED | `…/led` | JSON `LedCmd` |
 | Haptic | `…/haptic` | JSON `HapticCmd` |
 
-Schema: [`Apps/Digital_Node_Nexus/docs/dnn_commands.proto`](../Apps/Digital_Node_Nexus/docs/dnn_commands.proto). HA publishes UTF-8 JSON with those field names; firmware may later switch to binary protobuf using the same field numbers.
+Schema SoR: [`Apps/Digital_Node_Nexus/docs/dnn_commands.proto`](../Apps/Digital_Node_Nexus/docs/dnn_commands.proto) and [`Apps/AlleycatTV/docs/alleycattv.proto`](../Apps/AlleycatTV/docs/alleycattv.proto). HA publishers go through `shared_libraries.mc_codec` (field numbers from those protos). **Default wire is UTF-8 JSON** so current FDN firmware keeps working. **Binary wire** is `MC\x01` + proto3 bytes; Pi (and future FDN) **dual-read** JSON or binary. Flip DNN/ATV publish to `wire="protobuf"` when the fleet is ready — do not dual-publish two payloads on one topic.
 
 ## AlleycatTV devices
 

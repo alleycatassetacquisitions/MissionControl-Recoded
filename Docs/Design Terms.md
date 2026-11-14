@@ -56,7 +56,7 @@ The Mission Control app that stores service URLs **and** shared API tokens/auth 
 
 The Mission Control dashboard for sending messages to FDNs and gathering information from them. Phase 5 focuses on **paging** (MQTT page starts an FDN state machine). LED and haptic remain secondary tools. Roster targeting (player / mode|role) is read from Master Control Server; NeoCorp filters are pending Central restore.
 
-- **Communication:** MQTT (JSON payload contract; protobuf schema documented for firmware)
+- **Communication:** MQTT — `.proto` field numbers are SoR; default wire UTF-8 JSON with dual-read for `MC\x01` protobuf (`shared_libraries.mc_codec`)
 - **Used for:** paging, mini-bosses, quests, and virus
 - **Code:** `digital_node_nexus`
 
