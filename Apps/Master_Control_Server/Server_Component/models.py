@@ -216,8 +216,6 @@ class ConfigUpdate(BaseModel):
     net_time_token: str = ""
     alleycattv_url: str = ""
     host_clock_url: str = ""
-    mqtt_host: str = ""
-    mqtt_port: str = ""
 
 
 class HealthResponse(BaseModel):
@@ -235,8 +233,6 @@ class ConfigStatusPeers(BaseModel):
     net_time_token: str = ""  # "set" or ""
     alleycattv_url: str = ""
     host_clock_url: str = ""
-    mqtt_host: str = ""
-    mqtt_port: str = ""
 
 
 class ConfigStatusResponse(BaseModel):

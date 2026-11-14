@@ -17,10 +17,8 @@ from homeassistant.config_entries import SOURCE_IMPORT, ConfigEntry
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers import config_validation as cv
 
-try:
-    from custom_components.shared_libraries.http import async_request
-except ImportError:
-    async_request = None  # type: ignore[assignment]
+from custom_components.core_configurator.helpers import get_extra
+from custom_components.shared_libraries.http import async_request
 
 from .const import (
     DOMAIN,
@@ -41,12 +39,7 @@ CONFIG_SCHEMA = vol.Schema(
 
 
 def _net_time_token(hass: HomeAssistant) -> str:
-    try:
-        from custom_components.core_configurator.helpers import get_extra
-
-        return str(get_extra(hass, KEY_NET_TIME, EXTRA_TOKEN, "") or "")
-    except Exception:  # noqa: BLE001
-        return ""
+    return str(get_extra(hass, KEY_NET_TIME, EXTRA_TOKEN, "") or "")
 
 
 async def _response_detail(response) -> str:
@@ -91,9 +84,6 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 
 async def handle_health(hass: HomeAssistant, connection, msg: dict[str, Any]) -> None:
     """Confirm Net Time is reachable from Mission Control (GET /health)."""
-    if async_request is None:
-        connection.send_error(msg["id"], "shared_libraries", "not available")
-        return
     response = await async_request(hass, KEY_NET_TIME, "GET", "/health")
     if response is None:
         connection.send_error(
@@ -125,9 +115,6 @@ async def handle_health(hass: HomeAssistant, connection, msg: dict[str, Any]) ->
 
 async def handle_status(hass: HomeAssistant, connection, msg: dict[str, Any]) -> None:
     """Fetch chrony / public NTP status (GET /status)."""
-    if async_request is None:
-        connection.send_error(msg["id"], "shared_libraries", "not available")
-        return
     token = _net_time_token(hass)
     if not token:
         connection.send_error(
@@ -167,9 +154,6 @@ async def handle_status(hass: HomeAssistant, connection, msg: dict[str, Any]) ->
 
 async def handle_sync(hass: HomeAssistant, connection, msg: dict[str, Any]) -> None:
     """Sync Net Time clock from operator PC ISO-8601 (POST /sync)."""
-    if async_request is None:
-        connection.send_error(msg["id"], "shared_libraries", "not available")
-        return
     token = _net_time_token(hass)
     if not token:
         connection.send_error(
@@ -217,9 +201,6 @@ async def handle_set_timezone(
     hass: HomeAssistant, connection, msg: dict[str, Any]
 ) -> None:
     """Set IANA timezone on the Net Time LXC (POST /timezone)."""
-    if async_request is None:
-        connection.send_error(msg["id"], "shared_libraries", "not available")
-        return
     token = _net_time_token(hass)
     if not token:
         connection.send_error(

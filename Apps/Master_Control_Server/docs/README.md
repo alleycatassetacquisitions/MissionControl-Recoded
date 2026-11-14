@@ -187,11 +187,12 @@ Pushed by Registration on setup, on `registration.sync_now`, and when Core Confi
   "net_time_url": "http://…:8720",
   "net_time_token": "…",
   "alleycattv_url": "http://…",
-  "host_clock_url": "http://…:8721",
-  "mqtt_host": "…",
-  "mqtt_port": "1883"
+  "host_clock_url": "http://…:8721"
 }
 ```
+
+Pi MQTT broker hints are **not** in this snapshot — AlleycatTV publishes retained `mc/tv/cmd/all/config`.
+
 
 Returns `204 No Content` even if companion fan-out soft-fails.
 
@@ -217,9 +218,7 @@ Diagnostics for the running process (no attach/`import main` needed):
     "net_time_url": "…",
     "net_time_token": "set",
     "alleycattv_url": "…",
-    "host_clock_url": "…",
-    "mqtt_host": "…",
-    "mqtt_port": "…"
+    "host_clock_url": "…"
   },
   "last_fanout": {
     "gbn": { "ok": true, "status": 204 },

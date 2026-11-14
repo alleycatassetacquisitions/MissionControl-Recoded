@@ -9,7 +9,7 @@
  *
  * Websocket:
  *  - digital_node_nexus/get_devices → fabric presence list
- *  - digital_node_nexus/get_roster → MCS players (read-only)
+ *  - registration/get_roster → player roster (Registration SoR)
  *
  * HA services:
  *  - digital_node_nexus.page
@@ -223,7 +223,7 @@ class DnnPanel extends window.McPanel.Base {
   async _loadRoster() {
     try {
       const result = await this.hass!.callWS<{ players?: DnnPlayer[] }>({
-        type: "digital_node_nexus/get_roster",
+        type: "registration/get_roster",
       });
       this._players = (result && result.players) || [];
     } catch (err) {

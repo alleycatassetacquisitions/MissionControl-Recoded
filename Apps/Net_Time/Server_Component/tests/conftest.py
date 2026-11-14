@@ -3,6 +3,9 @@
 Run from Apps/Net_Time/Server_Component/:
 
     pytest
+
+CI covers the FastAPI surface with FakeChronyOps only — real chronyc / host
+clock / privileged LXC behavior is not exercised on GitHub.
 """
 from __future__ import annotations
 
@@ -10,13 +13,15 @@ import sys
 from pathlib import Path
 
 _root = Path(__file__).parent.parent
-if str(_root) not in sys.path:
-    sys.path.insert(0, str(_root))
+_tests = Path(__file__).parent
+for p in (_root, _tests):
+    if str(p) not in sys.path:
+        sys.path.insert(0, str(p))
 
 import pytest
 from fastapi.testclient import TestClient
 
-from chrony_ops import FakeChronyOps
+from fake_chrony_ops import FakeChronyOps
 from main import app, set_api_token, set_ops
 
 TEST_TOKEN = "test-net-time-token"

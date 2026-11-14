@@ -20,6 +20,12 @@ _ha_component_dir = Path(__file__).parent.parent
 if str(_ha_component_dir) not in sys.path:
     sys.path.insert(0, str(_ha_component_dir))
 
+# core_configurator is a declared dependency of shared_libraries (hard import).
+_repo_root = _ha_component_dir.parent.parent.parent
+_cc = _repo_root / "Apps" / "Core_Configurator" / "HA_Component"
+if str(_cc) not in sys.path:
+    sys.path.insert(0, str(_cc))
+
 import pytest
 
 pytest_plugins = "pytest_homeassistant_custom_component"

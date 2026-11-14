@@ -108,8 +108,6 @@ _peers: dict[str, str] = {
     "net_time_token": "",
     "alleycattv_url": "",
     "host_clock_url": "",
-    "mqtt_host": "",
-    "mqtt_port": "",
 }
 
 _PEER_KEYS = tuple(_peers.keys())
@@ -400,8 +398,6 @@ def _redacted_peers() -> ConfigStatusPeers:
         net_time_token="set" if token else "",
         alleycattv_url=_peers.get("alleycattv_url") or "",
         host_clock_url=_peers.get("host_clock_url") or "",
-        mqtt_host=_peers.get("mqtt_host") or "",
-        mqtt_port=_peers.get("mqtt_port") or "",
     )
 
 

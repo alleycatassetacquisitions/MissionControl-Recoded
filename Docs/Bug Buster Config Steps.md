@@ -15,20 +15,9 @@ Assistant Core **Proxmox VE** — not from Bug Buster.
 4. **API Tokens → Add** for that user (Token ID e.g. `missioncontrol`). Copy the secret once.
 5. Prefer privilege separation with token-specific permissions if you tighten access later.
 
-You will enter this token **twice**: once in HA Core Proxmox VE, once in Core Configurator.
+**Source of truth:** paste the token into **Core Configurator** (full id `hass@pve!missioncontrol`). Bug Buster reads that for console. HA Core **Proxmox VE** still needs a one-time monitoring entry (bootstrap) using the same secret — split fields as below. Do not treat dual-entry as an ongoing ops habit when the token rotates: update Core Configurator first, then refresh Proxmox VE if monitoring breaks.
 
-## 2. HA Core Proxmox VE (monitoring)
-
-1. Settings → Devices & services → **Add Integration** → **Proxmox VE**.
-2. Host: IP or hostname only (no `https://`). Port `8006`.
-3. Username: `hass` (no `@pve`). Realm: **PVE**.
-4. Enable API token. Token ID: the short name only (`missioncontrol`, not `hass@pve!missioncontrol`).
-5. Paste Token Secret. Disable SSL verification for LAN self-signed certs if needed.
-6. Confirm node and guest entities appear (CPU, memory, status, start/stop buttons).
-
-Docs: [Proxmox VE integration](https://www.home-assistant.io/integrations/proxmoxve).
-
-## 3. Core Configurator (Bug Buster credentials + RTSP)
+## 2. Core Configurator (token SoR + RTSP)
 
 In the **Core Configurator** sidebar (or YAML seed on first boot):
 
@@ -37,10 +26,21 @@ In the **Core Configurator** sidebar (or YAML seed on first boot):
 | Proxmox URL | `https://<proxmox-ip>:8006` |
 | Node name | e.g. `pve` |
 | API token ID | full form `hass@pve!missioncontrol` |
-| API token secret | same secret as Proxmox VE |
+| API token secret | the secret from step 1 |
 | Live RTSP | camera/encoder URL, label, enabled (AlleycatTV interrupt) |
 
 Secrets example: [`HomeAssist/secrets.yaml.example`](../HomeAssist/secrets.yaml.example).
+
+## 3. HA Core Proxmox VE (monitoring — once)
+
+1. Settings → Devices & services → **Add Integration** → **Proxmox VE**.
+2. Host: IP or hostname only (no `https://`). Port `8006`.
+3. Username: `hass` (no `@pve`). Realm: **PVE**.
+4. Enable API token. Token ID: the short name only (`missioncontrol`, not `hass@pve!missioncontrol`).
+5. Paste the **same** Token Secret. Disable SSL verification for LAN self-signed certs if needed.
+6. Confirm node and guest entities appear (CPU, memory, status, start/stop buttons).
+
+Docs: [Proxmox VE integration](https://www.home-assistant.io/integrations/proxmoxve). Auto-bootstrap from Core Configurator into this entry is planned; until then this remains a one-time install step.
 
 ## 4. Deploy Bug Buster
 

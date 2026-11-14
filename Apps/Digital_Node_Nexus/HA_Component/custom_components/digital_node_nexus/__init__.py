@@ -3,7 +3,7 @@
 Design contracts:
   - Home Assistant is the only MQTT command publisher (via shared_libraries.mqtt).
   - Fabric owns presence (shared_libraries.fabric); DNN owns page/LED/haptic payloads.
-  - Player / role / NeoCorp lists come from MCS read-only — never Central.
+  - Roster for page targets comes from Registration (``registration/get_roster``).
   - Panels call HA services/websocket only — no LAN fetch.
 """
 from __future__ import annotations
@@ -18,8 +18,7 @@ from homeassistant.exceptions import ConfigEntryNotReady, HomeAssistantError
 from homeassistant.helpers import config_validation as cv
 from homeassistant.helpers.typing import ConfigType
 
-from .const import DOMAIN, MQTT_KIND, WS_GET_DEVICES, WS_GET_ROSTER
-from .mcs import fetch_roster
+from .const import DOMAIN, MQTT_KIND, WS_GET_DEVICES
 from .payloads import encode_haptic_cmd, encode_led_cmd, encode_page_cmd
 from .routing import resolve_cmd_segments
 
@@ -27,19 +26,12 @@ _LOGGER = logging.getLogger(__name__)
 
 CONFIG_SCHEMA = cv.empty_config_schema(DOMAIN)
 
-try:
-    from custom_components.shared_libraries.fabric import (
-        async_start_presence_tracking,
-        async_stop_presence_tracking,
-        get_presence_tracker,
-    )
-    from custom_components.shared_libraries.mqtt import async_ensure_mqtt, async_publish
-except ImportError:  # pragma: no cover — fail loudly at runtime if deps missing
-    async_start_presence_tracking = None  # type: ignore[assignment]
-    async_stop_presence_tracking = None  # type: ignore[assignment]
-    get_presence_tracker = None  # type: ignore[assignment]
-    async_ensure_mqtt = None  # type: ignore[assignment]
-    async_publish = None  # type: ignore[assignment]
+from custom_components.shared_libraries.fabric import (
+    async_start_presence_tracking,
+    async_stop_presence_tracking,
+    get_presence_tracker,
+)
+from custom_components.shared_libraries.mqtt import async_ensure_mqtt, async_publish
 
 
 _PAGE_SCHEMA = vol.Schema(
@@ -103,9 +95,6 @@ async def _publish_cmd(
     action: str,
     payload: bytes,
 ) -> None:
-    if async_publish is None:
-        _LOGGER.error("Digital Node Nexus: shared_libraries.mqtt not available")
-        return
     await async_publish(
         hass,
         MQTT_KIND,
@@ -132,13 +121,6 @@ async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     """Set up Digital Node Nexus: fabric presence, services, websocket."""
     hass.data.setdefault(DOMAIN, {})[entry.entry_id] = {"entry": entry}
-
-    if async_start_presence_tracking is None or async_ensure_mqtt is None:
-        _LOGGER.error(
-            "Digital Node Nexus: shared_libraries not available — "
-            "add shared_libraries to manifest dependencies"
-        )
-        return False
 
     # Wait for HA MQTT (or retry later). Presence subscribe needs the broker client.
     try:
@@ -255,19 +237,10 @@ def _register_services(hass: HomeAssistant) -> None:
 async def ws_get_devices(hass: HomeAssistant, connection, msg) -> None:
     """Return fabric-tracked FDN devices for the DNN panel."""
     devices: list[dict] = []
-    if get_presence_tracker is not None:
-        tracker = get_presence_tracker(hass, MQTT_KIND)
-        if tracker is not None:
-            devices = tracker.list_devices()
+    tracker = get_presence_tracker(hass, MQTT_KIND)
+    if tracker is not None:
+        devices = tracker.list_devices()
     connection.send_result(msg["id"], {"devices": devices})
-
-
-@websocket_api.websocket_command({vol.Required("type"): WS_GET_ROSTER})
-@websocket_api.async_response
-async def ws_get_roster(hass: HomeAssistant, connection, msg) -> None:
-    """Return MCS roster (read-only) for page targeting."""
-    roster = await fetch_roster(hass)
-    connection.send_result(msg["id"], roster)
 
 
 @callback
@@ -276,12 +249,10 @@ def _register_ws(hass: HomeAssistant) -> None:
     if store.get("ws_registered"):
         return
     websocket_api.async_register_command(hass, ws_get_devices)
-    websocket_api.async_register_command(hass, ws_get_roster)
     store["ws_registered"] = True
 
 
 async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
-    if async_stop_presence_tracking is not None:
-        async_stop_presence_tracking(hass, MQTT_KIND)
+    async_stop_presence_tracking(hass, MQTT_KIND)
     hass.data.get(DOMAIN, {}).pop(entry.entry_id, None)
     return True

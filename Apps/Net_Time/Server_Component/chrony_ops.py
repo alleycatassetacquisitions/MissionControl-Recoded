@@ -4,7 +4,7 @@ Real implementations shell out to ``chronyc`` / ``date`` / ``timedatectl``.
 When the LXC cannot set the clock (typical on Proxmox), Offline Sync falls back
 to the host clock agent (``NET_TIME_HOST_CLOCK_URL``).
 
-Tests inject fakes via ``main.set_ops(...)``.
+Tests inject FakeChronyOps via ``main.set_ops(...)`` (see ``tests/fake_chrony_ops.py``).
 """
 from __future__ import annotations
 
@@ -12,10 +12,8 @@ import json
 import logging
 import os
 import subprocess
-import time
 import urllib.error
 import urllib.request
-from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from typing import Protocol
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
@@ -331,50 +329,3 @@ class SystemChronyOps:
         except Exception as err:  # noqa: BLE001
             _LOGGER.warning("host clock agent error: %s", err)
             return False
-
-
-@dataclass
-class FakeChronyOps:
-    """In-memory ops for unit tests."""
-
-    public_ntp: PublicNtp = "unavailable"
-    stratum: int | None = 10
-    reference: str = "LOCAL"
-    sources: list[SourceRow] = field(default_factory=list)
-    last_applied: datetime | None = None
-    fail_apply: bool = False
-    timezone: str = "UTC"
-    apply_via: str = "local"
-    _unix: float = field(default_factory=time.time)
-
-    def get_timezone(self) -> str:
-        return self.timezone
-
-    def set_timezone(self, name: str) -> None:
-        self.timezone = _validate_timezone(name)
-
-    def read_status(self) -> StatusResponse:
-        now = datetime.fromtimestamp(self._unix, tz=timezone.utc)
-        return StatusResponse(
-            iso=now.isoformat().replace("+00:00", "Z"),
-            unix=self._unix,
-            public_ntp=self.public_ntp,
-            serving=True,
-            stratum=self.stratum,
-            reference=self.reference,
-            timezone=self.timezone,
-            sources=list(self.sources),
-        )
-
-    def apply_time(self, when: datetime) -> str:
-        if self.fail_apply:
-            raise RuntimeError("fake apply failure")
-        if when.tzinfo is None:
-            when = when.replace(tzinfo=timezone.utc)
-        when_utc = when.astimezone(timezone.utc)
-        self.last_applied = when_utc
-        self._unix = when_utc.timestamp()
-        self.public_ntp = "unavailable"
-        self.reference = "LOCAL"
-        self.stratum = 10
-        return self.apply_via

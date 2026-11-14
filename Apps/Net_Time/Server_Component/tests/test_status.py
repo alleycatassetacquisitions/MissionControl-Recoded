@@ -1,7 +1,7 @@
 """Tests for GET /status."""
 from fastapi.testclient import TestClient
 
-from chrony_ops import FakeChronyOps
+from fake_chrony_ops import FakeChronyOps
 from main import set_ops
 from models import SourceRow
 

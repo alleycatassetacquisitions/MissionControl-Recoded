@@ -21,7 +21,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 from aiohttp import ClientResponse
 
-from custom_components.shared_libraries.http import async_request
+from custom_components.shared_libraries.http import async_request, get_mcs_token
 
 
 # ---------------------------------------------------------------------------
@@ -218,3 +218,28 @@ async def test_successful_response_is_returned(hass):
         result = await async_request(hass, "gbn", "GET", "/api")
 
     assert result is expected
+
+
+# ---------------------------------------------------------------------------
+# 6. get_mcs_token
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_get_mcs_token_reads_cc_extra(hass):
+    """MCS Bearer comes from Core Configurator master_control_server.token."""
+    with patch(
+        "custom_components.shared_libraries.http.get_extra",
+        return_value="venue-token",
+    ) as mock_extra:
+        assert get_mcs_token(hass) == "venue-token"
+    mock_extra.assert_called_once_with(hass, "master_control_server", "token", "")
+
+
+@pytest.mark.asyncio
+async def test_get_mcs_token_blank_when_unset(hass):
+    with patch(
+        "custom_components.shared_libraries.http.get_extra",
+        return_value="",
+    ):
+        assert get_mcs_token(hass) == ""

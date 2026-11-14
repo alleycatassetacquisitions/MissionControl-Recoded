@@ -17,7 +17,3 @@ def device_info(pi_id: str) -> DeviceInfo:
 
 def device_data(hass, pi_id: str) -> dict:
     return hass.data.get(DOMAIN, {}).get("devices", {}).get(pi_id, {})
-
-
-def device_meta(hass, pi_id: str) -> dict:
-    return hass.data.get(DOMAIN, {}).get("device_meta", {}).get(pi_id, {})

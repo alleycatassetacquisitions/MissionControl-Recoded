@@ -6,26 +6,11 @@ from typing import Any
 
 from homeassistant.core import HomeAssistant
 
+from custom_components.shared_libraries.http import async_request, get_mcs_token
+
 from .const import DEFAULT_LOGS_PER_PAGE, KEY_MCS
 
 _LOGGER = logging.getLogger(__name__)
-
-try:
-    from custom_components.shared_libraries.http import async_request
-except ImportError:  # pragma: no cover
-    async_request = None  # type: ignore[assignment]
-
-try:
-    from custom_components.core_configurator.helpers import get_extra
-except ImportError:  # pragma: no cover
-    get_extra = None  # type: ignore[assignment]
-
-
-def _mcs_token(hass: HomeAssistant) -> str | None:
-    if get_extra is None:
-        return None
-    token = get_extra(hass, KEY_MCS, "token", "")
-    return token or None
 
 
 async def fetch_device_logs(
@@ -36,13 +21,7 @@ async def fetch_device_logs(
 ) -> dict[str, Any]:
     """Proxy MCS GET /device-logs. Returns {device_logs, pagination, error?}."""
     empty_pagination = {"page": page, "per_page": per_page}
-    if async_request is None:
-        return {
-            "device_logs": [],
-            "pagination": empty_pagination,
-            "error": "shared_libraries unavailable",
-        }
-    token = _mcs_token(hass)
+    token = get_mcs_token(hass)
     if not token:
         return {
             "device_logs": [],

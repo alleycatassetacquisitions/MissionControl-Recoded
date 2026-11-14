@@ -4,7 +4,7 @@ Polls Master Control Server GET /players on the configured interval.
 All HTTP calls go through shared_libraries.http.async_request so:
   - The MCS URL comes from Core Configurator (fail-closed).
   - The HA-managed aiohttp session is used — no bare ClientSession.
-  - Bearer token comes from Core Configurator (extra.token on master_control_server).
+  - Bearer token comes from get_mcs_token (Core Configurator extra.token).
 """
 from __future__ import annotations
 
@@ -16,26 +16,14 @@ from aiohttp import ClientTimeout
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
 
-try:
-    from custom_components.shared_libraries.http import async_request
-except ImportError:
-    async_request = None  # type: ignore[assignment]
+from custom_components.shared_libraries.http import async_request, get_mcs_token
 
-from .const import DOMAIN, EXTRA_MCS_TOKEN, KEY_MCS, UPDATE_INTERVAL
+from .const import DOMAIN, KEY_MCS, UPDATE_INTERVAL
 
 _LOGGER = logging.getLogger(__name__)
 
 # MCS may spend up to ~20s trying Central primary then secondary before answering.
 _MCS_TIMEOUT = ClientTimeout(total=25)
-
-
-def _mcs_token(hass: HomeAssistant) -> str:
-    """Read the MCS Bearer from Core Configurator. Fail closed if blank."""
-    try:
-        from custom_components.core_configurator.helpers import get_extra
-    except ImportError:
-        return ""
-    return get_extra(hass, KEY_MCS, EXTRA_MCS_TOKEN)
 
 
 class McsDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
@@ -51,12 +39,7 @@ class McsDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
 
     async def _async_update_data(self) -> dict[str, Any]:
         """Fetch /players from MCS. Raises UpdateFailed on error."""
-        if async_request is None:
-            raise UpdateFailed(
-                "shared_libraries not available — add it to manifest dependencies"
-            )
-
-        token = _mcs_token(self.hass)
+        token = get_mcs_token(self.hass)
         if not token:
             raise UpdateFailed(
                 "MCS API token not set in Core Configurator "

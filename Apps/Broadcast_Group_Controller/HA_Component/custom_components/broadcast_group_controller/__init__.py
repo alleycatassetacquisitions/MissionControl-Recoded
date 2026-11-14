@@ -42,26 +42,18 @@ _LOGGER = logging.getLogger(__name__)
 
 CONFIG_SCHEMA = cv.empty_config_schema(DOMAIN)
 
-try:
-    from custom_components.shared_libraries.fabric import (
-        PRESENCE_ONLINE,
-        device_id_from_status_topic,
-        get_presence_tracker,
-        parse_presence_payload,
-    )
-    from custom_components.shared_libraries.mqtt import (
-        async_ensure_mqtt,
-        async_publish,
-        async_subscribe,
-    )
-except ImportError:  # pragma: no cover
-    PRESENCE_ONLINE = "online"  # type: ignore[assignment]
-    device_id_from_status_topic = None  # type: ignore[assignment]
-    get_presence_tracker = None  # type: ignore[assignment]
-    parse_presence_payload = None  # type: ignore[assignment]
-    async_ensure_mqtt = None  # type: ignore[assignment]
-    async_publish = None  # type: ignore[assignment]
-    async_subscribe = None  # type: ignore[assignment]
+from custom_components.shared_libraries.fabric import (
+    PRESENCE_ONLINE,
+    device_id_from_status_topic,
+    get_presence_tracker,
+    parse_presence_payload,
+)
+from custom_components.shared_libraries.http import async_request
+from custom_components.shared_libraries.mqtt import (
+    async_ensure_mqtt,
+    async_publish,
+    async_subscribe,
+)
 
 
 _KIND_DEVICE = {
@@ -141,9 +133,6 @@ async def _publish_membership(
     with ``broadcast_group_id: null`` so the broker topic is overwritten and
     late subscribers do not keep a stale group.
     """
-    if async_publish is None:
-        _LOGGER.error("BGC: shared_libraries.mqtt not available")
-        return
     payload = json.dumps(
         {"broadcast_group_id": broadcast_group_id or None}
     ).encode("utf-8")
@@ -164,9 +153,6 @@ async def _clear_retained_membership(
     hass: HomeAssistant, kind: str, device_id: str
 ) -> None:
     """Wipe the retained membership topic entirely (empty payload)."""
-    if async_publish is None:
-        _LOGGER.error("BGC: shared_libraries.mqtt not available")
-        return
     await async_publish(
         hass,
         kind,
@@ -182,8 +168,6 @@ async def _clear_retained_membership(
 
 def _presence_for(hass: HomeAssistant, kind: str, device_id: str) -> str:
     """Return current fabric presence, or unknown if not tracked."""
-    if get_presence_tracker is None:
-        return "unknown"
     tracker = get_presence_tracker(hass, kind)
     if tracker is None:
         return "unknown"
@@ -359,9 +343,6 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     hass.data[DOMAIN]["membership"] = membership
     hass.data[DOMAIN]["entry_id"] = entry.entry_id
 
-    if async_ensure_mqtt is None:
-        _LOGGER.error("BGC: shared_libraries not available")
-        return False
 
     _register_services(hass)
     _register_ws(hass)
@@ -492,39 +473,33 @@ async def _list_broadcast_groups(hass: HomeAssistant) -> list[dict]:
     by_id: dict[str, dict] = {}
 
     try:
-        from custom_components.shared_libraries.http import async_request
-    except ImportError:  # pragma: no cover
-        async_request = None  # type: ignore[assignment]
-
-    if async_request is not None:
-        try:
-            resp = await async_request(
-                hass, "alleycattv", "GET", "/api/broadcast_groups/"
+        resp = await async_request(
+            hass, "alleycattv", "GET", "/api/broadcast_groups/"
+        )
+        if resp is not None and resp.status < 400:
+            rows = await resp.json()
+            if isinstance(rows, list):
+                for row in rows:
+                    if not isinstance(row, dict):
+                        continue
+                    gid = (
+                        row.get("broadcast_group_id")
+                        or row.get("zone_id")
+                        or ""
+                    ).strip()
+                    if not gid:
+                        continue
+                    by_id[gid] = {
+                        "broadcast_group_id": gid,
+                        "name": (row.get("name") or gid).strip() or gid,
+                        "source": "content",
+                    }
+        elif resp is not None:
+            _LOGGER.debug(
+                "BGC: content broadcast_groups HTTP %s", resp.status
             )
-            if resp is not None and resp.status < 400:
-                rows = await resp.json()
-                if isinstance(rows, list):
-                    for row in rows:
-                        if not isinstance(row, dict):
-                            continue
-                        gid = (
-                            row.get("broadcast_group_id")
-                            or row.get("zone_id")
-                            or ""
-                        ).strip()
-                        if not gid:
-                            continue
-                        by_id[gid] = {
-                            "broadcast_group_id": gid,
-                            "name": (row.get("name") or gid).strip() or gid,
-                            "source": "content",
-                        }
-            elif resp is not None:
-                _LOGGER.debug(
-                    "BGC: content broadcast_groups HTTP %s", resp.status
-                )
-        except Exception as err:  # noqa: BLE001
-            _LOGGER.debug("BGC: could not list content broadcast groups: %s", err)
+    except Exception as err:  # noqa: BLE001
+        _LOGGER.debug("BGC: could not list content broadcast groups: %s", err)
 
     for mem in _membership_map(hass).values():
         gid = (mem.get("broadcast_group_id") or "").strip()

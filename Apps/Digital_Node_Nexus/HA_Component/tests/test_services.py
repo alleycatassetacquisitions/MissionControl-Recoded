@@ -1,4 +1,4 @@
-"""Tests for Digital Node Nexus services and MCS roster read."""
+"""Tests for Digital Node Nexus services (roster is Registration's WS)."""
 from __future__ import annotations
 
 import json
@@ -9,27 +9,6 @@ from homeassistant.core import HomeAssistant
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 
 from custom_components.digital_node_nexus.const import DOMAIN
-
-MOCK_ROSTER = {
-    "count": 1,
-    "players": [
-        {
-            "id": "p1",
-            "name": "Alice",
-            "role": "hunter",
-            "neocorp": "helix",
-            "faction": "Phoenix",
-            "neo_id": "n1",
-        }
-    ],
-}
-
-
-def _mock_response(json_data=None, status: int = 200):
-    resp = AsyncMock()
-    resp.status = status
-    resp.json = AsyncMock(return_value=json_data)
-    return resp
 
 
 @pytest.fixture
@@ -185,32 +164,3 @@ async def test_set_led_and_haptic(hass: HomeAssistant, loaded_entry):
     assert mock_pub.await_args_list[0].args[2:] == ("cmd", "all", "led")
     assert mock_pub.await_args_list[1].args[2:] == ("cmd", "fdn-1", "haptic")
 
-
-@pytest.mark.asyncio
-async def test_fetch_roster_fail_closed_without_token(hass: HomeAssistant):
-    from custom_components.digital_node_nexus.mcs import fetch_roster
-
-    with patch(
-        "custom_components.digital_node_nexus.mcs.mcs_token", return_value=""
-    ):
-        roster = await fetch_roster(hass)
-    assert roster == {"players": [], "count": 0}
-
-
-@pytest.mark.asyncio
-async def test_fetch_roster_from_mcs(hass: HomeAssistant):
-    from custom_components.digital_node_nexus.mcs import fetch_roster
-
-    with (
-        patch(
-            "custom_components.digital_node_nexus.mcs.mcs_token",
-            return_value="tok",
-        ),
-        patch(
-            "custom_components.digital_node_nexus.mcs.async_request",
-            new=AsyncMock(return_value=_mock_response(MOCK_ROSTER)),
-        ),
-    ):
-        roster = await fetch_roster(hass)
-    assert roster["count"] == 1
-    assert roster["players"][0]["id"] == "p1"
