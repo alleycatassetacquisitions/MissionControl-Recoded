@@ -59,7 +59,6 @@ async def loaded_entry(hass: HomeAssistant):
     return entry
 
 
-@pytest.mark.asyncio
 async def test_create_event_calls_mcs(hass: HomeAssistant, loaded_entry):
     created = {
         "id": "e1",
@@ -108,7 +107,6 @@ async def test_create_event_calls_mcs(hass: HomeAssistant, loaded_entry):
     assert hass.data[DOMAIN]["active_event_id"] == "e1"
 
 
-@pytest.mark.asyncio
 async def test_set_active_event_calls_mcs(hass: HomeAssistant, loaded_entry):
     from custom_components.game_master.events import event_cache
 

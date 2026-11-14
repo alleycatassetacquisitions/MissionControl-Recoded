@@ -1,4 +1,7 @@
-"""Unit tests for HA-only affiliation default enrichment (no HA runtime)."""
+"""Unit tests for HA-only affiliation default enrichment (no HA runtime).
+
+Async so pytest 9 can apply HA's async autouse fixtures (enable_event_loop_debug).
+"""
 from __future__ import annotations
 
 import sys
@@ -13,7 +16,7 @@ from custom_components.game_master.affiliations import (  # noqa: E402
 )
 
 
-def test_enrich_attaches_valid_default():
+async def test_enrich_attaches_valid_default():
     catalog = {
         "event_id": "evt-1",
         "categories": [
@@ -32,7 +35,7 @@ def test_enrich_attaches_valid_default():
     assert out["categories"][0]["default_affiliation_id"] == "a2"
 
 
-def test_enrich_clears_stale_default():
+async def test_enrich_clears_stale_default():
     catalog = {
         "event_id": "evt-1",
         "categories": [
@@ -48,7 +51,7 @@ def test_enrich_clears_stale_default():
     assert out["categories"][0]["default_affiliation_id"] is None
 
 
-def test_enrich_ignores_other_events():
+async def test_enrich_ignores_other_events():
     catalog = {
         "event_id": "evt-2",
         "categories": [
@@ -64,7 +67,7 @@ def test_enrich_ignores_other_events():
     assert out["categories"][0]["default_affiliation_id"] is None
 
 
-def test_enrich_empty_event():
+async def test_enrich_empty_event():
     catalog = {"event_id": None, "categories": []}
     out = enrich_catalog_with_defaults(catalog, {"evt-1": {"c": "a"}})
     assert out["categories"] == []
