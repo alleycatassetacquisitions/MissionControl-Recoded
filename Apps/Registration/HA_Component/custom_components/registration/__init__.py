@@ -33,10 +33,8 @@ from homeassistant.helpers.typing import ConfigType
 import voluptuous as vol
 from homeassistant.helpers import config_validation as cv
 
-try:
-    from custom_components.shared_libraries.http import async_request
-except ImportError:
-    async_request = None  # type: ignore[assignment]
+from custom_components.core_configurator.helpers import get_extra, get_url
+from custom_components.shared_libraries.http import async_request, get_mcs_token
 
 from .const import (
     AFFILIATION_CATALOG_KEY,
@@ -54,7 +52,7 @@ from .const import (
     WS_GET_ROSTER,
     WS_GET_TEAMS,
 )
-from .coordinator import McsDataUpdateCoordinator, _mcs_token
+from .coordinator import McsDataUpdateCoordinator
 
 # Core Configurator keys that belong in the MCS peer snapshot.
 _PEER_PUSH_KEYS = frozenset(
@@ -137,33 +135,13 @@ def _host_clock_url_from_proxmox(proxmox_url: str) -> str:
     return f"http://{host}:8721"
 
 
-def _mqtt_broker_hint(hass: HomeAssistant) -> tuple[str, str]:
-    """Best-effort MQTT host/port for Pi retained config (empty if unknown)."""
-    try:
-        entries = hass.config_entries.async_entries("mqtt")
-        for entry in entries:
-            data = entry.data or {}
-            host = str(data.get("broker") or data.get("host") or "").strip()
-            if host:
-                port = str(data.get("port") or "1883")
-                return host, port
-    except Exception:  # noqa: BLE001
-        pass
-    return "", ""
-
-
 async def _push_central_config(hass: HomeAssistant) -> None:
-    """Push Central URLs + venue peer snapshot to MCS POST /config."""
-    try:
-        from custom_components.core_configurator.helpers import get_extra, get_url
-        from custom_components.shared_libraries.http import async_request as request
-    except ImportError as err:
-        _LOGGER.warning(
-            "Registration: cannot push peer config — dependency missing: %s", err
-        )
-        return
+    """Push Central URLs + venue peer snapshot to MCS POST /config.
 
-    token = _mcs_token(hass)
+    Pi MQTT broker hints stay on AlleycatTV retained ``mc/tv/cmd/all/config`` —
+    not in this peer snapshot.
+    """
+    token = get_mcs_token(hass)
     if not token:
         _LOGGER.warning(
             "Registration: MCS token not set in Core Configurator — peer config push skipped."
@@ -178,7 +156,6 @@ async def _push_central_config(hass: HomeAssistant) -> None:
     net_time_url = get_url(hass, KEY_NET_TIME)
     net_time_token = str(get_extra(hass, KEY_NET_TIME, "token", "") or "")
     host_clock_url = _host_clock_url_from_proxmox(get_url(hass, KEY_PROXMOX))
-    mqtt_host, mqtt_port = _mqtt_broker_hint(hass)
 
     payload = {
         "central_primary": primary,
@@ -189,11 +166,9 @@ async def _push_central_config(hass: HomeAssistant) -> None:
         "net_time_url": net_time_url,
         "net_time_token": net_time_token,
         "host_clock_url": host_clock_url,
-        "mqtt_host": mqtt_host,
-        "mqtt_port": mqtt_port,
     }
 
-    response = await request(
+    response = await async_request(
         hass,
         KEY_MCS,
         "POST",
@@ -314,9 +289,7 @@ async def _mcs_request(
 
     Returns parsed JSON body (or None for empty success bodies).
     """
-    if async_request is None:
-        raise HomeAssistantError("Registration: shared_libraries not available")
-    token = _mcs_token(hass)
+    token = get_mcs_token(hass)
     if not token:
         raise HomeAssistantError(
             "MCS token not set in Core Configurator — "
@@ -493,10 +466,7 @@ async def ws_get_active_event(hass: HomeAssistant, connection, msg) -> None:
         "event": None,
         "source": "mcs_memory",
     }
-    if async_request is None:
-        connection.send_result(msg["id"], empty)
-        return
-    token = _mcs_token(hass)
+    token = get_mcs_token(hass)
     if not token:
         connection.send_result(msg["id"], empty)
         return
@@ -556,8 +526,8 @@ async def ws_get_teams(hass: HomeAssistant, connection, msg) -> None:
     if not event_id:
         # Prefer MCS active, then Game Master's persisted active id.
         active_resp = None
-        token = _mcs_token(hass)
-        if async_request is not None and token:
+        token = get_mcs_token(hass)
+        if token:
             active_resp = await async_request(
                 hass, KEY_MCS, "GET", "/events/active", token=token
             )
@@ -584,10 +554,7 @@ async def ws_get_teams(hass: HomeAssistant, connection, msg) -> None:
     if not event_id:
         connection.send_result(msg["id"], {"teams": [], "event_id": None})
         return
-    if async_request is None:
-        connection.send_result(msg["id"], {"teams": [], "event_id": event_id})
-        return
-    token = _mcs_token(hass)
+    token = get_mcs_token(hass)
     if not token:
         connection.send_result(msg["id"], {"teams": [], "event_id": event_id})
         return

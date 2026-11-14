@@ -90,8 +90,7 @@ When you rename an identity string, update this section and `const.py` in the sa
 | MQTT fabric kind | `tv` | `MQTT_KIND` in `const.py` |
 | CC service key | `alleycattv` | `KEY_ALLEYCATTV` in `const.py` |
 | CC key (RTSP source) | `rtsp` | `KEY_RTSP` in `const.py` |
-| Storage key | `alleycattv_device_meta` | `STORAGE_KEY` in `const.py` |
-| WS namespace | `alleycattv/get_devices`, `alleycattv/list_areas`, `alleycattv/set_placement` | `WS_*` in `const.py` |
+| WS namespace | `alleycattv/get_devices` | `WS_GET_DEVICES` in `const.py` — areas/placement via `broadcast_group_controller` |
 | Panel url_path (player) | `alleycattv` | bare literal in `HomeAssist/configuration.yaml` |
 | Panel url_path (content) | `alleycattv-content` | bare literal in `HomeAssist/configuration.yaml` |
 | MQTT topic root | `mc/tv/cmd/…`, `mc/tv/status/…`, `mc/tv/desired/…` | built via `mc_topic("tv", …)` in `Shared_HA_Helpers` |

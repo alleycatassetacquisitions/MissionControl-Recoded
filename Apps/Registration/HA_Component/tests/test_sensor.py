@@ -59,7 +59,7 @@ async def loaded_entry(hass: HomeAssistant):
 
     with (
         patch(
-            "custom_components.registration.coordinator._mcs_token",
+            "custom_components.registration.coordinator.get_mcs_token",
             return_value=TOKEN,
         ),
         patch(

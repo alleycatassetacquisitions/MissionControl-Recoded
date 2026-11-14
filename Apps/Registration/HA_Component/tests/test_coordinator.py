@@ -1,7 +1,7 @@
 """Tests for McsDataUpdateCoordinator.
 
 All HTTP calls are replaced by aioclient_mock / patch so no live MCS is needed.
-MCS Bearer comes from Core Configurator via _mcs_token.
+MCS Bearer comes from Core Configurator via get_mcs_token.
 """
 from __future__ import annotations
 
@@ -42,7 +42,7 @@ def _patch_request(response=None):
 
 def _patch_token(token: str = TOKEN):
     return patch(
-        "custom_components.registration.coordinator._mcs_token",
+        "custom_components.registration.coordinator.get_mcs_token",
         return_value=token,
     )
 

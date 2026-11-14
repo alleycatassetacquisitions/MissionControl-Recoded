@@ -60,7 +60,7 @@ Sidebar panel (`www/digital_node_nexus/dnn-panel.js`):
 - Primary: Page composer (FDN / all / broadcast / player / role|NeoCorp filter)
 - Secondary tabs: LED, Haptic
 - Devices from websocket `digital_node_nexus/get_devices` (fabric presence)
-- Roster from `digital_node_nexus/get_roster` (MCS)
+- Roster from `registration/get_roster` (Registration SoR)
 - Writes only via `hass.callService` — no LAN `fetch`
 
 ---
@@ -73,7 +73,6 @@ HA_Component/
 │   ├── __init__.py
 │   ├── config_flow.py
 │   ├── const.py
-│   ├── mcs.py
 │   ├── payloads.py
 │   ├── routing.py
 │   ├── services.yaml
@@ -114,7 +113,7 @@ When you rename an identity string, update this section and `const.py` in the sa
 | Change this | Also touches |
 |---|---|
 | MQTT kind `dnn` | BGC `KIND_DNN` + `KIND_DOMAIN` map, fabric `mc/dnn/status/#` subscriptions, FDN firmware MQTT topics, all DNN MQTT command topics |
-| CC key `master_control_server` | DNN `KEY_MCS`, plus Registration, Game Master, Bug Buster, install scripts |
+| Roster WS `registration/get_roster` | DNN panel page targets (Registration owns MCS roster poll) |
 | Domain `digital_node_nexus` | HA `custom_components/` folder, `manifest.json`, entity_id prefix, `www/digital_node_nexus/` |
 | Role strings (`hunter`, `bounty`) | DNN `ROLES` tuple — DNN only; Registration has **no** `ROLES` constant |
 
@@ -124,11 +123,11 @@ When you rename an identity string, update this section and `const.py` in the sa
 |---|---|---|
 | HA domain | `digital_node_nexus` | `DOMAIN` in `const.py` |
 | MQTT fabric kind | `dnn` | `MQTT_KIND` in `const.py` |
-| CC key (MCS) | `master_control_server` | `KEY_MCS` in `const.py` |
+| Roster (panel) | `registration/get_roster` | Registration WS — DNN does not own an MCS client |
 | Extra field (MCS token) | `token` | `EXTRA_MCS_TOKEN` in `const.py` |
 | Role values | `hunter`, `bounty` | `ROLES` tuple in `const.py` — DNN only |
 | NeoCorp values | `freelancer`, `helix`, `endline`, `reboot` | `NEOCORPS` tuple in `const.py` |
-| WS namespace | `digital_node_nexus/get_devices`, `.../get_roster` | `WS_*` in `const.py` |
+| WS namespace | `digital_node_nexus/get_devices` | `WS_GET_DEVICES` in `const.py` |
 | Panel url_path | `digital-node-nexus` | bare literal in `HomeAssist/configuration.yaml` |
 | MQTT topic root | `mc/dnn/cmd/…`, `mc/dnn/status/…` | built via `mc_topic("dnn", …)` in `Shared_HA_Helpers` |
 | **Note — asymmetry** | `dnn` vs `tv` are intentionally different segment names | Intentional until a unified fabric kind scheme is adopted |

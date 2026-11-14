@@ -37,7 +37,7 @@ async def test_setup_pushes_config_immediately(hass: HomeAssistant):
 
     with (
         patch(
-            "custom_components.registration.coordinator._mcs_token",
+            "custom_components.registration.get_mcs_token",
             return_value=TOKEN,
         ),
         patch(
@@ -70,7 +70,7 @@ async def test_setup_continues_when_push_fails(hass: HomeAssistant):
 
     with (
         patch(
-            "custom_components.registration.coordinator._mcs_token",
+            "custom_components.registration.get_mcs_token",
             return_value=TOKEN,
         ),
         patch(

@@ -11,10 +11,7 @@ from typing import Any
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.storage import Store
 
-try:
-    from custom_components.shared_libraries.http import async_request
-except ImportError:
-    async_request = None  # type: ignore[assignment]
+from custom_components.shared_libraries.http import async_request, get_mcs_token
 
 from .const import (
     AFFILIATION_CATALOG_KEY,
@@ -22,20 +19,10 @@ from .const import (
     AFFILIATION_DEFAULTS_STORE,
     AFFILIATION_DEFAULTS_VERSION,
     DOMAIN,
-    EXTRA_MCS_TOKEN,
     KEY_MCS,
 )
 
 _LOGGER = logging.getLogger(__name__)
-
-
-def _mcs_token(hass: HomeAssistant) -> str:
-    try:
-        from custom_components.core_configurator.helpers import get_extra
-
-        return str(get_extra(hass, KEY_MCS, EXTRA_MCS_TOKEN, "") or "")
-    except Exception:  # noqa: BLE001
-        return ""
 
 
 def catalog_store(hass: HomeAssistant) -> dict[str, Any]:
@@ -160,8 +147,8 @@ async def set_default_affiliation(
 
 
 async def resolve_active_event_id(hass: HomeAssistant) -> str:
-    token = _mcs_token(hass)
-    if async_request is None or not token:
+    token = get_mcs_token(hass)
+    if not token:
         return ""
     response = await async_request(
         hass, KEY_MCS, "GET", "/events/active", token=token
@@ -190,10 +177,7 @@ async def refresh_catalog(
         clear_catalog(hass)
 
     empty: dict[str, Any] = {"event_id": eid, "categories": []}
-    if async_request is None:
-        hass.data[DOMAIN][AFFILIATION_CATALOG_KEY] = empty
-        return empty
-    token = _mcs_token(hass)
+    token = get_mcs_token(hass)
     if not token:
         hass.data[DOMAIN][AFFILIATION_CATALOG_KEY] = empty
         return empty

@@ -18,11 +18,8 @@ from homeassistant.config_entries import SOURCE_IMPORT, ConfigEntry
 from homeassistant.const import Platform
 from homeassistant.core import HomeAssistant, ServiceCall, callback
 from homeassistant.exceptions import ConfigEntryNotReady, HomeAssistantError
-from homeassistant.helpers import area_registry as ar
 from homeassistant.helpers import config_validation as cv
-from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers.dispatcher import async_dispatcher_send
-from homeassistant.helpers.storage import Store
 from homeassistant.helpers.typing import ConfigType
 
 from .const import (
@@ -35,17 +32,12 @@ from .const import (
     SERVICE_INTERRUPT_PI,
     SERVICE_PLAY_BROADCAST_GROUP,
     SERVICE_RELOAD_PLAYLIST,
-    SERVICE_SET_PLACEMENT,
     SERVICE_SET_VOLUME_BROADCAST_GROUP,
     KEY_ALLEYCATTV,
     SERVICE_STOP_BROADCAST_GROUP,
     SIGNAL_NEW_DEVICE,
     SIGNAL_UPDATE,
-    STORAGE_KEY,
-    STORAGE_VERSION,
     WS_GET_DEVICES,
-    WS_LIST_AREAS,
-    WS_SET_PLACEMENT,
 )
 from .payloads import (
     encode_cache_cmd,
@@ -66,24 +58,17 @@ PLATFORMS: list[Platform] = [Platform.MEDIA_PLAYER]
 # registers proxy/WS) even before the install-only config entry is added.
 CONFIG_SCHEMA = cv.empty_config_schema(DOMAIN)
 
-try:
-    from custom_components.shared_libraries.fabric import (
-        async_start_presence_tracking,
-        async_stop_presence_tracking,
-        get_presence_tracker,
-    )
-    from custom_components.shared_libraries.mqtt import (
-        async_ensure_mqtt,
-        async_publish,
-        async_subscribe,
-    )
-except ImportError:  # pragma: no cover
-    async_start_presence_tracking = None  # type: ignore[assignment]
-    async_stop_presence_tracking = None  # type: ignore[assignment]
-    get_presence_tracker = None  # type: ignore[assignment]
-    async_ensure_mqtt = None  # type: ignore[assignment]
-    async_publish = None  # type: ignore[assignment]
-    async_subscribe = None  # type: ignore[assignment]
+from custom_components.core_configurator.helpers import get_url
+from custom_components.shared_libraries.fabric import (
+    async_start_presence_tracking,
+    async_stop_presence_tracking,
+    get_presence_tracker,
+)
+from custom_components.shared_libraries.mqtt import (
+    async_ensure_mqtt,
+    async_publish,
+    async_subscribe,
+)
 
 
 _BG_SCHEMA = vol.Schema({vol.Required("broadcast_group_id"): cv.string})
@@ -105,12 +90,6 @@ _VOLUME_SCHEMA = vol.Schema(
         vol.Required("volume"): vol.All(vol.Coerce(int), vol.Range(min=0, max=100)),
     }
 )
-_PLACEMENT_SCHEMA = vol.Schema(
-    {
-        vol.Required("pi_id"): cv.string,
-        vol.Optional("area_id"): cv.string,
-    }
-)
 _CACHE_DELETE_SCHEMA = vol.Schema(
     {
         vol.Required("pi_id"): cv.string,
@@ -129,9 +108,6 @@ async def _publish_cmd(
     *,
     retain: bool = False,
 ) -> None:
-    if async_publish is None:
-        _LOGGER.error("AlleycatTV: shared_libraries.mqtt not available")
-        return
     await async_publish(
         hass,
         MQTT_KIND,
@@ -157,11 +133,6 @@ def _mqtt_broker_hint(hass: HomeAssistant) -> tuple[str, str]:
 
 async def _publish_pi_config(hass: HomeAssistant) -> None:
     """Publish retained year-1 Pi config (server URL + MQTT broker hint)."""
-    try:
-        from custom_components.core_configurator.helpers import get_url
-    except ImportError:
-        _LOGGER.debug("AlleycatTV: Core Configurator missing — Pi config skip")
-        return
     server_url = (get_url(hass, KEY_ALLEYCATTV) or "").rstrip("/")
     mqtt_host, mqtt_port = _mqtt_broker_hint(hass)
     if not server_url and not mqtt_host:
@@ -186,8 +157,6 @@ async def _publish_desired(
     broadcast_group_id: str,
     payload: bytes,
 ) -> None:
-    if async_publish is None:
-        return
     await async_publish(
         hass,
         MQTT_KIND,
@@ -238,21 +207,10 @@ async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
 
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     """Set up AlleycatTV: fabric presence, services, proxy, media_player."""
-    store = Store(hass, STORAGE_VERSION, STORAGE_KEY)
-    device_meta = await store.async_load() or {}
     hass.data.setdefault(DOMAIN, {})
     hass.data[DOMAIN][entry.entry_id] = {"entry": entry}
     hass.data[DOMAIN].setdefault("devices", {})
-    hass.data[DOMAIN]["device_meta"] = device_meta
-    hass.data[DOMAIN]["store"] = store
     hass.data[DOMAIN]["entry_id"] = entry.entry_id
-
-    if async_start_presence_tracking is None or async_ensure_mqtt is None:
-        _LOGGER.error(
-            "AlleycatTV: shared_libraries not available — "
-            "add shared_libraries to manifest dependencies"
-        )
-        return False
 
     # Panel APIs before MQTT so Content Manager / WS work while broker comes up.
     _register_services(hass)
@@ -403,20 +361,6 @@ def _register_services(hass: HomeAssistant) -> None:
             hass, bg, encode_desired_playback(state="playing", volume=volume)
         )
 
-    async def handle_set_placement(call: ServiceCall) -> None:
-        """Forward to Broadcast Group Controller when available; else local area write."""
-        pi_id = call.data["pi_id"]
-        area_id = call.data.get("area_id") or ""
-        if hass.services.has_service("broadcast_group_controller", "set_area"):
-            await hass.services.async_call(
-                "broadcast_group_controller",
-                "set_area",
-                {"kind": "tv", "device_id": pi_id, "area_id": area_id},
-                blocking=True,
-            )
-            return
-        await _set_placement(hass, pi_id, area_id)
-
     async def handle_cache_delete(call: ServiceCall) -> None:
         segments = resolve_cmd_segments(pi_id=call.data["pi_id"])
         payload = encode_cache_cmd(
@@ -439,7 +383,6 @@ def _register_services(hass: HomeAssistant) -> None:
         (SERVICE_INTERRUPT_PI, handle_interrupt_pi, _INTERRUPT_PI_SCHEMA),
         (SERVICE_RELOAD_PLAYLIST, handle_reload, _BG_SCHEMA),
         (SERVICE_SET_VOLUME_BROADCAST_GROUP, handle_volume, _VOLUME_SCHEMA),
-        (SERVICE_SET_PLACEMENT, handle_set_placement, _PLACEMENT_SCHEMA),
         (SERVICE_CACHE_DELETE, handle_cache_delete, _CACHE_DELETE_SCHEMA),
         (SERVICE_CACHE_PURGE, handle_cache_purge, _CACHE_PI_SCHEMA),
         (SERVICE_CACHE_SYNC, handle_cache_sync, _CACHE_PI_SCHEMA),
@@ -449,35 +392,14 @@ def _register_services(hass: HomeAssistant) -> None:
             hass.services.async_register(DOMAIN, name, handler, schema=schema)
 
 
-async def _set_placement(
-    hass: HomeAssistant, pi_id: str, area_id: str | None
-) -> None:
-    meta = hass.data[DOMAIN].setdefault("device_meta", {})
-    current = dict(meta.get(pi_id, {}))
-    if area_id is not None:
-        current["area_id"] = area_id
-        registry = dr.async_get(hass)
-        device = registry.async_get_device(identifiers={(DOMAIN, pi_id)})
-        if device:
-            registry.async_update_device(device.id, area_id=area_id or None)
-    meta[pi_id] = current
-    store: Store | None = hass.data[DOMAIN].get("store")
-    if store:
-        await store.async_save(meta)
-    async_dispatcher_send(hass, SIGNAL_UPDATE, pi_id)
-
-
 @websocket_api.websocket_command({vol.Required("type"): WS_GET_DEVICES})
 @websocket_api.async_response
 async def ws_get_devices(hass: HomeAssistant, connection, msg) -> None:
     devices: list[dict] = []
-    if get_presence_tracker is not None:
-        tracker = get_presence_tracker(hass, MQTT_KIND)
-        if tracker is not None:
-            devices = tracker.list_devices()
-    # Merge playback telemetry when present.
+    tracker = get_presence_tracker(hass, MQTT_KIND)
+    if tracker is not None:
+        devices = tracker.list_devices()
     telemetry = hass.data.get(DOMAIN, {}).get("devices", {})
-    meta = hass.data.get(DOMAIN, {}).get("device_meta", {})
     bgc_mem = hass.data.get("broadcast_group_controller", {}).get("membership", {})
     out = []
     for d in devices:
@@ -493,40 +415,10 @@ async def ws_get_devices(hass: HomeAssistant, connection, msg) -> None:
         item["state"] = tel.get("state") or ""
         item["current_file"] = tel.get("current_file") or ""
         item["next_file"] = tel.get("next_file") or ""
-        item["area_id"] = bgc.get("area_id") or meta.get(pi_id, {}).get("area_id", "")
+        item["area_id"] = bgc.get("area_id") or ""
         out.append(item)
     connection.send_result(msg["id"], {"devices": out})
 
-
-@websocket_api.websocket_command({vol.Required("type"): WS_LIST_AREAS})
-@websocket_api.async_response
-async def ws_list_areas(hass: HomeAssistant, connection, msg) -> None:
-    registry = ar.async_get(hass)
-    areas = [{"area_id": a.id, "name": a.name} for a in registry.async_list_areas()]
-    connection.send_result(msg["id"], {"areas": areas})
-
-
-@websocket_api.websocket_command(
-    {
-        vol.Required("type"): WS_SET_PLACEMENT,
-        vol.Required("pi_id"): str,
-        vol.Optional("area_id"): str,
-    }
-)
-@websocket_api.async_response
-async def ws_set_placement(hass: HomeAssistant, connection, msg) -> None:
-    pi_id = msg["pi_id"]
-    area_id = msg.get("area_id") or ""
-    if hass.services.has_service("broadcast_group_controller", "set_area"):
-        await hass.services.async_call(
-            "broadcast_group_controller",
-            "set_area",
-            {"kind": "tv", "device_id": pi_id, "area_id": area_id},
-            blocking=True,
-        )
-    else:
-        await _set_placement(hass, pi_id, area_id)
-    connection.send_result(msg["id"], {"ok": True})
 
 
 @callback
@@ -535,15 +427,12 @@ def _register_ws(hass: HomeAssistant) -> None:
     if store.get("ws_registered"):
         return
     websocket_api.async_register_command(hass, ws_get_devices)
-    websocket_api.async_register_command(hass, ws_list_areas)
-    websocket_api.async_register_command(hass, ws_set_placement)
     store["ws_registered"] = True
 
 
 async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     unload_ok = await hass.config_entries.async_unload_platforms(entry, PLATFORMS)
-    if async_stop_presence_tracking is not None:
-        async_stop_presence_tracking(hass, MQTT_KIND)
+    async_stop_presence_tracking(hass, MQTT_KIND)
     unsub = hass.data.get(DOMAIN, {}).pop("telemetry_sub", None)
     if unsub:
         unsub()

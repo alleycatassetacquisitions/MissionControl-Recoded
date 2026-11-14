@@ -64,7 +64,7 @@ async def loaded_entry(hass: HomeAssistant):
 
     with (
         patch(
-            "custom_components.registration.coordinator._mcs_token",
+            "custom_components.registration.coordinator.get_mcs_token",
             return_value=TOKEN,
         ),
         patch(
@@ -88,7 +88,7 @@ async def test_sync_now_triggers_coordinator_refresh(
 ):
     with (
         patch(
-            "custom_components.registration.coordinator._mcs_token",
+            "custom_components.registration.coordinator.get_mcs_token",
             return_value=TOKEN,
         ),
         patch(
@@ -111,7 +111,7 @@ async def test_register_player_calls_mcs_post(hass: HomeAssistant, loaded_entry)
     """register_player POSTs name + email only."""
     with (
         patch(
-            "custom_components.registration.coordinator._mcs_token",
+            "custom_components.registration.coordinator.get_mcs_token",
             return_value=TOKEN,
         ),
         patch(
@@ -119,7 +119,7 @@ async def test_register_player_calls_mcs_post(hass: HomeAssistant, loaded_entry)
             new=AsyncMock(return_value=_mock_response(MOCK_ROSTER)),
         ),
         patch(
-            "custom_components.registration._mcs_token",
+            "custom_components.registration.get_mcs_token",
             return_value=TOKEN,
         ),
         patch(
@@ -150,7 +150,7 @@ async def test_register_player_calls_mcs_post(hass: HomeAssistant, loaded_entry)
 async def test_register_player_surfaces_409(hass: HomeAssistant, loaded_entry):
     with (
         patch(
-            "custom_components.registration._mcs_token",
+            "custom_components.registration.get_mcs_token",
             return_value=TOKEN,
         ),
         patch(
@@ -182,7 +182,7 @@ async def test_update_player_calls_mcs(hass: HomeAssistant, loaded_entry):
     }
     with (
         patch(
-            "custom_components.registration._mcs_token",
+            "custom_components.registration.get_mcs_token",
             return_value=TOKEN,
         ),
         patch(
@@ -194,7 +194,7 @@ async def test_update_player_calls_mcs(hass: HomeAssistant, loaded_entry):
             new=AsyncMock(return_value=_mock_response(MOCK_ROSTER)),
         ),
         patch(
-            "custom_components.registration.coordinator._mcs_token",
+            "custom_components.registration.coordinator.get_mcs_token",
             return_value=TOKEN,
         ),
     ):

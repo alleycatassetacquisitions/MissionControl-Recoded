@@ -112,7 +112,7 @@
       if (!this.hass) return;
       try {
         const result = await this.hass.connection.sendMessagePromise({
-          type: "alleycattv/list_areas"
+          type: "broadcast_group_controller/list_areas"
         });
         this._areas = result.areas || [];
       } catch (err) {

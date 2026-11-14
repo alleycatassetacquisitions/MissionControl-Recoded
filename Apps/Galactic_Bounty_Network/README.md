@@ -64,7 +64,7 @@ Clips and poster metadata are stored **per active Event** (from MCS / Registrati
 
 Create/update requires an active event (`409` if none). Public display URL stays `/poster/player/{id}` — GBN resolves video/metadata under the active Event folder. Re-POST without a video file updates text/chrome and keeps the existing clip. Video URLs include an `?v=` stamp so browsers/kiosks pick up replacements immediately. The panel **Event media** card shows Event **name** (UUID muted), sizes, export zip, and delete.
 
-**Active Event resolution:** MCS `GET /events/active` when `GBN_MCS_*` is set; else disk cache. Registration pushes `PUT /api/events/active` on set-active / restore so AlleycatTV Pis do not need a desktop browser visit after GBN restart. Startup warms the cache from MCS or disk.
+**Active Event resolution:** MCS `GET /events/active` when `GBN_MCS_*` is set; else disk cache. Game Master pushes `PUT /api/events/active` on set-active / restore so AlleycatTV Pis do not need a desktop browser visit after GBN restart. Startup warms the cache from MCS or disk.
 
 API:
 
@@ -76,7 +76,7 @@ API:
 | `GET` | `/api/posters` | Active-event posters only (`?event_id=` fallback; `?include_legacy=true` for old store) |
 | `POST` | `/api/posters` | Create/update; video required on first create, omit video to keep existing clip and update text/chrome only |
 | `GET` | `/api/events/active` | Active event id/name (MCS → cache) |
-| `PUT` | `/api/events/active` | Registration push: `{active_event_id, event_name}` |
+| `PUT` | `/api/events/active` | Game Master push: `{active_event_id, event_name}` |
 | `GET` | `/api/events/media` | Event folders: name, clip count + bytes (`?ensure_event_id=` / `ensure_event_name=`) |
 | `GET` | `/api/events/{id}/clips/export` | Zip of videos only (`{player_id}.ext`) |
 | `DELETE` | `/api/events/{id}/media` | Delete that event’s media + posters |
@@ -119,7 +119,7 @@ Health: `GET /health` → `{"status":"ok","service":"gbn"}`
 | `/poster-cycle` | Rotate **active-event** posters only (default 30s; `?interval=` 5–300). Loads `/api/events/active` then `/api/posters?event_id=…` every 15s — never the legacy global store. |
 | `/active-players` | Rotate game-server curated `player_ids` only |
 
-AlleycatTV Content **+ Poster cycle** adds `{gbn}/poster-cycle` as a webpage playlist item (**24h** slot; GBN rotates every 30s inside the page). See [`Docs/GBN Config Steps.md`](../../Docs/GBN%20Config%20Steps.md). After deploying GBN, set the active Event in Registration (or confirm `GET /api/events/active`) before expecting Pis to show posters. Re-click **+ Poster cycle** (or edit playlist duration) after upgrading the Content panel so existing groups pick up the 24h slot.
+AlleycatTV Content **+ Poster cycle** adds `{gbn}/poster-cycle` as a webpage playlist item (**24h** slot; GBN rotates every 30s inside the page). See [`Docs/GBN Config Steps.md`](../../Docs/GBN%20Config%20Steps.md). After deploying GBN, set the active Event in **Game Master** (or confirm `GET /api/events/active`) before expecting Pis to show posters. Re-click **+ Poster cycle** (or edit playlist duration) after upgrading the Content panel so existing groups pick up the 24h slot.
 
 ---
 
@@ -186,5 +186,5 @@ When you rename an identity string, update this section and `const.py` in the sa
 | Server default port | `8100` | bare literal in env docs / install scripts (`GBN_PORT`) |
 | Panel url_path | `gbn` | bare literal in `HomeAssist/configuration.yaml` |
 | Poster cycle path | `/poster-cycle` | bare literal in AlleycatTV content panel JS |
-| Active event API | `PUT /api/events/active` | GBN server `routers/events.py`; pushed by Registration on set-active |
+| Active event API | `PUT /api/events/active` | GBN server `routers/events.py`; pushed by Game Master on set-active |
 | **Note — no MQTT** | GBN is not on the MQTT fabric (no `MQTT_KIND`) | Poster cycle is a webpage slot served by GBN's HTTP server |

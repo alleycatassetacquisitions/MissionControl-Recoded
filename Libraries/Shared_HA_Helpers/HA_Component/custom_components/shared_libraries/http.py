@@ -1,6 +1,7 @@
-"""HTTP helper — async_request reads the base URL from Core Configurator, uses HA's session.
+"""HTTP helper — async_request + get_mcs_token via Core Configurator + HA session.
 
 Returns None when no URL is configured; callers must handle None without fallback IPs.
+core_configurator is a declared manifest dependency — import hard; fail loudly if missing.
 """
 from __future__ import annotations
 
@@ -12,22 +13,20 @@ from aiohttp import ClientResponse, ClientTimeout
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
 
-# core_configurator is listed in manifest dependencies so it is loaded before
-# this helper is called in production.  The module-level name makes get_url
-# patchable in tests via:
-#   patch("custom_components.shared_libraries.http.get_url", return_value=…)
-# The try/except lets the test runner import this module without core_configurator
-# on its path; tests replace the None sentinel via patch before calling
-# async_request.
-try:
-    from custom_components.core_configurator.helpers import get_url  # type: ignore[import]
-except ImportError:
-    get_url = None  # type: ignore[assignment]
+from custom_components.core_configurator.const import (
+    EXTRA_TOKEN,
+    KEY_MASTER_CONTROL_SERVER,
+)
+from custom_components.core_configurator.helpers import get_extra, get_url
 
 _LOGGER = logging.getLogger(__name__)
 
-# Default timeout for all Mission Control HTTP requests.
 _DEFAULT_TIMEOUT = ClientTimeout(total=10)
+
+
+def get_mcs_token(hass: HomeAssistant) -> str:
+    """MCS Bearer from Core Configurator. Empty when unset (fail-closed)."""
+    return str(get_extra(hass, KEY_MASTER_CONTROL_SERVER, EXTRA_TOKEN, "") or "")
 
 
 async def async_request(
@@ -44,45 +43,9 @@ async def async_request(
 ) -> ClientResponse | None:
     """Make an authenticated HTTP request via the HA-managed session.
 
-    Parameters
-    ----------
-    hass:
-        The Home Assistant instance.
-    service_key:
-        A Core Configurator service key (e.g. ``KEY_GBN``).  The base URL is
-        read from Core Configurator; if none is stored the call returns None.
-    method:
-        HTTP method string, e.g. ``"GET"``, ``"POST"``.
-    path:
-        URL path starting with ``/``, e.g. ``"/api/posters"``.
-        Query strings may be included (``"/api/x?y=1"``).
-    token:
-        Optional bearer token.  When provided, an ``Authorization: Bearer``
-        header is added.  Passing ``None`` skips auth entirely.
-    headers:
-        Additional headers to merge.  These are applied after the bearer
-        header so callers can override if necessary.
-    json:
-        Optional JSON-serialisable body.  Passed to the underlying session
-        request as ``json=``.  Mutually exclusive with ``data`` in practice.
-    data:
-        Optional raw body (bytes / form).  For proxies that forward multipart.
-    timeout:
-        Request timeout.  Defaults to 10 s total.
-
-    Returns
-    -------
-    ClientResponse or None
-        The raw aiohttp response, or ``None`` when no URL is configured.
-        The caller is responsible for reading the body and closing the response.
+    Returns the raw aiohttp response, or None when no URL is configured.
+    Caller reads the body and closes/releases the response.
     """
-    if get_url is None:
-        _LOGGER.error(
-            "shared_libraries.http: core_configurator is not available — "
-            "add it to your manifest dependencies."
-        )
-        return None
-
     base_url = get_url(hass, service_key)
     if not base_url:
         _LOGGER.debug(

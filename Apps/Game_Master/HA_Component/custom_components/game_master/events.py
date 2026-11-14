@@ -13,6 +13,8 @@ from typing import Any
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.storage import Store
 
+from custom_components.shared_libraries.http import async_request, get_mcs_token
+
 from .const import (
     ACTIVE_EVENT_ID_KEY,
     DOMAIN,
@@ -20,7 +22,6 @@ from .const import (
     EVENT_STORE,
     KEY_GBN,
     KEY_MCS,
-    EXTRA_MCS_TOKEN,
     STORAGE_KEY,
     STORAGE_VERSION,
 )
@@ -137,11 +138,6 @@ async def push_active_event_to_gbn(
     hass: HomeAssistant, event_id: str, event_name: str = ""
 ) -> None:
     """Tell GBN the active event so /poster-cycle kiosks do not wait on MCS."""
-    try:
-        from custom_components.shared_libraries.http import async_request
-    except ImportError:
-        _LOGGER.debug("Game Master: shared_libraries not available — GBN push skipped")
-        return
     if not event_id:
         return
     name = (event_name or "").strip()
@@ -193,22 +189,7 @@ async def restore_active_to_mcs(hass: HomeAssistant) -> None:
     if cached.get("venue_name") is not None:
         memory["venue_name"] = cached["venue_name"]
 
-    try:
-        from custom_components.shared_libraries.http import async_request
-    except ImportError:
-        _LOGGER.warning(
-            "Game Master: shared_libraries not available — cannot restore active event"
-        )
-        return
-    try:
-        from custom_components.core_configurator.helpers import get_extra
-
-        token = str(get_extra(hass, KEY_MCS, EXTRA_MCS_TOKEN, "") or "")
-    except ImportError:
-        _LOGGER.warning(
-            "Game Master: core_configurator not available — cannot restore active event"
-        )
-        return
+    token = get_mcs_token(hass)
     if not token:
         _LOGGER.warning(
             "Game Master: MCS token not set — cannot restore active event to MCS"

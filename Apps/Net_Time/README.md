@@ -128,6 +128,8 @@ cd ../HA_Component
 pytest
 ```
 
+CI runs the FastAPI suite with `FakeChronyOps` (`tests/fake_chrony_ops.py`) only — real `chronyc`, host clock agent, and privileged LXC clock behavior are **not** exercised on GitHub. Production `chrony_ops.py` has no test fake.
+
 ---
 
 ## Syntax

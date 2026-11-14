@@ -25,10 +25,7 @@ from homeassistant.core import HomeAssistant, ServiceCall, callback
 from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers import config_validation as cv
 
-try:
-    from custom_components.shared_libraries.http import async_request
-except ImportError:
-    async_request = None  # type: ignore[assignment]
+from custom_components.shared_libraries.http import async_request, get_mcs_token
 
 from .affiliations import (
     async_load_defaults,
@@ -41,7 +38,6 @@ from .const import (
     ACTIVE_EVENT_ID_KEY,
     DOMAIN,
     EVENT_CACHE_KEY,
-    EXTRA_MCS_TOKEN,
     KEY_MCS,
     WS_GET_AFFILIATION_CATALOG,
     WS_GET_EVENTS,
@@ -118,15 +114,6 @@ _EVENT_SET_ACTIVE_SCHEMA = vol.Schema({vol.Required("event_id"): cv.string})
 # ---------------------------------------------------------------------------
 
 
-def _mcs_token(hass: HomeAssistant) -> str:
-    try:
-        from custom_components.core_configurator.helpers import get_extra
-
-        return str(get_extra(hass, KEY_MCS, EXTRA_MCS_TOKEN, "") or "")
-    except Exception:  # noqa: BLE001
-        return ""
-
-
 async def _response_detail(response) -> str:
     try:
         data = await response.json()
@@ -152,9 +139,7 @@ async def _mcs_request(
     json_body: dict | None = None,
     action: str,
 ) -> Any | None:
-    if async_request is None:
-        raise HomeAssistantError("Game Master: shared_libraries not available")
-    token = _mcs_token(hass)
+    token = get_mcs_token(hass)
     if not token:
         raise HomeAssistantError(
             f"MCS token not set in Core Configurator — {action} skipped."
@@ -441,10 +426,7 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 @websocket_api.async_response
 async def ws_get_game_state(hass: HomeAssistant, connection, msg) -> None:
     """Proxy MCS GET /game-state."""
-    if async_request is None:
-        connection.send_error(msg["id"], "shared_libraries", "not available")
-        return
-    token = _mcs_token(hass)
+    token = get_mcs_token(hass)
     if not token:
         connection.send_error(
             msg["id"], "mcs_token", "MCS token not set in Core Configurator"
@@ -489,17 +471,7 @@ async def ws_get_game_state(hass: HomeAssistant, connection, msg) -> None:
 async def ws_get_events(hass: HomeAssistant, connection, msg) -> None:
     """List events from MCS; stub-aware when Central GET /events is not ready."""
     cached_list = list(_event_cache(hass).values())
-    if async_request is None:
-        connection.send_result(
-            msg["id"],
-            {
-                "ready": False,
-                "events": cached_list,
-                "detail": "shared_libraries not available",
-            },
-        )
-        return
-    token = _mcs_token(hass)
+    token = get_mcs_token(hass)
     if not token:
         connection.send_result(
             msg["id"],
@@ -617,10 +589,7 @@ async def _put_enabled(
     path_for_event,
     convenience_path: str,
 ) -> None:
-    if async_request is None:
-        connection.send_error(msg["id"], "shared_libraries", "not available")
-        return
-    token = _mcs_token(hass)
+    token = get_mcs_token(hass)
     if not token:
         connection.send_error(
             msg["id"], "mcs_token", "MCS token not set in Core Configurator"

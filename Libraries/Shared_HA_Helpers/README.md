@@ -10,14 +10,17 @@ Infrastructure library for Mission Control integrations. Not an operator-facing 
 
 ## What this ships
 
-Three modules other integrations import directly:
+Modules other integrations import directly:
 
 | Module | What it provides |
 |---|---|
-| `http.py` | `async_request` — bearer-auth HTTP via HA's managed session + Core Configurator URL |
+| `http.py` | `async_request` + `get_mcs_token` — bearer-auth HTTP via HA's managed session + Core Configurator URL/token |
+| `proxy.py` | `async_proxy_lan` / `proxy_request_parts` — authenticated HA→LAN companion forward (GBN / AlleycatTV) |
 | `mqtt.py` | `mc_topic` topic builder, `async_subscribe` / `async_publish` / `async_subscribe_presence` wrappers |
 | `fabric.py` | Presence tracking: `mc/{kind}/status/#` → device_registry + `online`/`offline`/`unknown` sensor; `async_forget_device` clears tracker + retained status |
 | `www/shared_libraries/mc-panel.js` | Lit + TypeScript McPanel kit (`window.McPanel`) — build from `panel_kit/` |
+
+Declared deps (`core_configurator`, `shared_libraries`) are hard-imported — missing packages fail import/setup loudly.
 
 ---
 
@@ -36,7 +39,7 @@ In your integration's `manifest.json`:
 ### 2. HTTP requests
 
 ```python
-from custom_components.shared_libraries.http import async_request
+from custom_components.shared_libraries.http import async_request, get_mcs_token
 
 # GET with no auth — returns None if no URL is configured (fail-closed)
 response = await async_request(hass, "gbn", "GET", "/api/posters")
@@ -45,10 +48,11 @@ if response is None:
 
 data = await response.json()
 
-# POST with bearer token (token usually from Core Configurator get_extra)
+# POST with MCS Bearer from Core Configurator (single reader — do not copy get_extra)
+token = get_mcs_token(hass)
 response = await async_request(
     hass, "master_control_server", "POST", "/players",
-    token=my_token,
+    token=token,
     json={"name": "Player One"},
 )
 ```
@@ -278,4 +282,4 @@ pytest --cov=custom_components/shared_libraries --cov-report=term-missing
 
 Requires `requirements_test.txt` installed at repo root. CI runs both this suite and the Core Configurator suite on every push.
 
-**Coverage baseline (Phase 3):** 93% overall. The two uncovered lines are the `get_url is None` error-log branch in `http.py` — only reachable when `core_configurator` is missing, which cannot happen in a healthy HA install.
+**Coverage:** run with `--cov` as above. `core_configurator` is hard-imported (declared dependency); Shared Helpers tests add its HA_Component path in `tests/conftest.py`.

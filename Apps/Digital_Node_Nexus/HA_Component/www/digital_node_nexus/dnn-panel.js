@@ -167,7 +167,7 @@
     async _loadRoster() {
       try {
         const result = await this.hass.callWS({
-          type: "digital_node_nexus/get_roster"
+          type: "registration/get_roster"
         });
         this._players = result && result.players || [];
       } catch (err) {

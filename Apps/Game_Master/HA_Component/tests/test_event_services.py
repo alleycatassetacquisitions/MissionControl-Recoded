@@ -73,7 +73,7 @@ async def test_create_event_calls_mcs(hass: HomeAssistant, loaded_entry):
         return _mock_response(None, 204)
 
     with (
-        patch("custom_components.game_master._mcs_token", return_value=TOKEN),
+        patch("custom_components.game_master.get_mcs_token", return_value=TOKEN),
         patch(
             "custom_components.game_master.async_request",
             new=AsyncMock(side_effect=_side_effect),
@@ -117,7 +117,7 @@ async def test_set_active_event_calls_mcs(hass: HomeAssistant, loaded_entry):
         "created_at": "",
     }
     with (
-        patch("custom_components.game_master._mcs_token", return_value=TOKEN),
+        patch("custom_components.game_master.get_mcs_token", return_value=TOKEN),
         patch(
             "custom_components.game_master.async_request",
             new=AsyncMock(return_value=_mock_response(None, 204)),
