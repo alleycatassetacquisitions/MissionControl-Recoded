@@ -7,7 +7,7 @@ from typing import Any
 
 from homeassistant.core import HomeAssistant
 
-from .const import HEALTH_KEYS
+from .const import HEALTH_KEYS, KEY_MCS
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -26,7 +26,7 @@ except ImportError:  # pragma: no cover
 def _mcs_token(hass: HomeAssistant) -> str | None:
     if get_extra is None:
         return None
-    token = get_extra(hass, "master_control_server", "token", "")
+    token = get_extra(hass, KEY_MCS, "token", "")
     return token or None
 
 

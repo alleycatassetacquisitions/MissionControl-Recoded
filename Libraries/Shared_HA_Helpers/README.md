@@ -224,6 +224,45 @@ npm run build
 See `panel_kit/README.md`.
 ---
 
+## Syntax
+
+Stable identity strings for Ctrl+F rename / debug. Prefer changing the named
+constant, then searching for leftover literals.
+
+This README is the **fabric SoT** for `mc/{kind}/…` topic patterns. Apps that use the
+fabric link here rather than duplicating the schema.
+
+When you rename an identity string, update this section and `const.py` in the same PR.
+
+### Rename blast radius
+
+| Change this | Also touches |
+|---|---|
+| Domain `shared_libraries` | HA `custom_components/` folder, `manifest.json`, every integration `manifest.json` `dependencies` list |
+| `MC_TOPIC_ROOT` (`mc`) | Every `mc_topic()` call site — changes all MQTT topics venue-wide |
+| Fabric kind `tv` | AlleycatTV `MQTT_KIND`, BGC `KIND_TV`, Pi firmware, all `mc/tv/…` topics |
+| Fabric kind `dnn` | DNN `MQTT_KIND`, BGC `KIND_DNN`, FDN firmware, all `mc/dnn/…` topics |
+| Presence payload strings (`online`/`offline`/`unknown`) | `fabric.py` `PRESENCE_*` constants; FDN / Pi LWT payloads must match |
+
+### Identity checklist
+
+| Kind | Exact string | Constant / source |
+|---|---|---|
+| HA domain | `shared_libraries` | `DOMAIN` in `const.py` |
+| MQTT topic root | `mc` | `MC_TOPIC_ROOT` in `const.py` |
+| TV fabric kind | `tv` | used in `mc_topic("tv", …)`; named in AlleycatTV `MQTT_KIND` |
+| DNN fabric kind | `dnn` | used in `mc_topic("dnn", …)`; named in DNN `MQTT_KIND` |
+| Topic: device command | `mc/{kind}/cmd/{device_id}` | `mc_topic(kind, "cmd", device_id)` |
+| Topic: broadcast group | `mc/{kind}/cmd/broadcast/{group_id}` | `mc_topic(kind, "cmd", "broadcast", group_id)` — always `broadcast`, never `zone` |
+| Topic: presence / LWT | `mc/{kind}/status/{device_id}` | `mc_topic(kind, "status", device_id)` |
+| Topic: desired state | `mc/{kind}/desired/…` | `mc_topic(kind, "desired", …)` |
+| Presence: online | `online` | `PRESENCE_ONLINE` in `fabric.py` |
+| Presence: offline | `offline` | `PRESENCE_OFFLINE` in `fabric.py` |
+| Presence: unknown | `unknown` | `PRESENCE_UNKNOWN` in `fabric.py` |
+| **Note — MQTT asymmetry** | `tv` vs `dnn` are intentionally different fabric kind names | AlleycatTV uses `tv`; FDNs use `dnn`. Intentional until a unified naming scheme is adopted. |
+
+---
+
 ## Running tests
 
 ```powershell

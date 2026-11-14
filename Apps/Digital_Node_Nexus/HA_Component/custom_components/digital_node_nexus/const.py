@@ -10,10 +10,9 @@ MQTT_KIND = "dnn"
 KEY_MCS = "master_control_server"
 EXTRA_MCS_TOKEN = "token"
 
-# Websocket commands for the DNN panel.
 WS_GET_DEVICES = f"{DOMAIN}/get_devices"
 WS_GET_ROSTER = f"{DOMAIN}/get_roster"
 
-# Canonical role / NeoCorp values (same as Registration / MCS).
+# Role and NeoCorp choices stamped into page payloads (DNN only; Registration has no ROLES).
 ROLES = ("hunter", "bounty")
 NEOCORPS = ("freelancer", "helix", "endline", "reboot")

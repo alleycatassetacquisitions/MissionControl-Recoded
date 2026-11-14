@@ -138,7 +138,7 @@ async def set_default_affiliation(
     """
     eid = (event_id or "").strip() or await resolve_active_event_id(hass)
     if not eid:
-        raise ValueError("No active event — set one in Registration first.")
+        raise ValueError("No active event — set one in Game Master first.")
     cat_id = str(category_id or "").strip()
     if not cat_id:
         raise ValueError("category_id is required")

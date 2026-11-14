@@ -37,6 +37,7 @@ from .const import (
     SERVICE_RELOAD_PLAYLIST,
     SERVICE_SET_PLACEMENT,
     SERVICE_SET_VOLUME_BROADCAST_GROUP,
+    KEY_ALLEYCATTV,
     SERVICE_STOP_BROADCAST_GROUP,
     SIGNAL_NEW_DEVICE,
     SIGNAL_UPDATE,
@@ -161,7 +162,7 @@ async def _publish_pi_config(hass: HomeAssistant) -> None:
     except ImportError:
         _LOGGER.debug("AlleycatTV: Core Configurator missing — Pi config skip")
         return
-    server_url = (get_url(hass, "alleycattv") or "").rstrip("/")
+    server_url = (get_url(hass, KEY_ALLEYCATTV) or "").rstrip("/")
     mqtt_host, mqtt_port = _mqtt_broker_hint(hass)
     if not server_url and not mqtt_host:
         return

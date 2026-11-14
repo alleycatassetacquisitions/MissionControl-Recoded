@@ -296,12 +296,42 @@ async def test_set_scoring():
     )
     with patcher:
         status, body = await set_scoring(
-            "http://primary.example.com", "", "e1", True
+            "http://primary.example.com", "", True
         )
     assert status == 200
     assert body["enabled"] is True
-    assert mock_client.request.await_args.args[1].endswith("/events/e1/scoring")
+    assert mock_client.request.await_args.args[1].endswith("/scoring")
     assert mock_client.request.await_args.kwargs["json"] == {"enabled": True}
+
+
+@pytest.mark.asyncio
+async def test_set_scoring_falls_through_on_primary_404():
+    call_count = 0
+
+    async def side_effect(method, url, **kwargs):
+        nonlocal call_count
+        call_count += 1
+        if "primary" in url:
+            return _mock_response(None, status_code=404, text="not found")
+        return _mock_response(
+            {"enabled": False, "started_at": None}, status_code=200
+        )
+
+    mock_client = MagicMock()
+    mock_client.request = side_effect
+    mock_cm = MagicMock()
+    mock_cm.__aenter__ = AsyncMock(return_value=mock_client)
+    mock_cm.__aexit__ = AsyncMock(return_value=False)
+
+    with patch("central_client.httpx.AsyncClient", return_value=mock_cm):
+        status, body = await set_scoring(
+            "http://primary.example.com",
+            "http://secondary.example.com",
+            False,
+        )
+    assert call_count == 2
+    assert status == 200
+    assert body["enabled"] is False
 
 
 @pytest.mark.asyncio
@@ -311,10 +341,10 @@ async def test_list_teams():
         request=_mock_response(teams, status_code=200)
     )
     with patcher:
-        status, body = await list_teams("http://primary.example.com", "", "e1")
+        status, body = await list_teams("http://primary.example.com", "")
     assert status == 200
     assert body[0]["name"] == "Hunter"
-    assert mock_client.request.await_args.args[1].endswith("/events/e1/teams")
+    assert mock_client.request.await_args.args[1].endswith("/teams")
 
 
 @pytest.mark.asyncio

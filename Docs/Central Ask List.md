@@ -8,15 +8,16 @@ Revised after Central’s Oct 2026 ship (`GET /events`, `GET /game-state`, JSON 
 - `GET /events`
 - Active event via `GET /game-state`
 - `PATCH /players/{id}` (name / email / team_id / active / affiliations map)
-- Teams under `/events/{id}/teams`
+- Teams under `/teams` (active-event scoped; not `/events/{id}/teams`)
 - Soft inactive via `active` (no hard DELETE required)
-- Scoring + delayed-scores PUTs
+- Scoring + delayed-scores as `PUT /scoring` and `PUT /delayed-scores` (active-event scoped)
 - **Affiliation management JSON API** (ADR 0006 / 0008) — `GET/POST /affiliation-categories`, rename, list/create affiliations under a category; player assignment via `PATCH /players/{id}` `affiliations` object. Categories and choices are **per active event**.
 
 ## When you’re ready
 
 1. **Hours of operation** API — if Game Master should drive venue open/close windows.
 2. **Special-event trigger** API — if operators should fire named gameplay specials from Game Master.
+3. **Confirm/fix auth on `PUT /scoring` (and likely `/delayed-scores`)** — these currently appear to accept unauthenticated calls on Central; Mission Control expects Bearer (or equivalent) on gameplay toggles.
 
 ## Not requesting
 

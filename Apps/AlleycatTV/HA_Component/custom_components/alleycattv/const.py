@@ -8,6 +8,8 @@ MQTT_KIND = "tv"
 
 # Core Configurator service key for the Proxmox content server.
 KEY_ALLEYCATTV = "alleycattv"
+# Core Configurator service key for the live RTSP source.
+KEY_RTSP = "rtsp"
 
 STORAGE_VERSION = 1
 STORAGE_KEY = f"{DOMAIN}_device_meta"
@@ -16,7 +18,6 @@ SIGNAL_NEW_DEVICE = f"{DOMAIN}_new_device"
 SIGNAL_DEVICE_REMOVED = f"{DOMAIN}_device_removed"
 SIGNAL_UPDATE = f"{DOMAIN}_update"
 
-# Websocket commands for panels.
 WS_GET_DEVICES = f"{DOMAIN}/get_devices"
 WS_LIST_AREAS = f"{DOMAIN}/list_areas"
 WS_SET_PLACEMENT = f"{DOMAIN}/set_placement"

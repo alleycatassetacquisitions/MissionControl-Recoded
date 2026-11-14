@@ -154,3 +154,39 @@ Requires `requirements_test.txt` at repo root. CI runs via `.github/workflows/te
 
 - Shared HTTP / MQTT helpers: [`Libraries/Shared_HA_Helpers/README.md`](../../Libraries/Shared_HA_Helpers/README.md)
 - MCS deploy: [`Docs/Master Control Server Config Steps.md`](../../Docs/Master%20Control%20Server%20Config%20Steps.md) (installer script)
+
+---
+
+## Syntax
+
+Stable identity strings for Ctrl+F rename / debug. Prefer changing the named
+constant, then searching for leftover literals.
+
+When you rename an identity string, update this section and `const.py` in the same PR.
+
+### Rename blast radius
+
+| Change this | Also touches |
+|---|---|
+| Domain `core_configurator` | HA `custom_components/` folder, `manifest.json`, `www/core_configurator/`, event name `core_configurator_updated`, every integration that lists it as a dependency |
+| Event `core_configurator_updated` | Every integration that subscribes to resync (Registration, AlleycatTV, DNN, etc.) |
+| Any service key string (`master_control_server`, `alleycattv`, …) | All integrations that call `get_url(hass, key)` / `get_extra(hass, key, …)` using that key, plus the matching `KEY_*` constant in every consumer const.py |
+
+### Identity checklist
+
+| Kind | Exact string | Constant / source |
+|---|---|---|
+| HA domain | `core_configurator` | `DOMAIN` in `const.py` |
+| Updated event | `core_configurator_updated` | `EVENT_UPDATED` in `const.py` |
+| CC key — MCS | `master_control_server` | `KEY_MASTER_CONTROL_SERVER` in `const.py` |
+| CC key — Central primary | `central_primary` | `KEY_CENTRAL_PRIMARY` in `const.py` |
+| CC key — Central secondary | `central_secondary` | `KEY_CENTRAL_SECONDARY` in `const.py` |
+| CC key — AlleycatTV | `alleycattv` | `KEY_ALLEYCATTV` in `const.py` |
+| CC key — GBN | `gbn` | `KEY_GBN` in `const.py` |
+| CC key — Proxmox | `proxmox` | `KEY_PROXMOX` in `const.py` |
+| CC key — RTSP | `rtsp` | `KEY_RTSP` in `const.py` |
+| CC key — Net Time | `net_time` | `KEY_NET_TIME` in `const.py` |
+| CC key — Venue Updater | `venue_updater` | `KEY_VENUE_UPDATER` in `const.py` |
+| Extra field — token | `token` | `EXTRA_TOKEN` in `const.py` |
+| Extra field — node | `node` | `EXTRA_NODE` in `const.py` |
+| Panel url_path | `core-configurator` | bare literal in `HomeAssist/configuration.yaml` |

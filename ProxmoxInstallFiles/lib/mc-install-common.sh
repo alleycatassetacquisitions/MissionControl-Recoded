@@ -815,8 +815,8 @@ Complete setup (now during this pause, or after the venue install finishes):
   3. Accept the terms → authorize with GitHub (device-code flow once)
   4. Confirm HACS appears in the sidebar
 
-Mission Control sidebar title does NOT need HACS (vendored mc-shell).
-HACS is for optional Frontend extras from the store.
+Mission Control sidebar title already works without HACS (vendored mc-shell).
+Still complete HACS Add + GitHub authorize before continuing — venues expect the store.
 ──────────────────────────────────────────────────────────────────────────────
 
 EOF
@@ -890,8 +890,10 @@ mc_ha_bootstrap_mqtt() {
   mc_say "Bootstrapping Mosquitto + MQTT integration"
 
   mc_say "Installing Mosquitto broker add-on"
-  mc_ha_apps "$ha_ip" install core_mosquitto >/dev/null 2>&1 \
-    || mc_say "Mosquitto install returned non-zero (may already be installed) — continuing"
+  if ! out="$(mc_ha_apps "$ha_ip" install core_mosquitto 2>&1)"; then
+    mc_say "Mosquitto install returned non-zero (may already be installed) — continuing"
+    printf '%s\n' "$out" | tail -n 20 >&2 || true
+  fi
 
   mc_say "Setting Mosquitto logins (alleycatTV / alleycat)"
   if ! mc_ha_ssh "$ha_ip" bash -s <<'OPTS'
@@ -910,8 +912,10 @@ OPTS
   fi
 
   mc_say "Starting Mosquitto broker"
-  mc_ha_apps "$ha_ip" start core_mosquitto >/dev/null 2>&1 \
-    || mc_say "Mosquitto start returned non-zero — will re-check state"
+  if ! out="$(mc_ha_apps "$ha_ip" start core_mosquitto 2>&1)"; then
+    mc_say "Mosquitto start returned non-zero — will re-check state"
+    printf '%s\n' "$out" | tail -n 20 >&2 || true
+  fi
 
   state=""
   for _ in $(seq 1 24); do

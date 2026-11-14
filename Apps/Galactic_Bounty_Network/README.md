@@ -159,3 +159,32 @@ curl -s http://127.0.0.1:8100/poster-cycle | head -c 80
 ```
 
 Redeploy `HA_Component/www/gbn/` to Home Assistant and hard-refresh the browser. For AlleycatTV **+ Poster cycle**, also redeploy `Apps/AlleycatTV/HA_Component/www/alleycattv/` to HA `www/`.
+
+---
+
+## Syntax
+
+Stable identity strings for Ctrl+F rename / debug. Prefer changing the named
+constant, then searching for leftover literals.
+
+When you rename an identity string, update this section and `const.py` in the same PR.
+
+### Rename blast radius
+
+| Change this | Also touches |
+|---|---|
+| HA domain `gbn` | HA `custom_components/` folder, `manifest.json`, proxy routes `/api/gbn/proxy`, `www/gbn/` |
+| CC key `gbn` | Core Configurator catalog + `KEY_GBN`, Registration `KEY_GBN`, Game Master `KEY_GBN`, Bug Buster `HEALTH_KEYS`, AlleycatTV poster-cycle URL construction |
+| Server port `8100` | `GBN_PORT` env default, Core Configurator placeholder, install scripts — not a named constant |
+
+### Identity checklist
+
+| Kind | Exact string | Constant / source |
+|---|---|---|
+| HA domain | `gbn` | `DOMAIN` in `const.py` |
+| CC service key | `gbn` | `KEY_GBN` in `const.py` |
+| Server default port | `8100` | bare literal in env docs / install scripts (`GBN_PORT`) |
+| Panel url_path | `gbn` | bare literal in `HomeAssist/configuration.yaml` |
+| Poster cycle path | `/poster-cycle` | bare literal in AlleycatTV content panel JS |
+| Active event API | `PUT /api/events/active` | GBN server `routers/events.py`; pushed by Registration on set-active |
+| **Note — no MQTT** | GBN is not on the MQTT fabric (no `MQTT_KIND`) | Poster cycle is a webpage slot served by GBN's HTTP server |

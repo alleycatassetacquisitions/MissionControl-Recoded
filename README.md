@@ -58,7 +58,7 @@ Panels talk to **Home Assistant** (services / websocket). They do not `fetch` LA
 | **Broadcast Group Controller** | [`Apps/Broadcast_Group_Controller/`](Apps/Broadcast_Group_Controller/) | Physical placement (HA Areas) and Broadcast Group membership for fabric devices. |
 | **Bug Buster** | [`Apps/Bug_Buster/`](Apps/Bug_Buster/) | Ops console: Proxmox guest console, MQTT spy, companion health, Central device logs via MCS. Does not own players, groups, or posters. |
 | **Net Time** | [`Apps/Net_Time/`](Apps/Net_Time/) | LAN NTP authority (chrony) + management API + host clock agent; Core Configurator Attempt Online Sync / timezone / Offline Sync. |
-| **Meru** | [`Apps/Meru/`](Apps/Meru/) | Local LLM / story agent surface. |
+| **Meru** | [`Apps/Meru/`](Apps/Meru/) | Local LLM / story agent surface. **Scaffold / not shipped** — empty HA tree + README only. |
 
 Code domains and forbidden aliases: [`Docs/Design Terms.md`](Docs/Design%20Terms.md).
 
@@ -214,3 +214,19 @@ App READMEs under `Apps/` and the matching `Docs/* Config Steps.md` cover each s
 | [`Apps/Core_Configurator/README.md`](Apps/Core_Configurator/README.md) | First integration: URL/token catalog + panel |
 
 If the file structure changes, update [`Docs/File Structure.md`](Docs/File%20Structure.md) so it still matches reality — that doc is the source of truth for paths.
+
+---
+
+## Identity strings and rename guidance
+
+Each `Apps/*/README.md` and `Libraries/Shared_HA_Helpers/README.md` has a **`## Syntax`** section listing the stable identity strings (domains, MQTT kinds, CC keys, WS namespaces) for that component and the blast radius of renaming them.
+
+Quick references:
+
+| Need | Go to |
+|---|---|
+| MQTT topic schema (`mc/{kind}/…`) | [`Libraries/Shared_HA_Helpers/README.md § Syntax`](Libraries/Shared_HA_Helpers/README.md#syntax) — fabric SoT |
+| Canonical product and code names | [`Docs/Design Terms.md`](Docs/Design%20Terms.md) |
+| Which app owns what | Syntax sections in each `Apps/*/README.md` |
+
+When you rename an identity string, update the `## Syntax` table and `const.py` in the same PR.

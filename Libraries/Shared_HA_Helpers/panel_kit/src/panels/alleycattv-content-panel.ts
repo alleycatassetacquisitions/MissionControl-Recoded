@@ -1,7 +1,7 @@
 /// <reference path="../mc-panel/globals.d.ts" />
 // @ts-nocheck — legacyPaint port preserves imperative panel logic
 /**
- * AlleycatTV Content Manager — HA sidebar panel (feature parity with /manage).
+ * AlleycatTV Content Manager — HA sidebar panel for library, playlists, and cache.
  * JSON goes through /api/alleycattv/proxy only; large files use chunked /api/alleycattv/uploads.
  * Cache actions use alleycattv.cache_* HA services (server cache HTTP routes return 410).
  * Playlist bucket create uses /api/broadcast_groups (zones alias still accepted).

@@ -1,6 +1,6 @@
 """MQTT fabric presence — status/LWT → HA devices and presence entities.
 
-Reusable by Digital Node Nexus (``dnn``) and later AlleycatTV (``tv``).
+Reusable by Digital Node Nexus (``dnn``) and AlleycatTV (``tv``).
 
 Design contracts
 ----------------

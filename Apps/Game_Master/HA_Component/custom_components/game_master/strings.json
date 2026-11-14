@@ -3,7 +3,7 @@
     "step": {
       "user": {
         "title": "Game Master",
-        "description": "Adds the Game Master panel for scoring and game-state controls. Set the Master Control Server URL and API token in Core Configurator first. Select the active event in Registration."
+        "description": "Adds the Game Master panel for event management, scoring, and game-state controls. Set the Master Control Server URL and API token in Core Configurator first. Create and activate events here; Registration is read-only for the active event."
       }
     },
     "abort": {

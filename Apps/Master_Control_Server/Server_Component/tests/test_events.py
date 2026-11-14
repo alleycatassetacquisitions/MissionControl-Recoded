@@ -206,12 +206,35 @@ def test_get_game_state(client: TestClient, auth_headers: dict):
     assert data["accepting_delayed_scores"] is False
 
 
+def _active_game_state(event_id: str = "e1") -> dict:
+    return {
+        "active_event": {
+            "id": event_id,
+            "name": "Night Run",
+            "venue_name": None,
+            "created_at": "2026-01-01T00:00:00Z",
+        },
+        "scoring": None,
+        "accepting_delayed_scores": None,
+        "server_time_utc": "2026-01-01T02:00:00Z",
+    }
+
+
 def test_put_scoring_for_event(client: TestClient, auth_headers: dict):
-    with patch(
-        "main.set_scoring",
-        new=AsyncMock(
-            return_value=(200, {"enabled": True, "started_at": "2026-01-01T01:00:00Z"})
+    with (
+        patch(
+            "main.fetch_game_state",
+            new=AsyncMock(return_value=(200, _active_game_state("e1"))),
         ),
+        patch(
+            "main.set_scoring",
+            new=AsyncMock(
+                return_value=(
+                    200,
+                    {"enabled": True, "started_at": "2026-01-01T01:00:00Z"},
+                )
+            ),
+        ) as mock_score,
     ):
         resp = client.put(
             "/events/e1/scoring",
@@ -220,54 +243,92 @@ def test_put_scoring_for_event(client: TestClient, auth_headers: dict):
         )
     assert resp.status_code == 200
     assert resp.json()["enabled"] is True
+    # Central client is active-event-only — no event_id arg
+    assert mock_score.await_args.args == (
+        "http://primary.example.com",
+        "http://secondary.example.com",
+        True,
+    )
 
 
-def test_put_scoring_active_convenience(client: TestClient, auth_headers: dict):
+def test_put_scoring_inactive_event_409(client: TestClient, auth_headers: dict):
     with (
         patch(
             "main.fetch_game_state",
-            new=AsyncMock(
-                return_value=(
-                    200,
-                    {
-                        "active_event": {
-                            "id": "e1",
-                            "name": "N",
-                            "created_at": "2026-01-01T00:00:00Z",
-                        },
-                        "scoring": None,
-                        "accepting_delayed_scores": None,
-                        "server_time_utc": "2026-01-01T02:00:00Z",
-                    },
-                )
-            ),
+            new=AsyncMock(return_value=(200, _active_game_state("e1"))),
         ),
         patch(
             "main.set_scoring",
             new=AsyncMock(
-                return_value=(200, {"enabled": False, "started_at": None})
+                return_value=(200, {"enabled": True, "started_at": None})
             ),
         ) as mock_score,
     ):
+        resp = client.put(
+            "/events/other/scoring",
+            headers=auth_headers,
+            json={"enabled": True},
+        )
+    assert resp.status_code == 409
+    mock_score.assert_not_awaited()
+
+
+def test_put_scoring_active_convenience(client: TestClient, auth_headers: dict):
+    with patch(
+        "main.set_scoring",
+        new=AsyncMock(
+            return_value=(200, {"enabled": False, "started_at": None})
+        ),
+    ) as mock_score:
         resp = client.put(
             "/scoring",
             headers=auth_headers,
             json={"enabled": False},
         )
     assert resp.status_code == 200
-    assert mock_score.await_args.args[2] == "e1"
+    assert mock_score.await_args.args == (
+        "http://primary.example.com",
+        "http://secondary.example.com",
+        False,
+    )
 
 
 def test_get_teams(client: TestClient, auth_headers: dict):
-    with patch(
-        "main.list_teams",
-        new=AsyncMock(
-            return_value=(
-                200,
-                [{"id": "t1", "event_id": "e1", "name": "Hunter"}],
-            )
+    with (
+        patch(
+            "main.fetch_game_state",
+            new=AsyncMock(return_value=(200, _active_game_state("e1"))),
         ),
+        patch(
+            "main.list_teams",
+            new=AsyncMock(
+                return_value=(
+                    200,
+                    [{"id": "t1", "event_id": "e1", "name": "Hunter"}],
+                )
+            ),
+        ) as mock_teams,
     ):
         resp = client.get("/events/e1/teams", headers=auth_headers)
     assert resp.status_code == 200
     assert resp.json()[0]["name"] == "Hunter"
+    assert mock_teams.await_args.args == (
+        "http://primary.example.com",
+        "http://secondary.example.com",
+    )
+
+
+def test_get_teams_inactive_event_409(client: TestClient, auth_headers: dict):
+    with (
+        patch(
+            "main.fetch_game_state",
+            new=AsyncMock(return_value=(200, _active_game_state("e1"))),
+        ),
+        patch(
+            "main.list_teams",
+            new=AsyncMock(return_value=(200, [])),
+        ) as mock_teams,
+    ):
+        resp = client.get("/events/other/teams", headers=auth_headers)
+    assert resp.status_code == 409
+    mock_teams.assert_not_awaited()

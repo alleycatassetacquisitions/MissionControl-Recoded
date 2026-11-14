@@ -81,6 +81,15 @@ jobs:
             --cov=custom_components/registration \
             --cov-report=term-missing
 
+      - name: Run Game Master tests
+        working-directory: Apps/Game_Master/HA_Component
+        run: |
+          pytest tests/ \
+            -v \
+            --tb=short \
+            --cov=custom_components/game_master \
+            --cov-report=term-missing
+
       - name: Run Digital Node Nexus tests
         working-directory: Apps/Digital_Node_Nexus/HA_Component
         run: |

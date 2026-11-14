@@ -1,8 +1,15 @@
-"""Game Master — gameplay controls + affiliation catalog via MCS → Central.
+"""Game Master — gameplay controls + event management + affiliation catalog via MCS.
 
-Event selection and player registration stay on the Registration panel.
-Game Master owns affiliation category/choice CRUD and the event-keyed catalog
-cache. This integration exposes websocket commands for the Game Master sidebar.
+Design contracts:
+  P2  Authority: MCS is the single Central adapter. Game Master reads/writes
+      events and game-state through MCS only.
+  P5  Event ownership: Game Master creates / edits / sets-active events.
+      Registration is read-only (active event for roster gating).
+  P8  Reusable primitives: all HTTP goes through shared_libraries.http.async_request.
+
+Event ownership moved from Registration in Phase 1c so registration-desk staff
+cannot mis-click set-active.  Registration panels read ``registration/get_active_event``
+(MCS-backed, name-enriched from this integration's cache) but cannot mutate events.
 """
 from __future__ import annotations
 
@@ -31,13 +38,24 @@ from .affiliations import (
     set_default_affiliation,
 )
 from .const import (
+    ACTIVE_EVENT_ID_KEY,
     DOMAIN,
+    EVENT_CACHE_KEY,
     EXTRA_MCS_TOKEN,
     KEY_MCS,
     WS_GET_AFFILIATION_CATALOG,
+    WS_GET_EVENTS,
     WS_GET_GAME_STATE,
     WS_SET_DELAYED_SCORES,
     WS_SET_SCORING,
+)
+from .events import (
+    cache_event as _cache_event,
+    event_cache as _event_cache,
+    load_event_store,
+    push_active_event_to_gbn as _push_active_event_to_gbn,
+    remember_active as _remember_active,
+    restore_active_to_mcs,
 )
 
 _LOGGER = logging.getLogger(__name__)
@@ -46,6 +64,10 @@ CONFIG_SCHEMA = vol.Schema(
     {vol.Optional(DOMAIN): vol.Schema({}, extra=vol.ALLOW_EXTRA)},
     extra=vol.ALLOW_EXTRA,
 )
+
+# ---------------------------------------------------------------------------
+# Voluptuous schemas
+# ---------------------------------------------------------------------------
 
 _AFFILIATION_NAME_SCHEMA = vol.Schema({vol.Required("name"): cv.string})
 _CREATE_AFFILIATION_SCHEMA = vol.Schema(
@@ -73,6 +95,27 @@ _SET_DEFAULT_AFFILIATION_SCHEMA = vol.Schema(
         vol.Optional("affiliation_id", default=""): cv.string,
     }
 )
+
+_EVENT_CREATE_SCHEMA = vol.Schema(
+    {
+        vol.Required("name"): cv.string,
+        vol.Optional("venue_name", default=""): cv.string,
+        vol.Optional("set_active", default=False): cv.boolean,
+    }
+)
+_EVENT_UPDATE_SCHEMA = vol.Schema(
+    {
+        vol.Required("event_id"): cv.string,
+        vol.Optional("name"): cv.string,
+        vol.Optional("venue_name"): vol.Any(cv.string, None),
+    }
+)
+_EVENT_SET_ACTIVE_SCHEMA = vol.Schema({vol.Required("event_id"): cv.string})
+
+
+# ---------------------------------------------------------------------------
+# Shared helpers
+# ---------------------------------------------------------------------------
 
 
 def _mcs_token(hass: HomeAssistant) -> str:
@@ -140,9 +183,16 @@ async def _mcs_request(
         return text
 
 
+# ---------------------------------------------------------------------------
+# Service registration
+# ---------------------------------------------------------------------------
+
+
 def _register_services(hass: HomeAssistant) -> None:
     if hass.data.get(DOMAIN, {}).get("services_registered"):
         return
+
+    # -- Affiliation catalog CRUD ------------------------------------------
 
     async def _create_category(call: ServiceCall) -> None:
         name = str(call.data["name"]).strip()
@@ -204,6 +254,103 @@ def _register_services(hass: HomeAssistant) -> None:
         except ValueError as err:
             raise HomeAssistantError(str(err)) from err
 
+    # -- Event CRUD (Phase 1c — moved from Registration) -------------------
+
+    async def _handle_create_event(call: ServiceCall) -> None:
+        name = call.data["name"].strip()
+        venue = (call.data.get("venue_name") or "").strip()
+        set_active = bool(call.data.get("set_active"))
+        body: dict[str, Any] = {"name": name}
+        if venue:
+            body["venue_name"] = venue
+        # Create first, then set-active with name hint for MCS display memory.
+        event = await _mcs_request(
+            hass, "POST", "/events", json_body=body, action="create_event"
+        )
+        merged: dict[str, Any] = {"name": name}
+        if venue:
+            merged["venue_name"] = venue
+        if isinstance(event, dict):
+            merged = {**merged, **event}
+            if not (merged.get("name") or "").strip():
+                merged["name"] = name
+        _cache_event(hass, merged if merged.get("id") else None)
+        from .events import save_event_store
+
+        await save_event_store(hass)
+
+        event_id = str(merged["id"]) if merged.get("id") else ""
+        if set_active and event_id:
+            memory: dict[str, Any] = {"name": name}
+            if venue:
+                memory["venue_name"] = venue
+            await _mcs_request(
+                hass,
+                "PUT",
+                f"/events/{event_id}/active",
+                json_body=memory,
+                action="set_active_event",
+            )
+            await _remember_active(hass, event_id)
+            await _push_active_event_to_gbn(hass, event_id, name)
+            clear_catalog(hass)
+            await refresh_catalog(hass, event_id=event_id)
+
+    async def _handle_update_event(call: ServiceCall) -> None:
+        event_id = call.data["event_id"]
+        body: dict[str, Any] = {}
+        if "name" in call.data and call.data["name"] is not None:
+            body["name"] = call.data["name"]
+        if "venue_name" in call.data:
+            body["venue_name"] = call.data["venue_name"]
+        if not body:
+            raise HomeAssistantError("Supply at least one of name or venue_name.")
+        event = await _mcs_request(
+            hass,
+            "PATCH",
+            f"/events/{event_id}",
+            json_body=body,
+            action="update_event",
+        )
+        merged: dict[str, Any] = {"id": event_id, **body}
+        if isinstance(event, dict):
+            merged = {**merged, **event}
+        _cache_event(hass, merged)
+        from .events import save_event_store
+
+        await save_event_store(hass)
+
+    async def _handle_set_active_event(call: ServiceCall) -> None:
+        event_id = call.data["event_id"]
+        cached = _event_cache(hass).get(event_id) or {}
+        memory: dict[str, Any] = {}
+        if cached.get("name"):
+            memory["name"] = cached["name"]
+        if cached.get("venue_name") is not None:
+            memory["venue_name"] = cached["venue_name"]
+        await _mcs_request(
+            hass,
+            "PUT",
+            f"/events/{event_id}/active",
+            json_body=memory or None,
+            action="set_active_event",
+        )
+        if event_id not in _event_cache(hass):
+            _event_cache(hass)[event_id] = {
+                "id": event_id,
+                "name": cached.get("name") or "",
+                "venue_name": cached.get("venue_name"),
+                "created_at": cached.get("created_at") or "",
+            }
+        await _remember_active(hass, event_id)
+        await _push_active_event_to_gbn(
+            hass, event_id, str(cached.get("name") or "")
+        )
+        clear_catalog(hass)
+        await refresh_catalog(hass, event_id=event_id)
+
+    # -- Register all -------------------------------------------------------
+
     hass.services.async_register(
         DOMAIN,
         "create_affiliation_category",
@@ -234,7 +381,24 @@ def _register_services(hass: HomeAssistant) -> None:
         _set_default_affiliation,
         schema=_SET_DEFAULT_AFFILIATION_SCHEMA,
     )
+    hass.services.async_register(
+        DOMAIN, "create_event", _handle_create_event, schema=_EVENT_CREATE_SCHEMA
+    )
+    hass.services.async_register(
+        DOMAIN, "update_event", _handle_update_event, schema=_EVENT_UPDATE_SCHEMA
+    )
+    hass.services.async_register(
+        DOMAIN,
+        "set_active_event",
+        _handle_set_active_event,
+        schema=_EVENT_SET_ACTIVE_SCHEMA,
+    )
     hass.data.setdefault(DOMAIN, {})["services_registered"] = True
+
+
+# ---------------------------------------------------------------------------
+# HA lifecycle
+# ---------------------------------------------------------------------------
 
 
 async def async_setup(hass: HomeAssistant, config: dict) -> bool:
@@ -253,15 +417,24 @@ async def async_setup(hass: HomeAssistant, config: dict) -> bool:
 
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     hass.data.setdefault(DOMAIN, {})[entry.entry_id] = {}
+    _event_cache(hass)  # ensure cache dict exists
+    await load_event_store(hass)
     await async_load_defaults(hass)
     _register_ws(hass)
     _register_services(hass)
+    # MCS memory is wiped on its restart — re-seed last active + display name
+    await restore_active_to_mcs(hass)
     return True
 
 
 async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     hass.data.get(DOMAIN, {}).pop(entry.entry_id, None)
     return True
+
+
+# ---------------------------------------------------------------------------
+# Websocket handlers
+# ---------------------------------------------------------------------------
 
 
 @websocket_api.websocket_command({vol.Required("type"): WS_GET_GAME_STATE})
@@ -300,12 +473,92 @@ async def ws_get_game_state(hass: HomeAssistant, connection, msg) -> None:
         eid = ""
         if isinstance(active, dict):
             eid = str(active.get("id") or "")
+            # Cache active event name so Registration's get_active_event can enrich.
+            if eid:
+                _cache_event(hass, active)
         from .affiliations import catalog_store
 
         cached = catalog_store(hass)
         if eid and cached.get("event_id") and str(cached.get("event_id")) != eid:
             clear_catalog(hass)
     connection.send_result(msg["id"], data if isinstance(data, dict) else {})
+
+
+@websocket_api.websocket_command({vol.Required("type"): WS_GET_EVENTS})
+@websocket_api.async_response
+async def ws_get_events(hass: HomeAssistant, connection, msg) -> None:
+    """List events from MCS; stub-aware when Central GET /events is not ready."""
+    cached_list = list(_event_cache(hass).values())
+    if async_request is None:
+        connection.send_result(
+            msg["id"],
+            {
+                "ready": False,
+                "events": cached_list,
+                "detail": "shared_libraries not available",
+            },
+        )
+        return
+    token = _mcs_token(hass)
+    if not token:
+        connection.send_result(
+            msg["id"],
+            {
+                "ready": False,
+                "events": cached_list,
+                "detail": "MCS token not set in Core Configurator",
+            },
+        )
+        return
+    response = await async_request(hass, KEY_MCS, "GET", "/events", token=token)
+    if response is None:
+        connection.send_result(
+            msg["id"],
+            {"ready": False, "events": cached_list, "detail": "MCS unreachable"},
+        )
+        return
+    if response.status == 501:
+        detail = await _response_detail(response)
+        connection.send_result(
+            msg["id"],
+            {
+                "ready": False,
+                "events": cached_list,
+                "detail": detail
+                or "Waiting on Central GET /events — using session cache only",
+            },
+        )
+        return
+    if response.status >= 400:
+        detail = await _response_detail(response)
+        connection.send_result(
+            msg["id"],
+            {
+                "ready": False,
+                "events": cached_list,
+                "detail": detail or f"MCS returned HTTP {response.status}",
+            },
+        )
+        return
+    try:
+        data = await response.json()
+    except Exception:  # noqa: BLE001
+        connection.send_result(
+            msg["id"],
+            {"ready": False, "events": cached_list, "detail": "Invalid events JSON"},
+        )
+        return
+    events: list[dict[str, Any]] = []
+    raw_list = data.get("events") if isinstance(data, dict) else data
+    if isinstance(raw_list, list):
+        for item in raw_list:
+            if isinstance(item, dict) and item.get("id"):
+                _cache_event(hass, item)
+                events.append(_event_cache(hass)[str(item["id"])])
+    connection.send_result(
+        msg["id"],
+        {"ready": True, "events": events or cached_list, "detail": None},
+    )
 
 
 @websocket_api.websocket_command(
@@ -407,6 +660,7 @@ def _register_ws(hass: HomeAssistant) -> None:
     if store.get("ws_registered"):
         return
     websocket_api.async_register_command(hass, ws_get_game_state)
+    websocket_api.async_register_command(hass, ws_get_events)
     websocket_api.async_register_command(hass, ws_set_scoring)
     websocket_api.async_register_command(hass, ws_set_delayed_scores)
     websocket_api.async_register_command(hass, ws_get_affiliation_catalog)

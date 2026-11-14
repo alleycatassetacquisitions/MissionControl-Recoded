@@ -1,6 +1,6 @@
 /// <reference path="../mc-panel/globals.d.ts" />
 /**
- * Registration panel — events + player roster via MCS.
+ * Registration panel — player roster via MCS.
  *
  * Design contract:
  *  - Extends McPanelBase from shared_libraries/mc-panel.js.
@@ -9,16 +9,17 @@
  *
  * Websocket:
  *  - registration/get_roster
- *  - registration/get_events
- *  - registration/get_active_event
+ *  - registration/get_active_event  (read-only; event management is in Game Master)
  *  - registration/get_teams
  *  - game_master/get_affiliation_catalog (read-only; catalog CRUD lives in Game Master)
  *
  * HA services:
  *  - registration.sync_now
  *  - registration.register_player (name + email + affiliations)
- *  - registration.create_event / update_event / set_active_event
  *  - registration.update_player / delete_player (soft-deactivate)
+ *
+ * Event management (create / edit / set-active) lives on Game Master so
+ * registration-desk staff cannot mis-click set-active.
  *
  * Affiliations: dropdowns (one selection per category). Faction allows
  * create-on-type via Game Master. Roster table still shows tag chips.
@@ -88,19 +89,8 @@ class RegistrationPanel extends window.McPanel.Base {
       _fName: { state: true },
       _fEmail: { state: true },
       _highlightName: { state: true },
-      _events: { state: true },
-      _eventsReady: { state: true },
-      _eventsDetail: { state: true },
       _activeEventId: { state: true },
       _activeEvent: { state: true },
-      _evMode: { state: true },
-      _evCreateName: { state: true },
-      _evCreateVenue: { state: true },
-      _evCreateSetActive: { state: true },
-      _evEditId: { state: true },
-      _evEditName: { state: true },
-      _evEditVenue: { state: true },
-      _evSetActiveId: { state: true },
       _teams: { state: true },
       _catalog: { state: true },
       _fAffByCat: { state: true },
@@ -118,19 +108,8 @@ class RegistrationPanel extends window.McPanel.Base {
   declare _fName: string;
   declare _fEmail: string;
   declare _highlightName: string;
-  declare _events: RegEvent[];
-  declare _eventsReady: boolean;
-  declare _eventsDetail: string;
   declare _activeEventId: string | null;
   declare _activeEvent: RegEvent | null;
-  declare _evMode: "create" | "edit" | "set";
-  declare _evCreateName: string;
-  declare _evCreateVenue: string;
-  declare _evCreateSetActive: boolean;
-  declare _evEditId: string;
-  declare _evEditName: string;
-  declare _evEditVenue: string;
-  declare _evSetActiveId: string;
   declare _teams: RegTeam[];
   declare _catalog: AffCatalog;
   declare _fAffByCat: Record<string, string>;
@@ -152,19 +131,8 @@ class RegistrationPanel extends window.McPanel.Base {
     this._fName = "";
     this._fEmail = "";
     this._highlightName = "";
-    this._events = [];
-    this._eventsReady = false;
-    this._eventsDetail = "";
     this._activeEventId = null;
     this._activeEvent = null;
-    this._evMode = "create";
-    this._evCreateName = "";
-    this._evCreateVenue = "";
-    this._evCreateSetActive = true;
-    this._evEditId = "";
-    this._evEditName = "";
-    this._evEditVenue = "";
-    this._evSetActiveId = "";
     this._teams = [];
     this._catalog = emptyCatalog();
     this._fAffByCat = {};
@@ -311,98 +279,27 @@ class RegistrationPanel extends window.McPanel.Base {
           font-size: 13px;
           margin-top: 4px;
         }
-        .events-block {
+        /* Active event read-only display */
+        .active-event-block {
           min-width: 0;
-          margin-bottom: 28px;
-          padding-bottom: 24px;
+          margin-bottom: 20px;
+          padding-bottom: 18px;
           border-bottom: 1px solid var(--divider-color, #1f3a44);
         }
-        .events-block .form-title {
+        .active-event-block .form-title {
           margin-bottom: 6px;
         }
         .active-line {
           font-size: 14px;
-          margin: 0 0 10px;
+          margin: 0 0 6px;
         }
         .active-line strong {
           color: var(--primary-color, #00e5ff);
         }
-        .events-gate {
-          font-size: 13px;
-          color: var(--secondary-text-color, #7aa8b8);
-          margin: 0 0 12px;
-        }
-        .mode-toggle {
-          display: flex;
-          gap: 0;
-          margin: 0 0 12px;
-          border: 1px solid var(--primary-color, #00e5ff);
-          border-radius: 6px;
-          overflow: hidden;
-        }
-        .mode-toggle button {
-          flex: 1;
-          margin: 0;
-          padding: 8px 10px;
-          background: transparent;
-          color: var(--primary-color, #00e5ff);
-          border: 0;
-          border-right: 1px solid var(--primary-color, #00e5ff);
-          font: inherit;
+        .active-manage-hint {
           font-size: 12px;
-          font-weight: 600;
-          letter-spacing: 0.04em;
-          text-transform: uppercase;
-          cursor: pointer;
-        }
-        .mode-toggle button:last-child {
-          border-right: 0;
-        }
-        .mode-toggle button.active {
-          background: var(--primary-color, #00e5ff);
-          color: #041016;
-        }
-        .events-block label {
-          display: block;
-          font-size: 11px;
-          letter-spacing: 0.06em;
-          text-transform: uppercase;
           color: var(--secondary-text-color, #7aa8b8);
-          margin: 8px 0 4px;
-        }
-        .events-block input,
-        .events-block select {
-          width: 100%;
-          box-sizing: border-box;
-          padding: 8px 10px;
-          background: var(--secondary-background-color, #0d1418);
-          color: var(--primary-text-color, #e8f6ff);
-          border: 1px solid var(--divider-color, #1f3a44);
-          border-radius: 6px;
-          font: inherit;
-        }
-        .events-block label.check-row,
-        .form-col label.check-row {
-          display: flex;
-          align-items: center;
-          gap: 8px;
-          margin-top: 10px;
-          margin-bottom: 0;
-          font-size: 13px;
-          text-transform: none;
-          letter-spacing: 0;
-          color: var(--primary-text-color, #e8f6ff);
-        }
-        .events-block label.check-row input,
-        .form-col label.check-row input {
-          width: auto;
-          flex-shrink: 0;
           margin: 0;
-        }
-        .events-block .btn-create,
-        .events-block .btn-ghost {
-          margin-top: 12px;
-          width: 100%;
         }
         .layout {
           display: grid;
@@ -459,6 +356,22 @@ class RegistrationPanel extends window.McPanel.Base {
           border: 1px solid var(--divider-color, #1f3a44);
           border-radius: 6px;
           font: inherit;
+        }
+        .form-col label.check-row {
+          display: flex;
+          align-items: center;
+          gap: 8px;
+          margin-top: 10px;
+          margin-bottom: 0;
+          font-size: 13px;
+          text-transform: none;
+          letter-spacing: 0;
+          color: var(--primary-text-color, #e8f6ff);
+        }
+        .form-col label.check-row input {
+          width: auto;
+          flex-shrink: 0;
+          margin: 0;
         }
         .form-actions {
           display: flex;
@@ -783,15 +696,9 @@ class RegistrationPanel extends window.McPanel.Base {
     const fromActive = (this._activeEvent?.name || "").trim();
     if (fromActive) return fromActive;
     if (this._activeEventId) {
-      const cached = this._events.find(
-        (e) => String(e.id) === String(this._activeEventId)
-      );
-      const fromCache = (cached?.name || "").trim();
-      if (fromCache) return fromCache;
-      // Last resort — UUID only when we truly have no name yet
       return this._activeEventId;
     }
-    return "None — create or set an active event before registering players";
+    return "None";
   }
 
   override async _boot() {
@@ -801,7 +708,6 @@ class RegistrationPanel extends window.McPanel.Base {
   async _loadAll() {
     await Promise.all([
       this._loadRoster(),
-      this._loadEvents(),
       this._loadActiveEvent(),
       this._loadPosters(),
     ]);
@@ -890,23 +796,6 @@ class RegistrationPanel extends window.McPanel.Base {
     }
   }
 
-  async _loadEvents() {
-    try {
-      const result = await this.hass!.callWS<{
-        ready?: boolean;
-        events?: RegEvent[];
-        detail?: string | null;
-      }>({ type: "registration/get_events" });
-      this._events = result?.events ?? [];
-      this._eventsReady = Boolean(result?.ready);
-      this._eventsDetail = result?.detail || "";
-    } catch (err) {
-      this._events = [];
-      this._eventsReady = false;
-      this._eventsDetail = this._formatErr(err);
-    }
-  }
-
   async _loadActiveEvent() {
     try {
       const result = await this.hass!.callWS<{
@@ -914,24 +803,7 @@ class RegistrationPanel extends window.McPanel.Base {
         event?: RegEvent | null;
       }>({ type: "registration/get_active_event" });
       this._activeEventId = result?.active_event_id ?? null;
-      let event = result?.event ?? null;
-      // Merge name from local events list if get-active only has the UUID
-      if (
-        event &&
-        !(event.name || "").trim() &&
-        this._activeEventId
-      ) {
-        const cached = this._events.find(
-          (e) => String(e.id) === String(this._activeEventId)
-        );
-        if (cached?.name) {
-          event = { ...event, name: cached.name, venue_name: cached.venue_name };
-        }
-      }
-      this._activeEvent = event;
-      if (this._activeEventId && !this._evSetActiveId) {
-        this._evSetActiveId = this._activeEventId;
-      }
+      this._activeEvent = result?.event ?? null;
     } catch (_) {
       this._activeEventId = null;
       this._activeEvent = null;
@@ -1035,7 +907,7 @@ class RegistrationPanel extends window.McPanel.Base {
                     )}
                 ${showCreateHint
                   ? html`<li class="create-hint">
-                      Press Create/Save to add “${typed}” as a new faction
+                      Press Create/Save to add "${typed}" as a new faction
                     </li>`
                   : ""}
               </ul>`
@@ -1098,106 +970,6 @@ class RegistrationPanel extends window.McPanel.Base {
       }, 800);
     } catch (err) {
       this._feedback("Sync failed: " + this._formatErr(err), "err");
-    }
-  }
-
-  async _createEvent() {
-    const name = this._evCreateName.trim();
-    const venue = this._evCreateVenue.trim();
-    const setActive = this._evCreateSetActive;
-    if (!name) {
-      this._feedback("Enter an event name", "warn");
-      return;
-    }
-    try {
-      await this.hass!.callService("registration", "create_event", {
-        name,
-        venue_name: venue,
-        set_active: setActive,
-      });
-      // Optimistic label — don't flash UUID while WS reloads
-      if (setActive) {
-        this._activeEvent = {
-          name,
-          venue_name: venue || null,
-          id: this._activeEventId || undefined,
-        };
-      }
-      this._feedback(
-        setActive
-          ? `Created and activated “${name}”`
-          : `Created event “${name}”`,
-        "ok"
-      );
-      this._evCreateName = "";
-      this._evCreateVenue = "";
-      await this._loadEvents();
-      await this._loadActiveEvent();
-      // Prefer the name we just created if MCS memory only has the id
-      if (setActive && !(this._activeEvent?.name || "").trim()) {
-        this._activeEvent = {
-          ...(this._activeEvent || {}),
-          id: this._activeEventId || this._activeEvent?.id,
-          name,
-          venue_name: venue || null,
-        };
-      }
-      if (setActive) {
-        await this.hass!.callService("registration", "sync_now", {});
-        await this._loadRoster();
-      }
-    } catch (err) {
-      this._feedback("Create event failed: " + this._formatErr(err), "err");
-    }
-  }
-
-  _onEditEventPick(eventId: string) {
-    this._evEditId = eventId;
-    const ev = this._events.find((e) => String(e.id) === String(eventId));
-    this._evEditName = ev?.name || "";
-    this._evEditVenue = ev?.venue_name || "";
-  }
-
-  async _updateEvent() {
-    if (!this._evEditId) {
-      this._feedback("Pick an event to edit", "warn");
-      return;
-    }
-    const payload: {
-      event_id: string;
-      name?: string;
-      venue_name?: string;
-    } = { event_id: this._evEditId };
-    if (this._evEditName.trim()) payload.name = this._evEditName.trim();
-    payload.venue_name = this._evEditVenue.trim() || "";
-    try {
-      await this.hass!.callService("registration", "update_event", payload);
-      this._feedback("Event updated", "ok");
-      await this._loadEvents();
-      await this._loadActiveEvent();
-    } catch (err) {
-      this._feedback("Update event failed: " + this._formatErr(err), "err");
-    }
-  }
-
-  async _setActiveEvent() {
-    if (!this._evSetActiveId) {
-      this._feedback("Pick an event to activate", "warn");
-      return;
-    }
-    try {
-      await this.hass!.callService("registration", "set_active_event", {
-        event_id: this._evSetActiveId,
-      });
-      this._feedback("Active event saved", "ok");
-      await this._loadActiveEvent();
-      await this.hass!.callService("registration", "sync_now", {});
-      await this._loadRoster();
-      await this._loadEvents();
-      await this._loadTeams();
-      await this._loadCatalog();
-    } catch (err) {
-      this._feedback("Set active failed: " + this._formatErr(err), "err");
     }
   }
 
@@ -1308,7 +1080,7 @@ class RegistrationPanel extends window.McPanel.Base {
     }
     if (!this._activeEventId) {
       this._feedback(
-        "No active event — create or set one in the Events strip first",
+        "No active event — go to Game Master to create or set one",
         "err"
       );
       return;
@@ -1353,10 +1125,6 @@ class RegistrationPanel extends window.McPanel.Base {
       !this.hass ||
       (this._feedbackKind === "err" &&
         String(this._feedbackMsg).includes("Could not load roster"));
-    const eventOptions =
-      this._events.length > 0
-        ? this._events
-        : [];
 
     return html`
       <div class="wrap">
@@ -1365,7 +1133,7 @@ class RegistrationPanel extends window.McPanel.Base {
             <div>
               <h1>Registration</h1>
               <p class="sub">
-                Events and player roster via Mission Control
+                Player roster via Mission Control
                 ${count
                   ? html` · ${count} player${count === 1 ? "" : "s"}`
                   : ""}
@@ -1379,175 +1147,17 @@ class RegistrationPanel extends window.McPanel.Base {
 
         <div class="layout">
           <div class="form-col">
-            <div class="events-block">
-              <h2 class="form-title">Events</h2>
+            <!-- Active event: read-only display — manage events in Game Master -->
+            <div class="active-event-block">
+              <h2 class="form-title">Active Event</h2>
               <p class="active-line">
-                Active:
                 <strong>${this._activeLabel()}</strong>
               </p>
-              ${!this._eventsReady && this._eventsDetail
-                ? html`<p class="events-gate">${this._eventsDetail}</p>`
-                : ""}
-              <div class="mode-toggle" role="tablist" aria-label="Event action">
-                <button
-                  type="button"
-                  class=${this._evMode === "create" ? "active" : ""}
-                  @click=${() => {
-                    this._evMode = "create";
-                  }}
-                >
-                  Create
-                </button>
-                <button
-                  type="button"
-                  class=${this._evMode === "edit" ? "active" : ""}
-                  @click=${() => {
-                    this._evMode = "edit";
-                  }}
-                >
-                  Edit
-                </button>
-                <button
-                  type="button"
-                  class=${this._evMode === "set" ? "active" : ""}
-                  @click=${() => {
-                    this._evMode = "set";
-                  }}
-                >
-                  Set
-                </button>
-              </div>
-
-              ${this._evMode === "create"
-                ? html`
-                    <label for="ev-create-name">Name</label>
-                    <input
-                      id="ev-create-name"
-                      type="text"
-                      .value=${this._evCreateName}
-                      @input=${(e: Event) => {
-                        this._evCreateName = (
-                          e.target as HTMLInputElement
-                        ).value;
-                      }}
-                    />
-                    <label for="ev-create-venue">Venue (optional)</label>
-                    <input
-                      id="ev-create-venue"
-                      type="text"
-                      .value=${this._evCreateVenue}
-                      @input=${(e: Event) => {
-                        this._evCreateVenue = (
-                          e.target as HTMLInputElement
-                        ).value;
-                      }}
-                    />
-                    <label class="check-row">
-                      <input
-                        type="checkbox"
-                        .checked=${this._evCreateSetActive}
-                        @change=${(e: Event) => {
-                          this._evCreateSetActive = (
-                            e.target as HTMLInputElement
-                          ).checked;
-                        }}
-                      />
-                      Set active after create
-                    </label>
-                    <button
-                      class="btn-create"
-                      @click=${() => this._createEvent()}
-                    >
-                      Create event
-                    </button>
-                  `
-                : this._evMode === "edit"
-                  ? html`
-                      <label for="ev-edit-pick">Event</label>
-                      <select
-                        id="ev-edit-pick"
-                        .value=${this._evEditId}
-                        ?disabled=${eventOptions.length === 0}
-                        @change=${(e: Event) => {
-                          this._onEditEventPick(
-                            (e.target as HTMLSelectElement).value
-                          );
-                        }}
-                      >
-                        <option value="">
-                          ${eventOptions.length
-                            ? "Select…"
-                            : "No cached events yet — create one"}
-                        </option>
-                        ${eventOptions.map(
-                          (ev) =>
-                            html`<option value=${ev.id ?? ""}>
-                              ${ev.name || ev.id}
-                            </option>`
-                        )}
-                      </select>
-                      <label for="ev-edit-name">Name</label>
-                      <input
-                        id="ev-edit-name"
-                        type="text"
-                        .value=${this._evEditName}
-                        @input=${(e: Event) => {
-                          this._evEditName = (
-                            e.target as HTMLInputElement
-                          ).value;
-                        }}
-                      />
-                      <label for="ev-edit-venue">Venue</label>
-                      <input
-                        id="ev-edit-venue"
-                        type="text"
-                        .value=${this._evEditVenue}
-                        @input=${(e: Event) => {
-                          this._evEditVenue = (
-                            e.target as HTMLInputElement
-                          ).value;
-                        }}
-                      />
-                      <button
-                        class="btn-ghost"
-                        ?disabled=${!this._evEditId}
-                        @click=${() => this._updateEvent()}
-                      >
-                        Save event
-                      </button>
-                    `
-                  : html`
-                      <label for="ev-set-active">Event</label>
-                      <select
-                        id="ev-set-active"
-                        .value=${this._evSetActiveId}
-                        ?disabled=${eventOptions.length === 0}
-                        @change=${(e: Event) => {
-                          this._evSetActiveId = (
-                            e.target as HTMLSelectElement
-                          ).value;
-                        }}
-                      >
-                        <option value="">
-                          ${eventOptions.length
-                            ? "Select…"
-                            : "No cached events yet — create one"}
-                        </option>
-                        ${eventOptions.map(
-                          (ev) =>
-                            html`<option value=${ev.id ?? ""}>
-                              ${ev.name || ev.id}
-                            </option>`
-                        )}
-                      </select>
-                      <button
-                        class="btn-create"
-                        ?disabled=${!this._evSetActiveId}
-                        @click=${() => this._setActiveEvent()}
-                      >
-                        Set active
-                      </button>
-                    `}
+              <p class="active-manage-hint">
+                ${this._activeEventId
+                  ? "To change the active event, open Game Master."
+                  : "No active event — open Game Master to create or set one."}
+              </p>
             </div>
 
             <h2 class="form-title">

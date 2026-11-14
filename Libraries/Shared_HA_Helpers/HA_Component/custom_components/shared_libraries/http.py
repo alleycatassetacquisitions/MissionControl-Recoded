@@ -1,33 +1,6 @@
-"""HTTP helper for Mission Control integrations.
+"""HTTP helper — async_request reads the base URL from Core Configurator, uses HA's session.
 
-All integrations use this instead of opening their own aiohttp sessions.
-
-Usage
------
-    from custom_components.shared_libraries.http import async_request
-
-    response = await async_request(hass, KEY_GBN, "GET", "/api/posters")
-    if response is None:
-        # No URL configured — fail-closed, do not fall back to a hardcoded IP.
-        return
-
-    data = await response.json()
-
-With bearer auth:
-    response = await async_request(
-        hass, KEY_REGISTRATION_PRIMARY, "POST", "/players",
-        token=my_token,
-    )
-
-Design contracts
-----------------
-- Fail-closed: if Core Configurator has no URL for service_key, returns None.
-  Callers must handle None without falling back to a hardcoded address.
-- Never opens a bare aiohttp.ClientSession. Always uses
-  homeassistant.helpers.aiohttp_client.async_get_clientsession(hass).
-- Bearer auth only: if token is provided, adds Authorization: Bearer {token}.
-  Token storage is the caller's responsibility (Phase 4+).
-- path must start with "/" and is appended directly to the base URL.
+Returns None when no URL is configured; callers must handle None without fallback IPs.
 """
 from __future__ import annotations
 

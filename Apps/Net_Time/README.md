@@ -127,3 +127,36 @@ pytest
 cd ../HA_Component
 pytest
 ```
+
+---
+
+## Syntax
+
+Stable identity strings for Ctrl+F rename / debug. Prefer changing the named
+constant, then searching for leftover literals.
+
+When you rename an identity string, update this section and `const.py` in the same PR.
+
+### Rename blast radius
+
+| Change this | Also touches |
+|---|---|
+| Domain `net_time` | HA `custom_components/` folder, `manifest.json`, WS namespace `net_time/*` |
+| CC key `net_time` | Core Configurator catalog + `KEY_NET_TIME`, Registration peer-config push, `KEY_NET_TIME` in Net Time const.py |
+| API port `8720` | `NET_TIME_API_TOKEN` env default, install scripts, Core Configurator placeholder |
+| Host clock port `8721` | `NET_TIME_HOST_CLOCK_URL` env, install scripts — not a named constant |
+
+### Identity checklist
+
+| Kind | Exact string | Constant / source |
+|---|---|---|
+| HA domain | `net_time` | `DOMAIN` in `const.py` |
+| CC service key | `net_time` | `KEY_NET_TIME` in `const.py` |
+| Extra field (token) | `token` | `EXTRA_TOKEN` in `const.py` |
+| WS health | `net_time/health` | `WS_HEALTH` in `const.py` |
+| WS status | `net_time/status` | `WS_STATUS` in `const.py` |
+| WS sync | `net_time/sync` | `WS_SYNC` in `const.py` |
+| WS set timezone | `net_time/set_timezone` | `WS_SET_TIMEZONE` in `const.py` |
+| Management API port | `8720` | bare literal in env docs / install scripts (`NET_TIME_API_TOKEN`) |
+| Host clock agent port | `8721` | bare literal in install scripts |
+| Panel url_path | `net-time` | bare literal in `HomeAssist/configuration.yaml` |

@@ -5,8 +5,7 @@
   "type": "module",
   "scripts": {
     "build": "tsc --noEmit && node build-all.mjs",
-    "typecheck": "tsc --noEmit",
-    "build:mc-panel": "vite build"
+    "typecheck": "tsc --noEmit"
   },
   "dependencies": {
     "lit": "^3.2.1"

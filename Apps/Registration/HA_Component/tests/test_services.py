@@ -1,6 +1,9 @@
 """Tests for Registration HA services.
 
-sync_now / register_player / events / update&delete 501 path
+sync_now / register_player / update_player / delete_player
+
+Note: create_event / update_event / set_active_event moved to Game Master in
+Phase 1c.  Tests for those services now live in Game Master's test suite.
 
 All HTTP is mocked — no live MCS needed.
 """
@@ -205,106 +208,5 @@ async def test_update_player_calls_mcs(hass: HomeAssistant, loaded_entry):
     assert mock_req.await_args.args[3] == "/players/p1"
 
 
-@pytest.mark.asyncio
-async def test_create_event_calls_mcs(hass: HomeAssistant, loaded_entry):
-    created = {
-        "id": "e1",
-        "name": "Night Run",
-        "venue_name": "Hall",
-        "created_at": "2026-01-01T00:00:00Z",
-    }
-
-    async def _side_effect(_hass, _key, method, path, **kwargs):
-        if method == "POST":
-            return _mock_response(created, 201)
-        return _mock_response(None, 204)
-
-    with (
-        patch(
-            "custom_components.registration._mcs_token",
-            return_value=TOKEN,
-        ),
-        patch(
-            "custom_components.registration.async_request",
-            new=AsyncMock(side_effect=_side_effect),
-        ) as mock_req,
-        patch(
-            "custom_components.registration.coordinator.async_request",
-            new=AsyncMock(return_value=_mock_response(MOCK_ROSTER)),
-        ),
-        patch(
-            "custom_components.registration.coordinator._mcs_token",
-            return_value=TOKEN,
-        ),
-    ):
-        await hass.services.async_call(
-            DOMAIN,
-            "create_event",
-            {"name": "Night Run", "venue_name": "Hall", "set_active": True},
-            blocking=True,
-        )
-        await hass.async_block_till_done()
-
-    methods_paths = [(c.args[2], c.args[3]) for c in mock_req.await_args_list]
-    assert ("POST", "/events") in methods_paths
-    assert ("PUT", "/events/e1/active") in methods_paths
-    put_call = next(c for c in mock_req.await_args_list if c.args[2] == "PUT")
-    assert put_call.kwargs.get("json") == {
-        "name": "Night Run",
-        "venue_name": "Hall",
-    }
-    cache = hass.data[DOMAIN]["event_cache"]
-    assert cache["e1"]["name"] == "Night Run"
-    assert hass.data[DOMAIN]["active_event_id"] == "e1"
-
-
-@pytest.mark.asyncio
-async def test_set_active_event_calls_mcs(hass: HomeAssistant, loaded_entry):
-    from custom_components.registration import _event_cache
-
-    _event_cache(hass)["e9"] = {
-        "id": "e9",
-        "name": "Test Event 2027",
-        "venue_name": None,
-        "created_at": "",
-    }
-    with (
-        patch(
-            "custom_components.registration._mcs_token",
-            return_value=TOKEN,
-        ),
-        patch(
-            "custom_components.registration.async_request",
-            new=AsyncMock(return_value=_mock_response(None, 204)),
-        ) as mock_req,
-        patch(
-            "custom_components.registration.coordinator.async_request",
-            new=AsyncMock(return_value=_mock_response(MOCK_ROSTER)),
-        ),
-        patch(
-            "custom_components.registration.coordinator._mcs_token",
-            return_value=TOKEN,
-        ),
-    ):
-        await hass.services.async_call(
-            DOMAIN,
-            "set_active_event",
-            {"event_id": "e9"},
-            blocking=True,
-        )
-        await hass.async_block_till_done()
-
-    # MCS set-active, then GBN push for /poster-cycle
-    assert mock_req.await_count >= 2
-    mcs_call = mock_req.await_args_list[0]
-    assert mcs_call.args[2] == "PUT"
-    assert mcs_call.args[3] == "/events/e9/active"
-    assert mcs_call.kwargs.get("json") == {"name": "Test Event 2027"}
-    gbn_call = mock_req.await_args_list[1]
-    assert gbn_call.args[1] == "gbn"
-    assert gbn_call.args[2] == "PUT"
-    assert gbn_call.args[3] == "/api/events/active"
-    assert gbn_call.kwargs.get("json") == {
-        "active_event_id": "e9",
-        "event_name": "Test Event 2027",
-    }
+# create_event / set_active_event / update_event service tests have moved to
+# Apps/Game_Master/HA_Component/tests/test_event_services.py (Phase 1c).

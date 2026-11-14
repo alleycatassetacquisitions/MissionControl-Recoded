@@ -99,3 +99,36 @@ scp -r "Apps\Digital_Node_Nexus\HA_Component\www\digital_node_nexus" root@<HA-IP
 ```
 
 Also redeploy Shared HA Helpers if `fabric.py` / `mqtt.py` changed. Merge the `panel_custom` block from `HomeAssist/configuration.yaml`, then `ha core restart`, add **Digital Node Nexus** from Devices & services, and hard-refresh the browser.
+
+---
+
+## Syntax
+
+Stable identity strings for Ctrl+F rename / debug. Prefer changing the named
+constant, then searching for leftover literals.
+
+When you rename an identity string, update this section and `const.py` in the same PR.
+
+### Rename blast radius
+
+| Change this | Also touches |
+|---|---|
+| MQTT kind `dnn` | BGC `KIND_DNN` + `KIND_DOMAIN` map, fabric `mc/dnn/status/#` subscriptions, FDN firmware MQTT topics, all DNN MQTT command topics |
+| CC key `master_control_server` | DNN `KEY_MCS`, plus Registration, Game Master, Bug Buster, install scripts |
+| Domain `digital_node_nexus` | HA `custom_components/` folder, `manifest.json`, entity_id prefix, `www/digital_node_nexus/` |
+| Role strings (`hunter`, `bounty`) | DNN `ROLES` tuple — DNN only; Registration has **no** `ROLES` constant |
+
+### Identity checklist
+
+| Kind | Exact string | Constant / source |
+|---|---|---|
+| HA domain | `digital_node_nexus` | `DOMAIN` in `const.py` |
+| MQTT fabric kind | `dnn` | `MQTT_KIND` in `const.py` |
+| CC key (MCS) | `master_control_server` | `KEY_MCS` in `const.py` |
+| Extra field (MCS token) | `token` | `EXTRA_MCS_TOKEN` in `const.py` |
+| Role values | `hunter`, `bounty` | `ROLES` tuple in `const.py` — DNN only |
+| NeoCorp values | `freelancer`, `helix`, `endline`, `reboot` | `NEOCORPS` tuple in `const.py` |
+| WS namespace | `digital_node_nexus/get_devices`, `.../get_roster` | `WS_*` in `const.py` |
+| Panel url_path | `digital-node-nexus` | bare literal in `HomeAssist/configuration.yaml` |
+| MQTT topic root | `mc/dnn/cmd/…`, `mc/dnn/status/…` | built via `mc_topic("dnn", …)` in `Shared_HA_Helpers` |
+| **Note — asymmetry** | `dnn` vs `tv` are intentionally different segment names | Intentional until a unified fabric kind scheme is adopted |

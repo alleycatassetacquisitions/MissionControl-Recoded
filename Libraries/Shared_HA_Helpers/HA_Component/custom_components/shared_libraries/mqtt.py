@@ -1,49 +1,6 @@
-"""MQTT fabric helpers for Mission Control integrations.
+"""MQTT fabric helpers — build topics via mc_topic, subscribe/publish through HA's mqtt component.
 
-All integrations use these wrappers instead of calling HA's mqtt component
-directly, to ensure consistent topic naming and to prevent private broker
-clients from being opened.
-
-Topic schema
-------------
-All Mission Control topics are rooted at ``mc/``:
-
-    mc/{kind}/cmd/{device_id}/#          — per-device commands
-    mc/{kind}/cmd/all/#                  — broadcast to every device of a kind
-    mc/{kind}/cmd/broadcast/{group_id}/# — Broadcast Group commands
-    mc/{kind}/status/{device_id}         — LWT / presence
-    mc/{kind}/desired/…                  — desired state (e.g. playback)
-
-Usage
------
-    from custom_components.shared_libraries.mqtt import (
-        mc_topic,
-        async_subscribe,
-        async_publish,
-        async_subscribe_presence,
-    )
-
-    # Pure topic builder — no hass needed
-    topic = mc_topic("dnn", "cmd", device_id)
-    # → "mc/dnn/cmd/<device_id>"
-
-    # Subscribe (returns an unsubscribe callable)
-    unsub = await async_subscribe(hass, "dnn", "cmd", device_id, callback=handle_msg)
-
-    # Publish
-    await async_publish(hass, "tv", "cmd", "all", payload=json.dumps(cmd))
-
-    # Presence
-    unsub = await async_subscribe_presence(hass, "dnn", device_id, callback=on_presence)
-
-Design contracts
-----------------
-- Home Assistant is the only MQTT command publisher.  Never open a second
-  broker client inside an integration.
-- All topics are built through mc_topic().  Do not hard-code topic strings
-  in individual integrations.
-- Use the ``broadcast`` segment for group commands.  Never use ``zone``.
-- Status and LWT topics follow the pattern mc/{kind}/status/{device_id}.
+Never open a second broker client; never hard-code topic strings; use ``broadcast`` not ``zone``.
 """
 from __future__ import annotations
 

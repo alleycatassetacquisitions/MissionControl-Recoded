@@ -14,7 +14,7 @@ from aiohttp import web
 from homeassistant.components.http import HomeAssistantView
 from homeassistant.core import HomeAssistant
 
-from .const import KEY_ALLEYCATTV
+from .const import KEY_ALLEYCATTV, KEY_RTSP
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -57,10 +57,10 @@ def _rtsp_source(hass: HomeAssistant) -> dict:
     label = "Live RTSP"
     enabled = False
     if get_url is not None:
-        url = (get_url(hass, "rtsp") or "").strip()
+        url = (get_url(hass, KEY_RTSP) or "").strip()
     if get_extra is not None:
-        label = (get_extra(hass, "rtsp", "label", "Live RTSP") or "Live RTSP").strip()
-        enabled = get_extra(hass, "rtsp", "enabled", "false").strip().lower() == "true"
+        label = (get_extra(hass, KEY_RTSP, "label", "Live RTSP") or "Live RTSP").strip()
+        enabled = get_extra(hass, KEY_RTSP, "enabled", "false").strip().lower() == "true"
     return {
         "id": "live-1",
         "label": label or "Live RTSP",

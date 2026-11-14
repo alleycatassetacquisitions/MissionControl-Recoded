@@ -15,7 +15,7 @@ await viteBuild({
   root,
   build: {
     emptyOutDir: false,
-    sourcemap: true,
+    sourcemap: false,
     target: "es2022",
     lib: {
       entry: path.resolve(root, "src/mc-panel/index.ts"),
@@ -108,7 +108,7 @@ for (const p of panels) {
     bundle: true,
     format: "iife",
     target: "es2022",
-    sourcemap: true,
+    sourcemap: false,
     // Panels must not embed Lit — they extend window.McPanel.Base
     external: [],
     logLevel: "info",

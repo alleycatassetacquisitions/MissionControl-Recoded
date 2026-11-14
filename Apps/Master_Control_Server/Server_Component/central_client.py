@@ -65,20 +65,23 @@ def _event_active_url(base_or_full: str, event_id: str) -> str:
     return f"{_event_url(base_or_full, event_id)}/active"
 
 
-def _event_scoring_url(base_or_full: str, event_id: str) -> str:
-    return f"{_event_url(base_or_full, event_id)}/scoring"
+def _scoring_url(base_or_full: str) -> str:
+    """Central active-event scoring (no event id in path)."""
+    return _service_base(base_or_full) + "/scoring"
 
 
-def _event_delayed_scores_url(base_or_full: str, event_id: str) -> str:
-    return f"{_event_url(base_or_full, event_id)}/delayed-scores"
+def _delayed_scores_url(base_or_full: str) -> str:
+    """Central active-event delayed-scores (no event id in path)."""
+    return _service_base(base_or_full) + "/delayed-scores"
 
 
-def _event_teams_url(base_or_full: str, event_id: str) -> str:
-    return f"{_event_url(base_or_full, event_id)}/teams"
+def _teams_url(base_or_full: str) -> str:
+    """Central active-event teams collection (no event id in path)."""
+    return _service_base(base_or_full) + "/teams"
 
 
-def _event_team_url(base_or_full: str, event_id: str, team_id: str) -> str:
-    return f"{_event_teams_url(base_or_full, event_id).rstrip('/')}/{team_id}"
+def _team_url(base_or_full: str, team_id: str) -> str:
+    return f"{_teams_url(base_or_full).rstrip('/')}/{team_id}"
 
 
 def _game_state_url(base_or_full: str) -> str:
@@ -462,41 +465,33 @@ async def get_active_event(
 async def set_scoring(
     primary_url: str,
     secondary_url: str,
-    event_id: str,
     enabled: bool,
 ) -> tuple[int, Any | None]:
-    """PUT /events/{id}/scoring → Central."""
-    last_status = 0
-    last_body: Any | None = None
-    body = {"enabled": enabled}
-    for base in _iter_central_bases(primary_url, secondary_url):
-        status, resp_body = await _request(
-            "PUT", _event_scoring_url(base, event_id), json_body=body
-        )
-        last_status, last_body = status, resp_body
-        if status and status < 500:
-            return status, resp_body
-    return last_status, last_body
+    """PUT /scoring → Central (active-event scoped)."""
+    return await _failover_request(
+        "PUT",
+        primary_url,
+        secondary_url,
+        _scoring_url,
+        json_body={"enabled": enabled},
+        failover_on_404=True,
+    )
 
 
 async def set_delayed_scores(
     primary_url: str,
     secondary_url: str,
-    event_id: str,
     enabled: bool,
 ) -> tuple[int, Any | None]:
-    """PUT /events/{id}/delayed-scores → Central."""
-    last_status = 0
-    last_body: Any | None = None
-    body = {"enabled": enabled}
-    for base in _iter_central_bases(primary_url, secondary_url):
-        status, resp_body = await _request(
-            "PUT", _event_delayed_scores_url(base, event_id), json_body=body
-        )
-        last_status, last_body = status, resp_body
-        if status and status < 500:
-            return status, resp_body
-    return last_status, last_body
+    """PUT /delayed-scores → Central (active-event scoped)."""
+    return await _failover_request(
+        "PUT",
+        primary_url,
+        secondary_url,
+        _delayed_scores_url,
+        json_body={"enabled": enabled},
+        failover_on_404=True,
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -507,60 +502,48 @@ async def set_delayed_scores(
 async def list_teams(
     primary_url: str,
     secondary_url: str,
-    event_id: str,
 ) -> tuple[int, Any | None]:
-    """GET /events/{id}/teams → Central (JSON array)."""
-    last_status = 0
-    last_body: Any | None = None
-    for base in _iter_central_bases(primary_url, secondary_url):
-        status, resp_body = await _request(
-            "GET", _event_teams_url(base, event_id)
-        )
-        last_status, last_body = status, resp_body
-        if status and status < 500:
-            return status, resp_body
-    return last_status, last_body
+    """GET /teams → Central (active-event scoped; JSON array)."""
+    return await _failover_request(
+        "GET",
+        primary_url,
+        secondary_url,
+        _teams_url,
+        failover_on_404=True,
+    )
 
 
 async def create_team(
     primary_url: str,
     secondary_url: str,
-    event_id: str,
     body: dict[str, Any],
 ) -> tuple[int, Any | None]:
-    """POST /events/{id}/teams → Central."""
-    last_status = 0
-    last_body: Any | None = None
-    for base in _iter_central_bases(primary_url, secondary_url):
-        status, resp_body = await _request(
-            "POST", _event_teams_url(base, event_id), json_body=body
-        )
-        last_status, last_body = status, resp_body
-        if status and status < 500:
-            return status, resp_body
-    return last_status, last_body
+    """POST /teams → Central (active-event scoped)."""
+    return await _failover_request(
+        "POST",
+        primary_url,
+        secondary_url,
+        _teams_url,
+        json_body=body,
+        failover_on_404=True,
+    )
 
 
 async def update_team(
     primary_url: str,
     secondary_url: str,
-    event_id: str,
     team_id: str,
     body: dict[str, Any],
 ) -> tuple[int, Any | None]:
-    """PATCH /events/{event_id}/teams/{id} → Central."""
-    last_status = 0
-    last_body: Any | None = None
-    for base in _iter_central_bases(primary_url, secondary_url):
-        status, resp_body = await _request(
-            "PATCH",
-            _event_team_url(base, event_id, team_id),
-            json_body=body,
-        )
-        last_status, last_body = status, resp_body
-        if status and status < 500:
-            return status, resp_body
-    return last_status, last_body
+    """PATCH /teams/{id} → Central (active-event scoped)."""
+    return await _failover_request(
+        "PATCH",
+        primary_url,
+        secondary_url,
+        lambda base: _team_url(base, team_id),
+        json_body=body,
+        failover_on_404=True,
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -575,17 +558,30 @@ async def _failover_request(
     url_builder,
     *,
     json_body: dict[str, Any] | None = None,
+    failover_on_404: bool = False,
 ) -> tuple[int, Any | None]:
-    """Run method against primary then secondary using url_builder(base)."""
+    """Run method against primary then secondary using url_builder(base).
+
+    By default falls through on transport failure (0) or 5xx only.
+    When ``failover_on_404`` is True, also tries secondary on 404 (same as
+    ``fetch_game_state``) so a stale primary path does not brick the venue.
+    """
     last_status = 0
     last_body: Any | None = None
-    for base in _iter_central_bases(primary_url, secondary_url):
+    bases = _iter_central_bases(primary_url, secondary_url)
+    for index, base in enumerate(bases):
         status, resp_body = await _request(
             method, url_builder(base), json_body=json_body
         )
         last_status, last_body = status, resp_body
-        if status and status < 500:
-            return status, resp_body
+        should_failover = (not status) or status >= 500 or (
+            failover_on_404 and status == 404
+        )
+        if should_failover and index + 1 < len(bases):
+            continue
+        if should_failover:
+            return last_status, last_body
+        return status, resp_body
     return last_status, last_body
 
 

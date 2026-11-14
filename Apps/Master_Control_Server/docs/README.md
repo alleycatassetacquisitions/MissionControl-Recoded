@@ -1,5 +1,7 @@
 # Master Control Server
 
+> App-root overview + Syntax: [`../README.md`](../README.md). This file is the full endpoint / ops reference.
+
 Proxmox companion service. The **only** Central HTTP adapter for Mission Control.
 
 **Code:** `master_control_server`  
@@ -140,15 +142,15 @@ Full Central game-state snapshot (`active_event`, `scoring`, `accepting_delayed_
 
 ### `PUT /scoring` / `PUT /events/{event_id}/scoring` — Bearer required
 
-Toggle scoring (`{ "enabled": true|false }`). Convenience `/scoring` uses the active event.
+Toggle scoring (`{ "enabled": true|false }`). Central itself is **active-event-only** (`PUT /scoring`). Convenience `PUT /scoring` proxies that directly. Compatibility `PUT /events/{event_id}/scoring` succeeds only when `event_id` is the active event; otherwise **409**.
 
 ### `PUT /delayed-scores` / `PUT /events/{event_id}/delayed-scores` — Bearer required
 
-Toggle delayed-score acceptance for an event.
+Toggle delayed-score acceptance. Same active-event rule as scoring (Central `PUT /delayed-scores`; path form → **409** if not active).
 
 ### `GET /events/{event_id}/teams` — Bearer required
 
-List teams for an event (Registration team assign). Also `POST` create / `PATCH` rename.
+List teams for the **active** event (Registration team assign). Central routes are `/teams` (no event id). MCS keeps `/events/{id}/teams` for HA callers but returns **409** when `event_id` is not active. Also `POST` create / `PATCH` rename under the same rule.
 
 ### `GET /device-logs` — Bearer required
 
@@ -240,7 +242,7 @@ MCS uses a single static Bearer token (`MCS_API_TOKEN` on the LXC). The **same**
 
 ## Primary / secondary failover
 
-`central_client` tries `central_primary` first. Transport failure (`status` 0) and **5xx** fall through to `central_secondary`. For **`GET /game-state` only**, **404** also falls through so a bad/missing primary does not brick the venue when secondary is healthy. Other 4xx (including 409) return immediately without failover.
+`central_client` tries `central_primary` first. Transport failure (`status` 0) and **5xx** fall through to `central_secondary`. **404** also falls through for `GET /game-state`, scoring, delayed-scores, and teams so a bad/missing primary does not brick the venue when secondary is healthy. Other 4xx (including 409) return immediately without failover.
 
 ---
 
@@ -265,6 +267,7 @@ pytest
 
 ```
 Apps/Master_Control_Server/
+├── README.md                App overview + Syntax (no HA_Component — Proxmox only)
 ├── Server_Component/
 │   ├── pyproject.toml
 │   ├── __init__.py
@@ -282,5 +285,6 @@ Apps/Master_Control_Server/
 │       ├── test_config.py
 │       └── test_central_client.py
 └── docs/
-    └── README.md            ← this file
+    └── README.md            ← this file (endpoint / ops detail)
 ```
+

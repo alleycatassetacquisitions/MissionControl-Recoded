@@ -36,3 +36,33 @@ www/bug_buster/                ← HA_Component/www/bug_buster/
 ```
 
 See [`Docs/Bug Buster Config Steps.md`](../../Docs/Bug%20Buster%20Config%20Steps.md).
+
+---
+
+## Syntax
+
+Stable identity strings for Ctrl+F rename / debug. Prefer changing the named
+constant, then searching for leftover literals.
+
+When you rename an identity string, update this section and `const.py` in the same PR.
+
+### Rename blast radius
+
+| Change this | Also touches |
+|---|---|
+| Domain `bug_buster` | HA `custom_components/` folder, `manifest.json`, entity_id prefix, `www/bug_buster/` |
+| CC key `master_control_server` | Bug Buster `KEY_MCS`, Registration `KEY_MCS`, Game Master `KEY_MCS`, DNN `KEY_MCS`, install scripts, secrets |
+| MQTT spy default topic `#` | Only `DEFAULT_MQTT_TOPIC` in `const.py` — operator can override at config time |
+
+### Identity checklist
+
+| Kind | Exact string | Constant / source |
+|---|---|---|
+| HA domain | `bug_buster` | `DOMAIN` in `const.py` |
+| CC key (MCS) | `master_control_server` | `KEY_MCS` in `const.py` |
+| MQTT spy default | `#` (all topics) | `DEFAULT_MQTT_TOPIC` in `const.py` |
+| MQTT buffer size | 200 messages | `MQTT_BUFFER_SIZE` in `const.py` |
+| WS (device logs) | `bug_buster/device_logs` | `WS_DEVICE_LOGS` in `const.py` |
+| Health probe keys | `master_control_server`, `alleycattv`, `gbn`, `net_time` | `HEALTH_KEYS` tuple in `const.py` |
+| Panel url_path | `bug-buster` | bare literal in `HomeAssist/configuration.yaml` |
+| Poll interval | 30 s | `POLL_INTERVAL` in `const.py` |

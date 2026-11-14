@@ -67,6 +67,37 @@ Pi flash session must use the same Mosquitto user/password as Phase 5a. MQTT **`
 
 ---
 
+## Syntax
+
+Stable identity strings for Ctrl+F rename / debug. Prefer changing the named
+constant, then searching for leftover literals.
+
+When you rename an identity string, update this section and `const.py` in the same PR.
+
+### Rename blast radius
+
+| Change this | Also touches |
+|---|---|
+| MQTT kind `tv` | BGC `KIND_TV` + `KIND_DOMAIN` map, fabric `mc/tv/status/#` subscriptions, Pi firmware MQTT topics, all AlleycatTV MQTT command topics |
+| CC key `alleycattv` | Core Configurator catalog + `KEY_ALLEYCATTV`, `KEY_ALLEYCATTV` in DNN const, Bug Buster `HEALTH_KEYS`, AlleycatTV proxy routes, install scripts |
+| Domain `alleycattv` | HA `custom_components/` folder, `manifest.json`, entity_id prefix, panel JS file refs, `www/alleycattv/` |
+
+### Identity checklist
+
+| Kind | Exact string | Constant / source |
+|---|---|---|
+| HA domain | `alleycattv` | `DOMAIN` in `const.py` |
+| MQTT fabric kind | `tv` | `MQTT_KIND` in `const.py` |
+| CC service key | `alleycattv` | `KEY_ALLEYCATTV` in `const.py` |
+| CC key (RTSP source) | `rtsp` | `KEY_RTSP` in `const.py` |
+| Storage key | `alleycattv_device_meta` | `STORAGE_KEY` in `const.py` |
+| WS namespace | `alleycattv/get_devices`, `alleycattv/list_areas`, `alleycattv/set_placement` | `WS_*` in `const.py` |
+| Panel url_path (player) | `alleycattv` | bare literal in `HomeAssist/configuration.yaml` |
+| Panel url_path (content) | `alleycattv-content` | bare literal in `HomeAssist/configuration.yaml` |
+| MQTT topic root | `mc/tv/cmd/…`, `mc/tv/status/…`, `mc/tv/desired/…` | built via `mc_topic("tv", …)` in `Shared_HA_Helpers` |
+
+---
+
 ## Tests
 
 ```powershell

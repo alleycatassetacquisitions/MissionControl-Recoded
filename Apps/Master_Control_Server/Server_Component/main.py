@@ -294,6 +294,61 @@ async def _resolve_active_event_id() -> str:
     return state.active_event.id
 
 
+async def _require_active_event(event_id: str) -> str:
+    """Ensure path event_id is the Central active event; else 409.
+
+    Central scoring/teams routes are active-event-only. MCS keeps
+    ``/events/{id}/…`` compatibility paths for HA callers, but refuses
+    inactive event ids so we never proxy the wrong venue state.
+    """
+    active_id = await _resolve_active_event_id()
+    if str(event_id) != str(active_id):
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=(
+                f"Event {event_id} is not the active event "
+                f"(active={active_id}). Use the active event or set it first."
+            ),
+        )
+    return active_id
+
+
+async def _set_active_scoring(enabled: bool) -> ScoringState:
+    """PUT Central /scoring for the active event."""
+    status_code, resp = await set_scoring(
+        _config["central_primary"],
+        _config["central_secondary"],
+        enabled,
+    )
+    if status_code == 0 or status_code >= 400:
+        raise _central_error(status_code, "set scoring", resp)
+    if not isinstance(resp, dict):
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail="Central scoring response was not JSON.",
+        )
+    return ScoringState(
+        enabled=bool(resp.get("enabled")),
+        started_at=(
+            str(resp["started_at"]) if resp.get("started_at") is not None else None
+        ),
+    )
+
+
+async def _set_active_delayed_scores(enabled: bool) -> EnabledBody:
+    """PUT Central /delayed-scores for the active event."""
+    status_code, resp = await set_delayed_scores(
+        _config["central_primary"],
+        _config["central_secondary"],
+        enabled,
+    )
+    if status_code == 0 or status_code >= 400:
+        raise _central_error(status_code, "set delayed scores", resp)
+    if isinstance(resp, dict) and "enabled" in resp:
+        return EnabledBody(enabled=bool(resp["enabled"]))
+    return EnabledBody(enabled=enabled)
+
+
 # ---------------------------------------------------------------------------
 # App
 # ---------------------------------------------------------------------------
@@ -824,27 +879,10 @@ async def put_scoring(
     body: EnabledBody,
     _token: Annotated[str, Depends(_verify_token)],
 ) -> ScoringState:
-    """Proxy Central PUT /events/{id}/scoring."""
+    """Compatibility: only the active event; proxies Central PUT /scoring."""
     _require_central()
-    status_code, resp = await set_scoring(
-        _config["central_primary"],
-        _config["central_secondary"],
-        event_id,
-        body.enabled,
-    )
-    if status_code == 0 or status_code >= 400:
-        raise _central_error(status_code, "set scoring", resp)
-    if not isinstance(resp, dict):
-        raise HTTPException(
-            status_code=status.HTTP_502_BAD_GATEWAY,
-            detail="Central scoring response was not JSON.",
-        )
-    return ScoringState(
-        enabled=bool(resp.get("enabled")),
-        started_at=(
-            str(resp["started_at"]) if resp.get("started_at") is not None else None
-        ),
-    )
+    await _require_active_event(event_id)
+    return await _set_active_scoring(body.enabled)
 
 
 @app.put(
@@ -858,26 +896,7 @@ async def put_scoring_active(
 ) -> ScoringState:
     """Toggle scoring for the Central active event (convenience for Game Master)."""
     _require_central()
-    event_id = await _resolve_active_event_id()
-    status_code, resp = await set_scoring(
-        _config["central_primary"],
-        _config["central_secondary"],
-        event_id,
-        body.enabled,
-    )
-    if status_code == 0 or status_code >= 400:
-        raise _central_error(status_code, "set scoring", resp)
-    if not isinstance(resp, dict):
-        raise HTTPException(
-            status_code=status.HTTP_502_BAD_GATEWAY,
-            detail="Central scoring response was not JSON.",
-        )
-    return ScoringState(
-        enabled=bool(resp.get("enabled")),
-        started_at=(
-            str(resp["started_at"]) if resp.get("started_at") is not None else None
-        ),
-    )
+    return await _set_active_scoring(body.enabled)
 
 
 @app.put(
@@ -890,19 +909,10 @@ async def put_delayed_scores_route(
     body: EnabledBody,
     _token: Annotated[str, Depends(_verify_token)],
 ) -> EnabledBody:
-    """Proxy Central PUT /events/{id}/delayed-scores."""
+    """Compatibility: only the active event; proxies Central PUT /delayed-scores."""
     _require_central()
-    status_code, resp = await set_delayed_scores(
-        _config["central_primary"],
-        _config["central_secondary"],
-        event_id,
-        body.enabled,
-    )
-    if status_code == 0 or status_code >= 400:
-        raise _central_error(status_code, "set delayed scores", resp)
-    if isinstance(resp, dict) and "enabled" in resp:
-        return EnabledBody(enabled=bool(resp["enabled"]))
-    return EnabledBody(enabled=body.enabled)
+    await _require_active_event(event_id)
+    return await _set_active_delayed_scores(body.enabled)
 
 
 @app.put(
@@ -916,18 +926,7 @@ async def put_delayed_scores_active(
 ) -> EnabledBody:
     """Toggle delayed scores for the Central active event."""
     _require_central()
-    event_id = await _resolve_active_event_id()
-    status_code, resp = await set_delayed_scores(
-        _config["central_primary"],
-        _config["central_secondary"],
-        event_id,
-        body.enabled,
-    )
-    if status_code == 0 or status_code >= 400:
-        raise _central_error(status_code, "set delayed scores", resp)
-    if isinstance(resp, dict) and "enabled" in resp:
-        return EnabledBody(enabled=bool(resp["enabled"]))
-    return EnabledBody(enabled=body.enabled)
+    return await _set_active_delayed_scores(body.enabled)
 
 
 # ---------------------------------------------------------------------------
@@ -1155,12 +1154,12 @@ async def get_teams(
     event_id: str,
     _token: Annotated[str, Depends(_verify_token)],
 ) -> list[Team]:
-    """List teams for an event."""
+    """List teams for the active event (path id must match active)."""
     _require_central()
+    await _require_active_event(event_id)
     status_code, resp = await list_teams(
         _config["central_primary"],
         _config["central_secondary"],
-        event_id,
     )
     if status_code == 0 or status_code >= 400:
         raise _central_error(status_code, "list teams", resp)
@@ -1181,12 +1180,12 @@ async def post_team(
     body: TeamWrite,
     _token: Annotated[str, Depends(_verify_token)],
 ) -> Team:
-    """Create a team on an event."""
+    """Create a team on the active event (path id must match active)."""
     _require_central()
+    await _require_active_event(event_id)
     status_code, resp = await create_team(
         _config["central_primary"],
         _config["central_secondary"],
-        event_id,
         {"name": body.name},
     )
     if status_code == 0 or status_code >= 400:
@@ -1211,12 +1210,12 @@ async def patch_team(
     body: TeamWrite,
     _token: Annotated[str, Depends(_verify_token)],
 ) -> Team:
-    """Rename a team."""
+    """Rename a team on the active event (path id must match active)."""
     _require_central()
+    await _require_active_event(event_id)
     status_code, resp = await update_team(
         _config["central_primary"],
         _config["central_secondary"],
-        event_id,
         team_id,
         {"name": body.name},
     )
