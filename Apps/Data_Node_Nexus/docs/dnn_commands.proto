@@ -1,6 +1,6 @@
 syntax = "proto3";
 
-// Digital Node Nexus MQTT command contract (D16).
+// Data Node Nexus MQTT command contract (D16).
 // Field numbers are SoR for shared_libraries.mc_codec.
 // Default wire: UTF-8 JSON. Binary: MC\x01 + proto3 (dual-read on endpoints).
 //

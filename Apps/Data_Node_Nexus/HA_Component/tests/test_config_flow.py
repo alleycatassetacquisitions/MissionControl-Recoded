@@ -1,11 +1,11 @@
-"""Config flow tests for Digital Node Nexus."""
+"""Config flow tests for Data Node Nexus."""
 from __future__ import annotations
 
 from homeassistant.core import HomeAssistant
 from homeassistant.data_entry_flow import FlowResultType
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 
-from custom_components.digital_node_nexus.const import DOMAIN
+from custom_components.data_node_nexus.const import DOMAIN
 
 
 async def test_config_flow_creates_entry(hass: HomeAssistant):
@@ -20,7 +20,7 @@ async def test_config_flow_creates_entry(hass: HomeAssistant):
     await hass.async_block_till_done()
 
     assert result["type"] == FlowResultType.CREATE_ENTRY
-    assert result["title"] == "Digital Node Nexus"
+    assert result["title"] == "Data Node Nexus"
     assert result["data"] == {}
 
 

@@ -1,4 +1,4 @@
-"""Digital Node Nexus — FDN paging / LED / haptic over the MQTT fabric.
+"""Data Node Nexus — FDN paging / LED / haptic over the MQTT fabric.
 
 Design contracts:
   - Home Assistant is the only MQTT command publisher (via shared_libraries.mqtt).
@@ -110,19 +110,19 @@ async def _publish_cmd(
 
 
 async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
-    """Load from YAML ``digital_node_nexus:`` and import the install-only config entry."""
+    """Load from YAML ``data_node_nexus:`` and import the install-only config entry."""
     if DOMAIN in config and not hass.config_entries.async_entries(DOMAIN):
         hass.async_create_task(
             hass.config_entries.flow.async_init(
                 DOMAIN, context={"source": SOURCE_IMPORT}, data={}
             )
         )
-        _LOGGER.info("Digital Node Nexus: starting config-entry import from YAML")
+        _LOGGER.info("Data Node Nexus: starting config-entry import from YAML")
     return True
 
 
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
-    """Set up Digital Node Nexus: fabric presence, services, websocket."""
+    """Set up Data Node Nexus: fabric presence, services, websocket."""
     hass.data.setdefault(DOMAIN, {})[entry.entry_id] = {"entry": entry}
 
     # Wait for HA MQTT (or retry later). Presence subscribe needs the broker client.
@@ -167,7 +167,7 @@ def _register_services(hass: HomeAssistant) -> None:
                 default_all_for_stamps=has_stamps,
             )
         except ValueError as err:
-            _LOGGER.warning("Digital Node Nexus page: %s", err)
+            _LOGGER.warning("Data Node Nexus page: %s", err)
             return
 
         payload = encode_page_cmd(
@@ -188,7 +188,7 @@ def _register_services(hass: HomeAssistant) -> None:
                 target=data.get("target") or None,
             )
         except ValueError as err:
-            _LOGGER.warning("Digital Node Nexus set_led: %s", err)
+            _LOGGER.warning("Data Node Nexus set_led: %s", err)
             return
         payload = encode_led_cmd(
             state=bool(data.get("state", True)),
@@ -208,7 +208,7 @@ def _register_services(hass: HomeAssistant) -> None:
                 target=data.get("target") or None,
             )
         except ValueError as err:
-            _LOGGER.warning("Digital Node Nexus trigger_haptic: %s", err)
+            _LOGGER.warning("Data Node Nexus trigger_haptic: %s", err)
             return
         payload = encode_haptic_cmd(
             pattern=data.get("pattern", "short"),

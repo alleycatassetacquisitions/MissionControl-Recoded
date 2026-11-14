@@ -1,6 +1,6 @@
 /// <reference path="../mc-panel/globals.d.ts" />
 /**
- * Digital Node Nexus panel — paging-first operator UI for FDNs.
+ * Data Node Nexus panel — paging-first operator UI for FDNs.
  *
  * Design contract:
  *  - Extends McPanelBase from shared_libraries/mc-panel.js.
@@ -8,13 +8,13 @@
  *    Zero direct fetch() to MCS or any LAN IP.
  *
  * Websocket:
- *  - digital_node_nexus/get_devices → fabric presence list
+ *  - data_node_nexus/get_devices → fabric presence list
  *  - registration/get_roster → player roster (Registration SoR)
  *
  * HA services:
- *  - digital_node_nexus.page
- *  - digital_node_nexus.set_led
- *  - digital_node_nexus.trigger_haptic
+ *  - data_node_nexus.page
+ *  - data_node_nexus.set_led
+ *  - data_node_nexus.trigger_haptic
  */
 
 type DnnDevice = { device_id: string; presence?: string };
@@ -212,7 +212,7 @@ class DnnPanel extends window.McPanel.Base {
   async _loadDevices() {
     try {
       const result = await this.hass!.callWS<{ devices?: DnnDevice[] }>({
-        type: "digital_node_nexus/get_devices",
+        type: "data_node_nexus/get_devices",
       });
       this._devices = (result && result.devices) || [];
     } catch (err) {
@@ -284,7 +284,7 @@ class DnnPanel extends window.McPanel.Base {
     }
 
     try {
-      await this.hass!.callService("digital_node_nexus", "page", payload);
+      await this.hass!.callService("data_node_nexus", "page", payload);
       this._feedback("Page sent", "ok");
     } catch (err) {
       this._feedback("Page failed: " + this._formatErr(err), "err");
@@ -304,7 +304,7 @@ class DnnPanel extends window.McPanel.Base {
       b: Number(this._ledB || 0),
     };
     try {
-      await this.hass!.callService("digital_node_nexus", "set_led", payload);
+      await this.hass!.callService("data_node_nexus", "set_led", payload);
       this._feedback("LED command sent", "ok");
     } catch (err) {
       this._feedback("LED failed: " + this._formatErr(err), "err");
@@ -323,7 +323,7 @@ class DnnPanel extends window.McPanel.Base {
     };
     try {
       await this.hass!.callService(
-        "digital_node_nexus",
+        "data_node_nexus",
         "trigger_haptic",
         payload
       );
@@ -339,7 +339,7 @@ class DnnPanel extends window.McPanel.Base {
     return html`
       <div class="wrap">
         <header class="page-header">
-          <h1>Digital Node Nexus</h1>
+          <h1>Data Node Nexus</h1>
           <div class="header-actions">
             ${this._feedbackTemplate()}
             <button class="btn btn-secondary" @click=${() => this._refresh()}>

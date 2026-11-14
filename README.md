@@ -53,7 +53,7 @@ Panels talk to **Home Assistant** (services / websocket). They do not `fetch` LA
 | **Registration** | [`Apps/Registration/`](Apps/Registration/) | HA face of the player roster via Master Control Server (active event is read-only here; never opens a Central socket itself). |
 | **Game Master** | [`Apps/Game_Master/`](Apps/Game_Master/) | HA face of event create/edit/set-active, scoring live/off, delayed scores, and affiliation catalog CRUD. |
 | **Master Control Server** | [`Apps/Master_Control_Server/`](Apps/Master_Control_Server/) | Proxmox FastAPI companion (`/opt/mcs/`). Only Central HTTP adapter (players, events, device-logs). Not an HA process. |
-| **Digital Node Nexus** | [`Apps/Digital_Node_Nexus/`](Apps/Digital_Node_Nexus/) | FDN paging / LED / haptic over the MQTT fabric (`mc/dnn`). |
+| **Data Node Nexus** | [`Apps/Data_Node_Nexus/`](Apps/Data_Node_Nexus/) | FDN paging / LED / haptic over the MQTT fabric (`mc/dnn`). |
 | **AlleycatTV** | [`Apps/AlleycatTV/`](Apps/AlleycatTV/) | Event display playback: HA MQTT commands (`mc/tv`), Proxmox content server, Pi client. |
 | **Galactic Bounty Network** | [`Apps/Galactic_Bounty_Network/`](Apps/Galactic_Bounty_Network/) | Bounty posters, boards, and capture (`gbn` + Proxmox poster server). |
 | **Broadcast Group Controller** | [`Apps/Broadcast_Group_Controller/`](Apps/Broadcast_Group_Controller/) | Physical placement (HA Areas) and Broadcast Group membership for fabric devices. |
@@ -184,7 +184,7 @@ Typical order (full phase sequence is on the Mission Control Build Plan canvas):
 
 1. **Mosquitto** add-on + HA `mqtt` integration — before DNN / AlleycatTV fabric work
 2. **Registration** (after MCS is up)
-3. **Digital Node Nexus**, **Broadcast Group Controller**, **AlleycatTV**, **GBN**, **Bug Buster**
+3. **Data Node Nexus**, **Broadcast Group Controller**, **AlleycatTV**, **GBN**, **Bug Buster**
 
 App READMEs under `Apps/` and the matching `Docs/* Config Steps.md` cover each slice.
 

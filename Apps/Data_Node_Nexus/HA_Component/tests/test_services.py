@@ -1,4 +1,4 @@
-"""Tests for Digital Node Nexus services (roster is Registration's WS)."""
+"""Tests for Data Node Nexus services (roster is Registration's WS)."""
 from __future__ import annotations
 
 import json
@@ -8,7 +8,7 @@ import pytest
 from homeassistant.core import HomeAssistant
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 
-from custom_components.digital_node_nexus.const import DOMAIN
+from custom_components.data_node_nexus.const import DOMAIN
 
 
 @pytest.fixture
@@ -21,21 +21,21 @@ async def loaded_entry(hass: HomeAssistant):
         {
             "device_id": "fdn-1",
             "presence": "online",
-            "entity_id": "sensor.digital_node_nexus_fdn_1_presence",
+            "entity_id": "sensor.data_node_nexus_fdn_1_presence",
         }
     ]
 
     with (
         patch(
-            "custom_components.digital_node_nexus.async_ensure_mqtt",
+            "custom_components.data_node_nexus.async_ensure_mqtt",
             new=AsyncMock(),
         ),
         patch(
-            "custom_components.digital_node_nexus.async_start_presence_tracking",
+            "custom_components.data_node_nexus.async_start_presence_tracking",
             new=AsyncMock(return_value=tracker),
         ),
         patch(
-            "custom_components.digital_node_nexus.get_presence_tracker",
+            "custom_components.data_node_nexus.get_presence_tracker",
             return_value=tracker,
         ),
     ):
@@ -48,7 +48,7 @@ async def loaded_entry(hass: HomeAssistant):
 @pytest.mark.asyncio
 async def test_page_device_publishes_cmd_topic(hass: HomeAssistant, loaded_entry):
     with patch(
-        "custom_components.digital_node_nexus.async_publish",
+        "custom_components.data_node_nexus.async_publish",
         new=AsyncMock(),
     ) as mock_pub:
         await hass.services.async_call(
@@ -74,7 +74,7 @@ async def test_page_device_publishes_cmd_topic(hass: HomeAssistant, loaded_entry
 @pytest.mark.asyncio
 async def test_page_all_and_broadcast(hass: HomeAssistant, loaded_entry):
     with patch(
-        "custom_components.digital_node_nexus.async_publish",
+        "custom_components.data_node_nexus.async_publish",
         new=AsyncMock(),
     ) as mock_pub:
         await hass.services.async_call(
@@ -102,7 +102,7 @@ async def test_page_all_and_broadcast(hass: HomeAssistant, loaded_entry):
 @pytest.mark.asyncio
 async def test_page_player_stamps_and_routes_all(hass: HomeAssistant, loaded_entry):
     with patch(
-        "custom_components.digital_node_nexus.async_publish",
+        "custom_components.data_node_nexus.async_publish",
         new=AsyncMock(),
     ) as mock_pub:
         await hass.services.async_call(
@@ -123,7 +123,7 @@ async def test_page_player_stamps_and_routes_all(hass: HomeAssistant, loaded_ent
 @pytest.mark.asyncio
 async def test_page_filter_stamps_role_neocorp(hass: HomeAssistant, loaded_entry):
     with patch(
-        "custom_components.digital_node_nexus.async_publish",
+        "custom_components.data_node_nexus.async_publish",
         new=AsyncMock(),
     ) as mock_pub:
         await hass.services.async_call(
@@ -143,7 +143,7 @@ async def test_page_filter_stamps_role_neocorp(hass: HomeAssistant, loaded_entry
 @pytest.mark.asyncio
 async def test_set_led_and_haptic(hass: HomeAssistant, loaded_entry):
     with patch(
-        "custom_components.digital_node_nexus.async_publish",
+        "custom_components.data_node_nexus.async_publish",
         new=AsyncMock(),
     ) as mock_pub:
         await hass.services.async_call(

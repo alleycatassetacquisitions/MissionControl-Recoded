@@ -17,7 +17,7 @@ Each key maps to one external service. Other integrations call `get_url(hass, ke
 | `master_control_server` | Master Control Server | Registration (URL + `extra.token`) |
 | `central_primary` | Central Server · online | Master Control Server (via Registration push) |
 | `central_secondary` | Central Server · local | Master Control Server (via Registration push) |
-| `alleycattv` | AlleycatTV streaming server | AlleycatTV, Content Manager, Digital Node Nexus |
+| `alleycattv` | AlleycatTV streaming server | AlleycatTV, Content Manager, Data Node Nexus |
 | `gbn` | Galactic Bounty Network | GBN, Registration poster column |
 | `proxmox` | Proxmox | Bug Buster (URL + `extra.node` / `token_id` / `token_secret`) |
 | `rtsp` | Live RTSP | AlleycatTV live interrupt (`extra.label` / `extra.enabled`) |

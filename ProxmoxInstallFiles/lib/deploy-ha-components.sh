@@ -43,8 +43,8 @@ deploy_pair \
   "$SRC/Apps/Registration/HA_Component/www/registration"
 
 deploy_pair \
-  "$SRC/Apps/Digital_Node_Nexus/HA_Component/custom_components/digital_node_nexus" \
-  "$SRC/Apps/Digital_Node_Nexus/HA_Component/www/digital_node_nexus"
+  "$SRC/Apps/Data_Node_Nexus/HA_Component/custom_components/data_node_nexus" \
+  "$SRC/Apps/Data_Node_Nexus/HA_Component/www/data_node_nexus"
 
 deploy_pair \
   "$SRC/Apps/AlleycatTV/HA_Component/custom_components/alleycattv" \

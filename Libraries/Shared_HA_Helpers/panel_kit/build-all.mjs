@@ -54,7 +54,7 @@ const panels = [
     in: "src/panels/dnn-panel.ts",
     out: path.resolve(
       repo,
-      "Apps/Digital_Node_Nexus/HA_Component/www/digital_node_nexus/dnn-panel.js"
+      "Apps/Data_Node_Nexus/HA_Component/www/data_node_nexus/dnn-panel.js"
     ),
   },
   {

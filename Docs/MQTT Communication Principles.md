@@ -8,10 +8,10 @@ Topics are **not** hardcoded per device at flash time. Each device builds its ow
 
 - **Broker:** official Mosquitto broker add-on on Home Assistant OS. HA’s `mqtt` integration is the only Mission Control MQTT client path.
 - Home Assistant is the **only** MQTT command publisher. The AlleycatTV server must not publish the same commands.
-- Apps use Home Assistant’s `mqtt` integration (`async_subscribe` / `async_publish`). Do not open a second broker client inside Digital Node Nexus, AlleycatTV, or Bug Buster.
+- Apps use Home Assistant’s `mqtt` integration (`async_subscribe` / `async_publish`). Do not open a second broker client inside Data Node Nexus, AlleycatTV, or Bug Buster.
 - Status and LWT create a Home Assistant device and a presence entity (`online` / `offline` / `unknown`). Status topics are retained; retiring a device requires clearing that retain (Broadcast Group Controller **Remove from fabric** / `remove_device` on offline devices only).
 - Commands target this device, `all`, or a Broadcast Group. Membership comes from Broadcast Group Controller, not from firmware flash and not from a scrape of another app. Membership assign topics are also retained; remove clears them. Delivery policy (D8): (1) retain on assign, (2) republish on offline→online, (3) operator `force_republish_membership` with tv status-JSON ack — no silent periodic watchdog.
-- Digital Node Nexus owns FDN payloads (LED, haptic, page, protobuf). AlleycatTV owns playback payloads. The MQTT fabric owns presence and routing.
+- Data Node Nexus owns FDN payloads (LED, haptic, page, protobuf). AlleycatTV owns playback payloads. The MQTT fabric owns presence and routing.
 
 Bug Buster’s MQTT spy is debug-only. It does not become a second command path.
 
@@ -19,7 +19,7 @@ New code uses the `broadcast` topic segment. Do not add `zone` to new topics, at
 
 ## Fixed Data Nodes (FDNs)
 
-FDN hardware uses the Digital Node Nexus (`dnn`) topic namespace.
+FDN hardware uses the Data Node Nexus (`dnn`) topic namespace.
 
 
 | Who it is for | Topic | How it is assigned |
@@ -42,7 +42,7 @@ Command action segments under those wildcards (Phase 5 DNN):
 | LED | `…/led` | JSON `LedCmd` |
 | Haptic | `…/haptic` | JSON `HapticCmd` |
 
-Schema SoR: [`Apps/Digital_Node_Nexus/docs/dnn_commands.proto`](../Apps/Digital_Node_Nexus/docs/dnn_commands.proto) and [`Apps/AlleycatTV/docs/alleycattv.proto`](../Apps/AlleycatTV/docs/alleycattv.proto). HA publishers go through `shared_libraries.mc_codec` (field numbers from those protos). **Default wire is UTF-8 JSON** so current FDN firmware keeps working. **Binary wire** is `MC\x01` + proto3 bytes; Pi (and future FDN) **dual-read** JSON or binary. Flip DNN/ATV publish to `wire="protobuf"` when the fleet is ready — do not dual-publish two payloads on one topic.
+Schema SoR: [`Apps/Data_Node_Nexus/docs/dnn_commands.proto`](../Apps/Data_Node_Nexus/docs/dnn_commands.proto) and [`Apps/AlleycatTV/docs/alleycattv.proto`](../Apps/AlleycatTV/docs/alleycattv.proto). HA publishers go through `shared_libraries.mc_codec` (field numbers from those protos). **Default wire is UTF-8 JSON** so current FDN firmware keeps working. **Binary wire** is `MC\x01` + proto3 bytes; Pi (and future FDN) **dual-read** JSON or binary. Flip DNN/ATV publish to `wire="protobuf"` when the fleet is ready — do not dual-publish two payloads on one topic.
 
 ## AlleycatTV devices
 

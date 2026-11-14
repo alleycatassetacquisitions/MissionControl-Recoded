@@ -324,7 +324,7 @@ components = {
         "digest": digest([
             "Apps/Core_Configurator/HA_Component",
             "Apps/Registration/HA_Component",
-            "Apps/Digital_Node_Nexus/HA_Component",
+            "Apps/Data_Node_Nexus/HA_Component",
             "Apps/AlleycatTV/HA_Component",
             "Apps/Broadcast_Group_Controller/HA_Component",
             "Apps/Galactic_Bounty_Network/HA_Component",

@@ -1,10 +1,10 @@
-# Digital Node Nexus
+# Data Node Nexus
 
 Home Assistant face of the FDN MQTT fabric. Operators **page** players and
 devices here; LED and haptic are secondary skeleton tools.
 
-**Code:** `digital_node_nexus`  
-**Path:** `Apps/Digital_Node_Nexus/HA_Component/`  
+**Code:** `data_node_nexus`  
+**Path:** `Apps/Data_Node_Nexus/HA_Component/`  
 **HA shape:** config entry + sidebar panel + MQTT services (`local_push`)
 
 ---
@@ -27,9 +27,9 @@ DNN never talks to Central Server. Registration owns player writes and the MCS r
 
 | Service | MQTT topic (under `mc/dnn/`) |
 |---|---|
-| `digital_node_nexus.page` | `cmd/device/{id}/page` · `cmd/all/page` · `cmd/broadcast/{id}/page` |
-| `digital_node_nexus.set_led` | `cmd/device/{id}/led` · `cmd/all/led` |
-| `digital_node_nexus.trigger_haptic` | `cmd/device/{id}/haptic` · `cmd/all/haptic` |
+| `data_node_nexus.page` | `cmd/device/{id}/page` · `cmd/all/page` · `cmd/broadcast/{id}/page` |
+| `data_node_nexus.set_led` | `cmd/device/{id}/led` · `cmd/all/led` |
+| `data_node_nexus.trigger_haptic` | `cmd/device/{id}/haptic` · `cmd/all/haptic` |
 
 **Page targeting**
 
@@ -55,11 +55,11 @@ Payload schema: [`docs/dnn_commands.proto`](docs/dnn_commands.proto) (HA publish
 
 ## Panel
 
-Sidebar panel (`www/digital_node_nexus/dnn-panel.js`):
+Sidebar panel (`www/data_node_nexus/dnn-panel.js`):
 
 - Primary: Page composer (FDN / all / broadcast / player / role|NeoCorp filter)
 - Secondary tabs: LED, Haptic
-- Devices from websocket `digital_node_nexus/get_devices` (fabric presence)
+- Devices from websocket `data_node_nexus/get_devices` (fabric presence)
 - Roster from `registration/get_roster` (Registration SoR)
 - Writes only via `hass.callService` — no LAN `fetch`
 
@@ -69,7 +69,7 @@ Sidebar panel (`www/digital_node_nexus/dnn-panel.js`):
 
 ```
 HA_Component/
-├── custom_components/digital_node_nexus/
+├── custom_components/data_node_nexus/
 │   ├── __init__.py
 │   ├── config_flow.py
 │   ├── const.py
@@ -77,7 +77,7 @@ HA_Component/
 │   ├── services.yaml
 │   ├── strings.json
 │   └── manifest.json
-├── www/digital_node_nexus/
+├── www/data_node_nexus/
 │   └── dnn-panel.js
 └── tests/
 docs/
@@ -92,11 +92,22 @@ docs/
 2. Copy the integration and panel:
 
 ```powershell
-scp -r "Apps\Digital_Node_Nexus\HA_Component\custom_components\digital_node_nexus" root@<HA-IP>:/config/custom_components/
-scp -r "Apps\Digital_Node_Nexus\HA_Component\www\digital_node_nexus" root@<HA-IP>:/config/www/
+scp -r "Apps\Data_Node_Nexus\HA_Component\custom_components\data_node_nexus" root@<HA-IP>:/config/custom_components/
+scp -r "Apps\Data_Node_Nexus\HA_Component\www\data_node_nexus" root@<HA-IP>:/config/www/
 ```
 
-Also redeploy Shared HA Helpers if `fabric.py` / `mqtt.py` changed. Merge the `panel_custom` block from `HomeAssist/configuration.yaml`, then `ha core restart`, add **Digital Node Nexus** from Devices & services, and hard-refresh the browser.
+Also redeploy Shared HA Helpers if `fabric.py` / `mqtt.py` changed. Merge the `panel_custom` block from `HomeAssist/configuration.yaml`, then `ha core restart`, add **Data Node Nexus** from Devices & services, and hard-refresh the browser.
+
+### Venue migration (from Digital Node Nexus)
+
+HA domain and paths renamed: `digital_node_nexus` → `data_node_nexus`. On an existing venue:
+
+1. Settings → Devices & services → remove the old **Digital Node Nexus** integration (if still present).
+2. Delete `/config/custom_components/digital_node_nexus/` and `/config/www/digital_node_nexus/` on HA.
+3. Deploy `data_node_nexus` (scp steps above) and merge the updated `HomeAssist/configuration.yaml` block (`data_node_nexus: {}`, panel `url_path: data-node-nexus`, module under `/local/data_node_nexus/`).
+4. `ha core restart` → Add **Data Node Nexus** → hard-refresh.
+
+MQTT kind `dnn` / topics `mc/dnn/…` are unchanged — FDN firmware does not need a topic cutover for this rename.
 
 ---
 
@@ -113,20 +124,20 @@ When you rename an identity string, update this section and `const.py` in the sa
 |---|---|
 | MQTT kind `dnn` | BGC `KIND_DNN` + `KIND_DOMAIN` map, fabric `mc/dnn/status/#` subscriptions, FDN firmware MQTT topics, all DNN MQTT command topics |
 | Roster WS `registration/get_roster` | DNN panel page targets (Registration owns MCS roster poll) |
-| Domain `digital_node_nexus` | HA `custom_components/` folder, `manifest.json`, entity_id prefix, `www/digital_node_nexus/` |
+| Domain `data_node_nexus` | HA `custom_components/` folder, `manifest.json`, entity_id prefix, `www/data_node_nexus/` |
 | Role strings (`hunter`, `bounty`, `unassigned`) | DNN `ROLES` tuple — display aliases of Central `team_name`; Registration has **no** `ROLES` |
 
 ### Identity checklist
 
 | Kind | Exact string | Constant / source |
 |---|---|---|
-| HA domain | `digital_node_nexus` | `DOMAIN` in `const.py` |
+| HA domain | `data_node_nexus` | `DOMAIN` in `const.py` |
 | MQTT fabric kind | `dnn` | `MQTT_KIND` in `const.py` |
 | Roster (panel) | `registration/get_roster` | Registration WS — DNN does not own an MCS client |
 | Extra field (MCS token) | `token` | `EXTRA_MCS_TOKEN` in `const.py` |
 | Role values | `hunter`, `bounty`, `unassigned` | `ROLES` tuple in `const.py` — HA aliases only |
 | NeoCorp values | `freelancer`, `helix`, `endline`, `reboot` | `NEOCORPS` tuple in `const.py` |
-| WS namespace | `digital_node_nexus/get_devices` | `WS_GET_DEVICES` in `const.py` |
-| Panel url_path | `digital-node-nexus` | bare literal in `HomeAssist/configuration.yaml` |
+| WS namespace | `data_node_nexus/get_devices` | `WS_GET_DEVICES` in `const.py` |
+| Panel url_path | `data-node-nexus` | bare literal in `HomeAssist/configuration.yaml` |
 | MQTT topic root | `mc/dnn/cmd/device/…`, `mc/dnn/status/…` | `mc_topic` + `resolve_cmd_segments` in `Shared_HA_Helpers` |
 | Device cmd grammar | `mc/{kind}/cmd/device/{id}/…` | shared with AlleycatTV / BGC — FDN firmware must match |

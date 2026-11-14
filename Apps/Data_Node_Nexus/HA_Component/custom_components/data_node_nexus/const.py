@@ -1,7 +1,7 @@
-"""Constants for the Digital Node Nexus integration."""
+"""Constants for the Data Node Nexus integration."""
 from __future__ import annotations
 
-DOMAIN = "digital_node_nexus"
+DOMAIN = "data_node_nexus"
 
 # MQTT fabric kind — topics are mc/dnn/...
 MQTT_KIND = "dnn"

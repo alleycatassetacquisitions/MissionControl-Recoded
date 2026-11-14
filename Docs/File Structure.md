@@ -75,7 +75,7 @@ MissionControl\
 │   │       ├── www\
 │   │       ├── custom_components\
 │   │       └── tests\
-│   ├── Digital_Node_Nexus\
+│   ├── Data_Node_Nexus\
 │   │   ├── README.md
 │   │   ├── docs\
 │   │   │   └── dnn_commands.proto
@@ -160,8 +160,8 @@ After deploy, Mission Control lives under HAOS **`/config/`** (SSH as `root` to 
 | `Apps\Registration\HA_Component\www\registration\` | `/config/www/registration/` |
 | `Apps\Game_Master\HA_Component\custom_components\game_master\` | `/config/custom_components/game_master/` |
 | `Apps\Game_Master\HA_Component\www\game_master\` | `/config/www/game_master/` |
-| `Apps\Digital_Node_Nexus\HA_Component\custom_components\digital_node_nexus\` | `/config/custom_components/digital_node_nexus/` |
-| `Apps\Digital_Node_Nexus\HA_Component\www\digital_node_nexus\` | `/config/www/digital_node_nexus/` |
+| `Apps\Data_Node_Nexus\HA_Component\custom_components\data_node_nexus\` | `/config/custom_components/data_node_nexus/` |
+| `Apps\Data_Node_Nexus\HA_Component\www\data_node_nexus\` | `/config/www/data_node_nexus/` |
 | `Apps\Net_Time\HA_Component\custom_components\net_time\` | `/config/custom_components/net_time/` |
 | `Libraries\Shared_HA_Helpers\HA_Component\custom_components\shared_libraries\` | `/config/custom_components/shared_libraries/` |
 | `Libraries\Shared_HA_Helpers\HA_Component\www\shared_libraries\` | `/config/www/shared_libraries/` |
@@ -187,7 +187,7 @@ Runtime tree (Phase 10 Mission Control shell):
 │   ├── shared_libraries/
 │   ├── registration/
 │   ├── game_master/
-│   ├── digital_node_nexus/
+│   ├── data_node_nexus/
 │   ├── alleycattv/
 │   ├── broadcast_group_controller/
 │   ├── gbn/
@@ -200,7 +200,7 @@ Runtime tree (Phase 10 Mission Control shell):
     │   └── mc-panel.js         ← Lit kit (built from panel_kit/)
     ├── registration/
     ├── game_master/
-    ├── digital_node_nexus/
+    ├── data_node_nexus/
     ├── broadcast_group_controller/
     ├── alleycattv/
     ├── gbn/
@@ -255,13 +255,13 @@ Single source of truth for Alleycat service **URLs and API tokens** (MCS URL + B
 **Path:** `Apps\Core_Configurator\`  
 **On HA:** `/config/custom_components/core_configurator/` + `/config/www/core_configurator/`
 
-### Digital Node Nexus
+### Data Node Nexus
 
 Manages communications with FDNs (Fixed Data Nodes). Mission Control talks to FDNs here first, and later to PDNs (Portable Data Nodes) as well. Phase 5 ships a paging-first HA integration on the MQTT fabric; roster targeting comes from Registration (`registration/get_roster`). Legacy NeoCorp/mode chrome can use MCS-derived overlays when present.
 
-**Path:** `Apps\Digital_Node_Nexus\`  
-**On HA:** `/config/custom_components/digital_node_nexus/` + `/config/www/digital_node_nexus/`  
-**App README:** [`Apps/Digital_Node_Nexus/README.md`](../Apps/Digital_Node_Nexus/README.md)
+**Path:** `Apps\Data_Node_Nexus\`  
+**On HA:** `/config/custom_components/data_node_nexus/` + `/config/www/data_node_nexus/`  
+**App README:** [`Apps/Data_Node_Nexus/README.md`](../Apps/Data_Node_Nexus/README.md)
 
 ### Galactic Bounty Network
 

@@ -65,7 +65,7 @@ SERVICE_CATALOG = (
         "key": KEY_ALLEYCATTV,
         "label": "AlleycatTV streaming server",
         "hint": "Content API and media",
-        "apps": ["AlleycatTV", "Content Manager", "Digital Node Nexus"],
+        "apps": ["AlleycatTV", "Content Manager", "Data Node Nexus"],
         "placeholder": "http://headless-alleycat-streaming-server.local",
     },
     {

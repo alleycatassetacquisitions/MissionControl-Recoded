@@ -1,6 +1,6 @@
 {
-  "domain": "digital_node_nexus",
-  "name": "Digital Node Nexus",
+  "domain": "data_node_nexus",
+  "name": "Data Node Nexus",
   "documentation": "https://github.com/DLightmedia/MissionControl",
   "requirements": [],
   "dependencies": ["mqtt", "core_configurator", "shared_libraries"],

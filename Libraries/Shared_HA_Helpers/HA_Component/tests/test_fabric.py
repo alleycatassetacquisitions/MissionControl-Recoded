@@ -20,7 +20,7 @@ from custom_components.shared_libraries.fabric import (
     presence_entity_id,
 )
 
-DOMAIN = "digital_node_nexus"
+DOMAIN = "data_node_nexus"
 
 
 # ---------------------------------------------------------------------------
@@ -64,8 +64,8 @@ class TestTopicHelpers:
 
     def test_presence_entity_id_slugs(self):
         assert (
-            presence_entity_id("digital_node_nexus", "FDN-01")
-            == "sensor.digital_node_nexus_fdn_01_presence"
+            presence_entity_id("data_node_nexus", "FDN-01")
+            == "sensor.data_node_nexus_fdn_01_presence"
         )
 
 
@@ -141,7 +141,7 @@ async def test_status_message_creates_device_and_presence_entity(
         )
     )
 
-    entity_id = "sensor.digital_node_nexus_node_42_presence"
+    entity_id = "sensor.data_node_nexus_node_42_presence"
     state = hass.states.get(entity_id)
     assert state is not None
     assert state.state == PRESENCE_ONLINE
@@ -173,7 +173,7 @@ async def test_lwt_empty_payload_marks_offline(
     callback(SimpleNamespace(topic="mc/dnn/status/node-7", payload=b"online"))
     callback(SimpleNamespace(topic="mc/dnn/status/node-7", payload=b""))
 
-    state = hass.states.get("sensor.digital_node_nexus_node_7_presence")
+    state = hass.states.get("sensor.data_node_nexus_node_7_presence")
     assert state is not None
     assert state.state == PRESENCE_OFFLINE
 
@@ -195,7 +195,7 @@ async def test_json_status_copies_telemetry_attributes(
         )
     )
 
-    state = hass.states.get("sensor.digital_node_nexus_node_9_presence")
+    state = hass.states.get("sensor.data_node_nexus_node_9_presence")
     assert state is not None
     assert state.state == PRESENCE_ONLINE
     assert state.attributes["rssi"] == -62
@@ -227,7 +227,7 @@ async def test_forget_device_clears_registry_and_ignores_offline_echo(
         assert mock_publish.await_args.kwargs["payload"] == b""
 
     assert tracker.list_devices() == []
-    assert hass.states.get("sensor.digital_node_nexus_old_pi_presence") is None
+    assert hass.states.get("sensor.data_node_nexus_old_pi_presence") is None
     registry = dr.async_get(hass)
     assert registry.async_get_device({(DOMAIN, "old-pi")}) is None
 

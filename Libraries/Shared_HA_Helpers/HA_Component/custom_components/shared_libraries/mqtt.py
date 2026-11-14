@@ -34,7 +34,7 @@ async def async_ensure_mqtt(hass: HomeAssistant) -> None:
             "MQTT is not set up. Install the official Mosquitto broker add-on "
             "(Settings → Add-ons), then add the MQTT integration "
             "(Settings → Devices & services → MQTT → Use the official Mosquitto "
-            "Mqtt Broker app). Reload Digital Node Nexus or restart Home Assistant."
+            "Mqtt Broker app). Reload Data Node Nexus or restart Home Assistant."
         )
 
 

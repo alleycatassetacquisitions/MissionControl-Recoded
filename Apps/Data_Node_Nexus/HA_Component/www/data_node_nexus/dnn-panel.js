@@ -157,7 +157,7 @@
     async _loadDevices() {
       try {
         const result = await this.hass.callWS({
-          type: "digital_node_nexus/get_devices"
+          type: "data_node_nexus/get_devices"
         });
         this._devices = result && result.devices || [];
       } catch (err) {
@@ -224,7 +224,7 @@
         if (this._pageNeocorp) payload.neocorp = this._pageNeocorp;
       }
       try {
-        await this.hass.callService("digital_node_nexus", "page", payload);
+        await this.hass.callService("data_node_nexus", "page", payload);
         this._feedback("Page sent", "ok");
       } catch (err) {
         this._feedback("Page failed: " + this._formatErr(err), "err");
@@ -243,7 +243,7 @@
         b: Number(this._ledB || 0)
       };
       try {
-        await this.hass.callService("digital_node_nexus", "set_led", payload);
+        await this.hass.callService("data_node_nexus", "set_led", payload);
         this._feedback("LED command sent", "ok");
       } catch (err) {
         this._feedback("LED failed: " + this._formatErr(err), "err");
@@ -261,7 +261,7 @@
       };
       try {
         await this.hass.callService(
-          "digital_node_nexus",
+          "data_node_nexus",
           "trigger_haptic",
           payload
         );
@@ -276,7 +276,7 @@
       return html`
       <div class="wrap">
         <header class="page-header">
-          <h1>Digital Node Nexus</h1>
+          <h1>Data Node Nexus</h1>
           <div class="header-actions">
             ${this._feedbackTemplate()}
             <button class="btn btn-secondary" @click=${() => this._refresh()}>

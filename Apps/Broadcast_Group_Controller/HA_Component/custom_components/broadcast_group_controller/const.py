@@ -13,7 +13,7 @@ SUPPORTED_KINDS = (KIND_TV, KIND_DNN)
 # Domain that owns the HA device registry entry for each kind.
 KIND_DOMAIN = {
     KIND_TV: "alleycattv",
-    KIND_DNN: "digital_node_nexus",
+    KIND_DNN: "data_node_nexus",
 }
 
 SERVICE_SET_AREA = "set_area"

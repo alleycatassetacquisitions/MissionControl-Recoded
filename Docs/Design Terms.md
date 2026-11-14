@@ -11,7 +11,7 @@ Write the product name in prose. In code, use the snake_case form in the table. 
 | Product name | Code (`domain`, package, folder) | Do not use |
 | --- | --- | --- |
 | Core Configurator | `core_configurator` | Directory, `alleycat_directory`, AlleycatDirectory |
-| Digital Node Nexus | `digital_node_nexus` | — |
+| Data Node Nexus | `data_node_nexus` | — |
 | AlleycatTV | `alleycattv` | ATV as a folder or domain |
 | Galactic Bounty Network | `gbn` | Photobooth, Bounty, `bounty`, ProjectBounty |
 | Master Control Server | `master_control_server` | PPS, Player Proxy Service |
@@ -52,13 +52,13 @@ The Mission Control app that stores service URLs **and** shared API tokens/auth 
 - **Communication:** Home Assistant config entry + helpers
 - **Code:** `core_configurator`
 
-### DNN — Digital Node Nexus
+### DNN — Data Node Nexus
 
 The Mission Control dashboard for sending messages to FDNs and gathering information from them. Phase 5 focuses on **paging** (MQTT page starts an FDN state machine). LED and haptic remain secondary tools. Roster targeting reads Registration (`registration/get_roster`); mode/NeoCorp chrome uses MCS-derived overlays when present.
 
 - **Communication:** MQTT — `.proto` field numbers are SoR; default wire UTF-8 JSON with dual-read for `MC\x01` protobuf (`shared_libraries.mc_codec`)
 - **Used for:** paging, mini-bosses, quests, and virus
-- **Code:** `digital_node_nexus`
+- **Code:** `data_node_nexus`
 
 
 
@@ -146,7 +146,7 @@ Do not call this a Zone. Do not store membership as a Home Assistant Area.
 
 Shared presence and command routing for FDNs and AlleycatTV endpoints, using Home Assistant’s `mqtt` integration against the official **Mosquitto** broker add-on. Status and LWT become presence entities. Commands target this device, `all`, or a Broadcast Group. Operators remove unused offline devices via Broadcast Group Controller so retained status does not keep a retired id alive.
 
-Digital Node Nexus and AlleycatTV own payloads (LED, haptic, playback). They do not each open a private MQTT client.
+Data Node Nexus and AlleycatTV own payloads (LED, haptic, playback). They do not each open a private MQTT client.
 
 ## Players and identity
 

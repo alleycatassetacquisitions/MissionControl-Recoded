@@ -1,8 +1,8 @@
-"""Pytest configuration for Digital Node Nexus HA integration tests.
+"""Pytest configuration for Data Node Nexus HA integration tests.
 
-Run from Apps/Digital_Node_Nexus/HA_Component/:
+Run from Apps/Data_Node_Nexus/HA_Component/:
 
-    cd Apps/Digital_Node_Nexus/HA_Component
+    cd Apps/Data_Node_Nexus/HA_Component
     pytest
 """
 import sys
@@ -32,7 +32,7 @@ def auto_enable_custom_integrations(enable_custom_integrations):
 
 @pytest.fixture(autouse=True)
 async def stub_external_integrations(hass, auto_enable_custom_integrations):
-    """Stub dependency domains so HA can load digital_node_nexus."""
+    """Stub dependency domains so HA can load data_node_nexus."""
     from homeassistant import loader as ha_loader
     from pytest_homeassistant_custom_component.common import MockModule, mock_integration
 

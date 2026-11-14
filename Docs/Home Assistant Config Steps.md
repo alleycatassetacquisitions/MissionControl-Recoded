@@ -200,7 +200,7 @@ ha core restart
 
 MCS itself is deployed on Proxmox, not HA — see [`Master Control Server Config Steps.md`](Master%20Control%20Server%20Config%20Steps.md).
 
-### Phase 5 — Mosquitto + Shared Helpers (fabric) + Digital Node Nexus
+### Phase 5 — Mosquitto + Shared Helpers (fabric) + Data Node Nexus
 
 MQTT for Mission Control uses the **official Mosquitto broker add-on** on Home Assistant OS (not a custom broker, not a Proxmox Mosquitto LXC). DNN and the fabric talk only through HA’s `mqtt` integration.
 
@@ -228,7 +228,7 @@ MQTT for Mission Control uses the **official Mosquitto broker add-on** on Home A
 
 Official docs: [Mosquitto broker add-on](https://github.com/home-assistant/addons/tree/master/mosquitto) · [MQTT integration](https://www.home-assistant.io/integrations/mqtt/)
 
-#### 5b. Deploy Shared Helpers + Digital Node Nexus
+#### 5b. Deploy Shared Helpers + Data Node Nexus
 
 Redeploy Shared HA Helpers (includes `fabric.py`), then DNN:
 
@@ -236,18 +236,20 @@ Redeploy Shared HA Helpers (includes `fabric.py`), then DNN:
 scp -r "z:\CodingProjects\Alleycat\MissionControl\Libraries\Shared_HA_Helpers\HA_Component\custom_components\shared_libraries" root@<HA-IP>:/config/custom_components/
 scp -r "z:\CodingProjects\Alleycat\MissionControl\Libraries\Shared_HA_Helpers\HA_Component\www\shared_libraries" root@<HA-IP>:/config/www/
 
-scp -r "z:\CodingProjects\Alleycat\MissionControl\Apps\Digital_Node_Nexus\HA_Component\custom_components\digital_node_nexus" root@<HA-IP>:/config/custom_components/
-scp -r "z:\CodingProjects\Alleycat\MissionControl\Apps\Digital_Node_Nexus\HA_Component\www\digital_node_nexus" root@<HA-IP>:/config/www/
+scp -r "z:\CodingProjects\Alleycat\MissionControl\Apps\Data_Node_Nexus\HA_Component\custom_components\data_node_nexus" root@<HA-IP>:/config/custom_components/
+scp -r "z:\CodingProjects\Alleycat\MissionControl\Apps\Data_Node_Nexus\HA_Component\www\data_node_nexus" root@<HA-IP>:/config/www/
 ```
 
-Merge the Digital Node Nexus `panel_custom` block from [`HomeAssist/configuration.yaml`](../HomeAssist/configuration.yaml). Restart:
+Merge the Data Node Nexus `panel_custom` block from [`HomeAssist/configuration.yaml`](../HomeAssist/configuration.yaml). Restart:
 
 ```bash
 ha core restart
 ```
 
-1. Settings → Devices & services → Add **Digital Node Nexus** (install-only). If setup says MQTT is not ready, finish **5a** first; DNN will retry.
-2. Confirm sidebar: Digital Node Nexus.
+**Migrating from Digital Node Nexus:** remove the old integration, delete `/config/custom_components/digital_node_nexus/` and `/config/www/digital_node_nexus/`, then deploy `data_node_nexus` as above and merge yaml (`data_node_nexus: {}`, panel path `data-node-nexus`). MQTT `mc/dnn/…` is unchanged.
+
+1. Settings → Devices & services → Add **Data Node Nexus** (install-only). If setup says MQTT is not ready, finish **5a** first; DNN will retry.
+2. Confirm sidebar: Data Node Nexus.
 3. Hard-refresh the browser. **Refresh** on the DNN panel should load the MCS roster (no “Unknown command”).
 4. FDNs that publish `mc/dnn/status/{id}` (to the Mosquitto broker) appear as devices with presence sensors.
 5. Page composer can target FDN / all / broadcast id / MCS player / role|NeoCorp filter.
@@ -407,7 +409,7 @@ Deploy rebuilt panel assets (and Shared Helpers www):
 scp -r "z:\CodingProjects\Alleycat\MissionControl\Libraries\Shared_HA_Helpers\HA_Component\www\shared_libraries" root@<HA-IP>:/config/www/
 scp -r "z:\CodingProjects\Alleycat\MissionControl\Apps\Core_Configurator\HA_Component\www\core_configurator" root@<HA-IP>:/config/www/
 scp -r "z:\CodingProjects\Alleycat\MissionControl\Apps\Registration\HA_Component\www\registration" root@<HA-IP>:/config/www/
-scp -r "z:\CodingProjects\Alleycat\MissionControl\Apps\Digital_Node_Nexus\HA_Component\www\digital_node_nexus" root@<HA-IP>:/config/www/
+scp -r "z:\CodingProjects\Alleycat\MissionControl\Apps\Data_Node_Nexus\HA_Component\www\data_node_nexus" root@<HA-IP>:/config/www/
 scp -r "z:\CodingProjects\Alleycat\MissionControl\Apps\Broadcast_Group_Controller\HA_Component\www\broadcast_group_controller" root@<HA-IP>:/config/www/
 scp -r "z:\CodingProjects\Alleycat\MissionControl\Apps\AlleycatTV\HA_Component\www\alleycattv" root@<HA-IP>:/config/www/
 scp -r "z:\CodingProjects\Alleycat\MissionControl\Apps\Galactic_Bounty_Network\HA_Component\www\gbn" root@<HA-IP>:/config/www/

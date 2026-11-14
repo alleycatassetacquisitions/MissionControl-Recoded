@@ -123,7 +123,7 @@ tracker = await async_start_presence_tracking(
     hass,
     "dnn",
     config_entry_id=entry.entry_id,
-    domain="digital_node_nexus",
+    domain="data_node_nexus",
     name_prefix="FDN",
 )
 # Status on mc/dnn/status/{device_id} → HA device + sensor.*_presence

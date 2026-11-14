@@ -5,7 +5,7 @@ import json
 
 import pytest
 
-from custom_components.digital_node_nexus.payloads import (
+from custom_components.data_node_nexus.payloads import (
     encode_haptic_cmd,
     encode_led_cmd,
     encode_page_cmd,

@@ -9,7 +9,7 @@
 #   custom_components/core_configurator/  ← Apps/Core_Configurator/HA_Component/custom_components/core_configurator/
 #   custom_components/shared_libraries/   ← Libraries/Shared_HA_Helpers/HA_Component/custom_components/shared_libraries/
 #   custom_components/registration/       ← Apps/Registration/HA_Component/custom_components/registration/
-#   custom_components/digital_node_nexus/ ← Apps/Digital_Node_Nexus/HA_Component/custom_components/digital_node_nexus/
+#   custom_components/data_node_nexus/ ← Apps/Data_Node_Nexus/HA_Component/custom_components/data_node_nexus/
 #   custom_components/alleycattv/         ← Apps/AlleycatTV/HA_Component/custom_components/alleycattv/
 #   custom_components/broadcast_group_controller/ ← Apps/Broadcast_Group_Controller/HA_Component/custom_components/broadcast_group_controller/
 #   custom_components/gbn/                ← Apps/Galactic_Bounty_Network/HA_Component/custom_components/gbn/
@@ -18,7 +18,7 @@
 #   www/core_configurator/               ← Apps/Core_Configurator/HA_Component/www/core_configurator/
 #   www/shared_libraries/                ← Libraries/Shared_HA_Helpers/HA_Component/www/shared_libraries/
 #   www/registration/                    ← Apps/Registration/HA_Component/www/registration/
-#   www/digital_node_nexus/              ← Apps/Digital_Node_Nexus/HA_Component/www/digital_node_nexus/
+#   www/data_node_nexus/              ← Apps/Data_Node_Nexus/HA_Component/www/data_node_nexus/
 #   www/alleycattv/                      ← Apps/AlleycatTV/HA_Component/www/alleycattv/
 #   www/broadcast_group_controller/      ← Apps/Broadcast_Group_Controller/HA_Component/www/broadcast_group_controller/
 #   www/gbn/                             ← Apps/Galactic_Bounty_Network/HA_Component/www/gbn/
@@ -67,8 +67,8 @@ alleycattv: {}
 # Loads Registration (MCS face — install-only config entry via YAML import).
 registration: {}
 
-# Loads Digital Node Nexus (FDN paging / LED / haptic).
-digital_node_nexus: {}
+# Loads Data Node Nexus (FDN paging / LED / haptic).
+data_node_nexus: {}
 
 # Loads Broadcast Group Controller (placement + membership).
 broadcast_group_controller: {}
@@ -122,12 +122,12 @@ panel_custom:
     url_path: registration
     module_url: /local/registration/registration-panel.js
 
-  # ─── Digital Node Nexus ───────────────────────────────────────────────────
+  # ─── Data Node Nexus ───────────────────────────────────────────────────
   - name: dnn-panel
-    sidebar_title: Digital Node Nexus
+    sidebar_title: Data Node Nexus
     sidebar_icon: mdi:access-point
-    url_path: digital-node-nexus
-    module_url: /local/digital_node_nexus/dnn-panel.js
+    url_path: data-node-nexus
+    module_url: /local/data_node_nexus/dnn-panel.js
 
   # ─── AlleycatTV ───────────────────────────────────────────────────────────
   - name: alleycattv-panel

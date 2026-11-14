@@ -414,7 +414,7 @@ else:
     added = []
     for domain in (
         "registration",
-        "digital_node_nexus",
+        "data_node_nexus",
         "alleycattv",
         "broadcast_group_controller",
         "gbn",
@@ -505,7 +505,7 @@ for key in ("mcs", "alleycattv", "gbn", "net_time", "venue_updater"):
 print("""
 Automated for the venue operator:
   • Proxmox no-subscription repos + subscription-nag patch (hard-refresh :8006)
-  • Registration + Digital Node Nexus config entries (YAML import)
+  • Registration + Data Node Nexus config entries (YAML import)
   • Core Configurator reseed from secrets.yaml
   • Proxmox API token (hass@pve!missioncontrol) written to secrets
   • Mosquitto broker + MQTT integration (see MQTT line above)
@@ -513,7 +513,7 @@ Automated for the venue operator:
   • Sidebar title + panel order **Mission Control** (vendored custom-sidebar)
   • HACS component unpacked during HA pause (Add integration + GitHub still UI)
 
-Required before AlleycatTV / Digital Node Nexus / Broadcast Groups work:
+Required before AlleycatTV / Data Node Nexus / Broadcast Groups work:
   1. MQTT healthy — Mosquitto started, logins alleycatTV/alleycat Saved,
      MQTT integration connected (core-mosquitto:1883). Restart HA if those
      three still show Failed setup.
