@@ -50,10 +50,13 @@ MQTT_PASS = os.getenv("ALLEYCATV_MQTT_PASS", "")
 # -- Playlist behaviour -------------------------------------------------------
 PHOTO_INTERVAL = int(os.getenv("ALLEYCATV_PHOTO_INTERVAL", "5"))
 PHOTO_DURATION = int(os.getenv("ALLEYCATV_PHOTO_DURATION", "10"))
+# Intentional interval poll (D18): reload MQTT remains the push path; this is
+# a safety net until every playlist change is always pushed via desired/reload.
 PLAYLIST_REFRESH_INTERVAL = int(os.getenv("ALLEYCATV_PLAYLIST_REFRESH", "300"))
 
 # -- Player -------------------------------------------------------------------
 MPV_SOCKET_PATH = os.getenv("ALLEYCATV_MPV_SOCKET", "/tmp/alleycattv-mpv.sock")
+# Intentional MQTT telemetry cadence (not Core Configurator — that is event/WS).
 STATUS_INTERVAL = int(os.getenv("ALLEYCATV_STATUS_INTERVAL", "30"))
 
 # -- MQTT topics (mc/tv fabric) -----------------------------------------------

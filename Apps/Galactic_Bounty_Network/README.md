@@ -60,7 +60,7 @@ Clips and poster metadata are stored **per active Event** (from MCS / Registrati
 | `data/active_event.json` | Last-known active Event for `/poster-cycle` |
 | `media/events/{event_id}/videos/{player_id}.ext` | Capture clips (filename = player id) |
 | `data/poster_templates.json` | Chrome templates (global) |
-| `data/posters.json` + `media/videos/` | Legacy pre-event store (`GET /api/posters?include_legacy=true` only) |
+| `data/events/{id}/posters.json` | Per-event poster store (active event only) |
 
 Create/update requires an active event (`409` if none). Public display URL stays `/poster/player/{id}` — GBN resolves video/metadata under the active Event folder. Re-POST without a video file updates text/chrome and keeps the existing clip. Video URLs include an `?v=` stamp so browsers/kiosks pick up replacements immediately. The panel **Event media** card shows Event **name** (UUID muted), sizes, export zip, and delete.
 
@@ -73,7 +73,7 @@ API:
 | `GET` | `/api/poster-templates` | List built-ins + customs |
 | `POST` | `/api/poster-templates` | Create custom |
 | `PUT` / `DELETE` | `/api/poster-templates/{id}` | Non-builtin only |
-| `GET` | `/api/posters` | Active-event posters only (`?event_id=` fallback; `?include_legacy=true` for old store) |
+| `GET` | `/api/posters` | Active-event posters only (`?event_id=` fallback) |
 | `POST` | `/api/posters` | Create/update; video required on first create, omit video to keep existing clip and update text/chrome only |
 | `GET` | `/api/events/active` | Active event id/name (MCS → cache) |
 | `PUT` | `/api/events/active` | Game Master push: `{active_event_id, event_name}` |
@@ -92,7 +92,6 @@ API:
 | `GBN_PUBLIC_BASE` | `http://127.0.0.1:8100` | Fallback public URL only — live poster/media links use the request Host (so a new CT IP via Core Configurator is picked up without rewriting this env) |
 | `GBN_MEDIA` | `./media` | Videos + NeoCorp SVG assets (`events/{id}/videos/` for new captures) |
 | `GBN_DATA` | `./data` | Data directory (`events/{id}/posters.json` per event) |
-| `GBN_POSTERS` | `./data/posters.json` | Legacy global poster store (read fallback) |
 | `GBN_TEMPLATES` | `./data/poster_templates.json` | Poster chrome templates (hunter/bounty built-ins + customs) |
 | `GBN_MCS_BASE` | _(empty)_ | MCS base URL for Player overlay + active-event backup |
 | `GBN_MCS_TOKEN` | _(empty)_ | Bearer token for MCS (same as Core Configurator) |
