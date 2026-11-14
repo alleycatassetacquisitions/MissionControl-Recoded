@@ -93,19 +93,8 @@
       this._fName = "";
       this._fEmail = "";
       this._highlightName = "";
-      this._events = [];
-      this._eventsReady = false;
-      this._eventsDetail = "";
       this._activeEventId = null;
       this._activeEvent = null;
-      this._evMode = "create";
-      this._evCreateName = "";
-      this._evCreateVenue = "";
-      this._evCreateSetActive = true;
-      this._evEditId = "";
-      this._evEditName = "";
-      this._evEditVenue = "";
-      this._evSetActiveId = "";
       this._teams = [];
       this._catalog = emptyCatalog();
       this._fAffByCat = {};
@@ -124,19 +113,8 @@
         _fName: { state: true },
         _fEmail: { state: true },
         _highlightName: { state: true },
-        _events: { state: true },
-        _eventsReady: { state: true },
-        _eventsDetail: { state: true },
         _activeEventId: { state: true },
         _activeEvent: { state: true },
-        _evMode: { state: true },
-        _evCreateName: { state: true },
-        _evCreateVenue: { state: true },
-        _evCreateSetActive: { state: true },
-        _evEditId: { state: true },
-        _evEditName: { state: true },
-        _evEditVenue: { state: true },
-        _evSetActiveId: { state: true },
         _teams: { state: true },
         _catalog: { state: true },
         _fAffByCat: { state: true },
@@ -283,98 +261,27 @@
           font-size: 13px;
           margin-top: 4px;
         }
-        .events-block {
+        /* Active event read-only display */
+        .active-event-block {
           min-width: 0;
-          margin-bottom: 28px;
-          padding-bottom: 24px;
+          margin-bottom: 20px;
+          padding-bottom: 18px;
           border-bottom: 1px solid var(--divider-color, #1f3a44);
         }
-        .events-block .form-title {
+        .active-event-block .form-title {
           margin-bottom: 6px;
         }
         .active-line {
           font-size: 14px;
-          margin: 0 0 10px;
+          margin: 0 0 6px;
         }
         .active-line strong {
           color: var(--primary-color, #00e5ff);
         }
-        .events-gate {
-          font-size: 13px;
-          color: var(--secondary-text-color, #7aa8b8);
-          margin: 0 0 12px;
-        }
-        .mode-toggle {
-          display: flex;
-          gap: 0;
-          margin: 0 0 12px;
-          border: 1px solid var(--primary-color, #00e5ff);
-          border-radius: 6px;
-          overflow: hidden;
-        }
-        .mode-toggle button {
-          flex: 1;
-          margin: 0;
-          padding: 8px 10px;
-          background: transparent;
-          color: var(--primary-color, #00e5ff);
-          border: 0;
-          border-right: 1px solid var(--primary-color, #00e5ff);
-          font: inherit;
+        .active-manage-hint {
           font-size: 12px;
-          font-weight: 600;
-          letter-spacing: 0.04em;
-          text-transform: uppercase;
-          cursor: pointer;
-        }
-        .mode-toggle button:last-child {
-          border-right: 0;
-        }
-        .mode-toggle button.active {
-          background: var(--primary-color, #00e5ff);
-          color: #041016;
-        }
-        .events-block label {
-          display: block;
-          font-size: 11px;
-          letter-spacing: 0.06em;
-          text-transform: uppercase;
           color: var(--secondary-text-color, #7aa8b8);
-          margin: 8px 0 4px;
-        }
-        .events-block input,
-        .events-block select {
-          width: 100%;
-          box-sizing: border-box;
-          padding: 8px 10px;
-          background: var(--secondary-background-color, #0d1418);
-          color: var(--primary-text-color, #e8f6ff);
-          border: 1px solid var(--divider-color, #1f3a44);
-          border-radius: 6px;
-          font: inherit;
-        }
-        .events-block label.check-row,
-        .form-col label.check-row {
-          display: flex;
-          align-items: center;
-          gap: 8px;
-          margin-top: 10px;
-          margin-bottom: 0;
-          font-size: 13px;
-          text-transform: none;
-          letter-spacing: 0;
-          color: var(--primary-text-color, #e8f6ff);
-        }
-        .events-block label.check-row input,
-        .form-col label.check-row input {
-          width: auto;
-          flex-shrink: 0;
           margin: 0;
-        }
-        .events-block .btn-create,
-        .events-block .btn-ghost {
-          margin-top: 12px;
-          width: 100%;
         }
         .layout {
           display: grid;
@@ -431,6 +338,22 @@
           border: 1px solid var(--divider-color, #1f3a44);
           border-radius: 6px;
           font: inherit;
+        }
+        .form-col label.check-row {
+          display: flex;
+          align-items: center;
+          gap: 8px;
+          margin-top: 10px;
+          margin-bottom: 0;
+          font-size: 13px;
+          text-transform: none;
+          letter-spacing: 0;
+          color: var(--primary-text-color, #e8f6ff);
+        }
+        .form-col label.check-row input {
+          width: auto;
+          flex-shrink: 0;
+          margin: 0;
         }
         .form-actions {
           display: flex;
@@ -712,14 +635,9 @@
       const fromActive = (this._activeEvent?.name || "").trim();
       if (fromActive) return fromActive;
       if (this._activeEventId) {
-        const cached = this._events.find(
-          (e) => String(e.id) === String(this._activeEventId)
-        );
-        const fromCache = (cached?.name || "").trim();
-        if (fromCache) return fromCache;
         return this._activeEventId;
       }
-      return "None \u2014 create or set an active event before registering players";
+      return "None";
     }
     async _boot() {
       await this._loadAll();
@@ -727,7 +645,6 @@
     async _loadAll() {
       await Promise.all([
         this._loadRoster(),
-        this._loadEvents(),
         this._loadActiveEvent(),
         this._loadPosters()
       ]);
@@ -802,35 +719,11 @@
         this._feedback("Could not load roster: " + this._formatErr(err), "err");
       }
     }
-    async _loadEvents() {
-      try {
-        const result = await this.hass.callWS({ type: "registration/get_events" });
-        this._events = result?.events ?? [];
-        this._eventsReady = Boolean(result?.ready);
-        this._eventsDetail = result?.detail || "";
-      } catch (err) {
-        this._events = [];
-        this._eventsReady = false;
-        this._eventsDetail = this._formatErr(err);
-      }
-    }
     async _loadActiveEvent() {
       try {
         const result = await this.hass.callWS({ type: "registration/get_active_event" });
         this._activeEventId = result?.active_event_id ?? null;
-        let event = result?.event ?? null;
-        if (event && !(event.name || "").trim() && this._activeEventId) {
-          const cached = this._events.find(
-            (e) => String(e.id) === String(this._activeEventId)
-          );
-          if (cached?.name) {
-            event = { ...event, name: cached.name, venue_name: cached.venue_name };
-          }
-        }
-        this._activeEvent = event;
-        if (this._activeEventId && !this._evSetActiveId) {
-          this._evSetActiveId = this._activeEventId;
-        }
+        this._activeEvent = result?.event ?? null;
       } catch (_) {
         this._activeEventId = null;
         this._activeEvent = null;
@@ -918,7 +811,7 @@
                       </li>`
         )}
                 ${showCreateHint ? html`<li class="create-hint">
-                      Press Create/Save to add “${typed}” as a new faction
+                      Press Create/Save to add "${typed}" as a new faction
                     </li>` : ""}
               </ul>` : ""}
           <p class="aff-hint">
@@ -975,94 +868,6 @@
         }, 800);
       } catch (err) {
         this._feedback("Sync failed: " + this._formatErr(err), "err");
-      }
-    }
-    async _createEvent() {
-      const name = this._evCreateName.trim();
-      const venue = this._evCreateVenue.trim();
-      const setActive = this._evCreateSetActive;
-      if (!name) {
-        this._feedback("Enter an event name", "warn");
-        return;
-      }
-      try {
-        await this.hass.callService("registration", "create_event", {
-          name,
-          venue_name: venue,
-          set_active: setActive
-        });
-        if (setActive) {
-          this._activeEvent = {
-            name,
-            venue_name: venue || null,
-            id: this._activeEventId || void 0
-          };
-        }
-        this._feedback(
-          setActive ? `Created and activated \u201C${name}\u201D` : `Created event \u201C${name}\u201D`,
-          "ok"
-        );
-        this._evCreateName = "";
-        this._evCreateVenue = "";
-        await this._loadEvents();
-        await this._loadActiveEvent();
-        if (setActive && !(this._activeEvent?.name || "").trim()) {
-          this._activeEvent = {
-            ...this._activeEvent || {},
-            id: this._activeEventId || this._activeEvent?.id,
-            name,
-            venue_name: venue || null
-          };
-        }
-        if (setActive) {
-          await this.hass.callService("registration", "sync_now", {});
-          await this._loadRoster();
-        }
-      } catch (err) {
-        this._feedback("Create event failed: " + this._formatErr(err), "err");
-      }
-    }
-    _onEditEventPick(eventId) {
-      this._evEditId = eventId;
-      const ev = this._events.find((e) => String(e.id) === String(eventId));
-      this._evEditName = ev?.name || "";
-      this._evEditVenue = ev?.venue_name || "";
-    }
-    async _updateEvent() {
-      if (!this._evEditId) {
-        this._feedback("Pick an event to edit", "warn");
-        return;
-      }
-      const payload = { event_id: this._evEditId };
-      if (this._evEditName.trim()) payload.name = this._evEditName.trim();
-      payload.venue_name = this._evEditVenue.trim() || "";
-      try {
-        await this.hass.callService("registration", "update_event", payload);
-        this._feedback("Event updated", "ok");
-        await this._loadEvents();
-        await this._loadActiveEvent();
-      } catch (err) {
-        this._feedback("Update event failed: " + this._formatErr(err), "err");
-      }
-    }
-    async _setActiveEvent() {
-      if (!this._evSetActiveId) {
-        this._feedback("Pick an event to activate", "warn");
-        return;
-      }
-      try {
-        await this.hass.callService("registration", "set_active_event", {
-          event_id: this._evSetActiveId
-        });
-        this._feedback("Active event saved", "ok");
-        await this._loadActiveEvent();
-        await this.hass.callService("registration", "sync_now", {});
-        await this._loadRoster();
-        await this._loadEvents();
-        await this._loadTeams();
-        await this._loadCatalog();
-      } catch (err) {
-        this._feedback("Set active failed: " + this._formatErr(err), "err");
       }
     }
     _beginEdit(p) {
@@ -1168,7 +973,7 @@
       }
       if (!this._activeEventId) {
         this._feedback(
-          "No active event \u2014 create or set one in the Events strip first",
+          "No active event \u2014 go to Game Master to create or set one",
           "err"
         );
         return;
@@ -1207,7 +1012,6 @@
       const count = this._roster.length;
       const filtered = this._filteredRoster();
       const loadFailed = !this.hass || this._feedbackKind === "err" && String(this._feedbackMsg).includes("Could not load roster");
-      const eventOptions = this._events.length > 0 ? this._events : [];
       return html`
       <div class="wrap">
         <header class="page-header">
@@ -1215,7 +1019,7 @@
             <div>
               <h1>Registration</h1>
               <p class="sub">
-                Events and player roster via Mission Control
+                Player roster via Mission Control
                 ${count ? html` · ${count} player${count === 1 ? "" : "s"}` : ""}
               </p>
             </div>
@@ -1227,151 +1031,15 @@
 
         <div class="layout">
           <div class="form-col">
-            <div class="events-block">
-              <h2 class="form-title">Events</h2>
+            <!-- Active event: read-only display — manage events in Game Master -->
+            <div class="active-event-block">
+              <h2 class="form-title">Active Event</h2>
               <p class="active-line">
-                Active:
                 <strong>${this._activeLabel()}</strong>
               </p>
-              ${!this._eventsReady && this._eventsDetail ? html`<p class="events-gate">${this._eventsDetail}</p>` : ""}
-              <div class="mode-toggle" role="tablist" aria-label="Event action">
-                <button
-                  type="button"
-                  class=${this._evMode === "create" ? "active" : ""}
-                  @click=${() => {
-        this._evMode = "create";
-      }}
-                >
-                  Create
-                </button>
-                <button
-                  type="button"
-                  class=${this._evMode === "edit" ? "active" : ""}
-                  @click=${() => {
-        this._evMode = "edit";
-      }}
-                >
-                  Edit
-                </button>
-                <button
-                  type="button"
-                  class=${this._evMode === "set" ? "active" : ""}
-                  @click=${() => {
-        this._evMode = "set";
-      }}
-                >
-                  Set
-                </button>
-              </div>
-
-              ${this._evMode === "create" ? html`
-                    <label for="ev-create-name">Name</label>
-                    <input
-                      id="ev-create-name"
-                      type="text"
-                      .value=${this._evCreateName}
-                      @input=${(e) => {
-        this._evCreateName = e.target.value;
-      }}
-                    />
-                    <label for="ev-create-venue">Venue (optional)</label>
-                    <input
-                      id="ev-create-venue"
-                      type="text"
-                      .value=${this._evCreateVenue}
-                      @input=${(e) => {
-        this._evCreateVenue = e.target.value;
-      }}
-                    />
-                    <label class="check-row">
-                      <input
-                        type="checkbox"
-                        .checked=${this._evCreateSetActive}
-                        @change=${(e) => {
-        this._evCreateSetActive = e.target.checked;
-      }}
-                      />
-                      Set active after create
-                    </label>
-                    <button
-                      class="btn-create"
-                      @click=${() => this._createEvent()}
-                    >
-                      Create event
-                    </button>
-                  ` : this._evMode === "edit" ? html`
-                      <label for="ev-edit-pick">Event</label>
-                      <select
-                        id="ev-edit-pick"
-                        .value=${this._evEditId}
-                        ?disabled=${eventOptions.length === 0}
-                        @change=${(e) => {
-        this._onEditEventPick(
-          e.target.value
-        );
-      }}
-                      >
-                        <option value="">
-                          ${eventOptions.length ? "Select\u2026" : "No cached events yet \u2014 create one"}
-                        </option>
-                        ${eventOptions.map(
-        (ev) => html`<option value=${ev.id ?? ""}>
-                              ${ev.name || ev.id}
-                            </option>`
-      )}
-                      </select>
-                      <label for="ev-edit-name">Name</label>
-                      <input
-                        id="ev-edit-name"
-                        type="text"
-                        .value=${this._evEditName}
-                        @input=${(e) => {
-        this._evEditName = e.target.value;
-      }}
-                      />
-                      <label for="ev-edit-venue">Venue</label>
-                      <input
-                        id="ev-edit-venue"
-                        type="text"
-                        .value=${this._evEditVenue}
-                        @input=${(e) => {
-        this._evEditVenue = e.target.value;
-      }}
-                      />
-                      <button
-                        class="btn-ghost"
-                        ?disabled=${!this._evEditId}
-                        @click=${() => this._updateEvent()}
-                      >
-                        Save event
-                      </button>
-                    ` : html`
-                      <label for="ev-set-active">Event</label>
-                      <select
-                        id="ev-set-active"
-                        .value=${this._evSetActiveId}
-                        ?disabled=${eventOptions.length === 0}
-                        @change=${(e) => {
-        this._evSetActiveId = e.target.value;
-      }}
-                      >
-                        <option value="">
-                          ${eventOptions.length ? "Select\u2026" : "No cached events yet \u2014 create one"}
-                        </option>
-                        ${eventOptions.map(
-        (ev) => html`<option value=${ev.id ?? ""}>
-                              ${ev.name || ev.id}
-                            </option>`
-      )}
-                      </select>
-                      <button
-                        class="btn-create"
-                        ?disabled=${!this._evSetActiveId}
-                        @click=${() => this._setActiveEvent()}
-                      >
-                        Set active
-                      </button>
-                    `}
+              <p class="active-manage-hint">
+                ${this._activeEventId ? "To change the active event, open Game Master." : "No active event \u2014 open Game Master to create or set one."}
+              </p>
             </div>
 
             <h2 class="form-title">
@@ -1543,4 +1211,3 @@
   };
   customElements.define("registration-panel", RegistrationPanel);
 })();
-//# sourceMappingURL=registration-panel.js.map

@@ -820,4 +820,3 @@
   };
   customElements.define("core-configurator-panel", CoreConfiguratorPanel);
 })();
-//# sourceMappingURL=core-configurator-panel.js.map

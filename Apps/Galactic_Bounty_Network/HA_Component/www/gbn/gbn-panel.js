@@ -1861,4 +1861,3 @@
   };
   customElements.define("gbn-panel", GbnPanel);
 })();
-//# sourceMappingURL=gbn-panel.js.map

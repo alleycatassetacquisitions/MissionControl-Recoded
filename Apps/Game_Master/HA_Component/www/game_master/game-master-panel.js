@@ -12,6 +12,19 @@
         ...super.properties,
         _state: { state: true },
         _busy: { state: true },
+        // Events strip
+        _events: { state: true },
+        _eventsReady: { state: true },
+        _eventsDetail: { state: true },
+        _evMode: { state: true },
+        _evCreateName: { state: true },
+        _evCreateVenue: { state: true },
+        _evCreateSetActive: { state: true },
+        _evEditId: { state: true },
+        _evEditName: { state: true },
+        _evEditVenue: { state: true },
+        _evSetActiveId: { state: true },
+        // Affiliation catalog
         _catalog: { state: true },
         _catCreateName: { state: true },
         _choiceDrafts: { state: true },
@@ -25,6 +38,17 @@
       super();
       this._state = null;
       this._busy = false;
+      this._events = [];
+      this._eventsReady = false;
+      this._eventsDetail = "";
+      this._evMode = "create";
+      this._evCreateName = "";
+      this._evCreateVenue = "";
+      this._evCreateSetActive = true;
+      this._evEditId = "";
+      this._evEditName = "";
+      this._evEditVenue = "";
+      this._evSetActiveId = "";
       this._catalog = emptyCatalog();
       this._catCreateName = "";
       this._choiceDrafts = {};
@@ -73,6 +97,97 @@
           letter-spacing: 0.06em;
           color: var(--secondary-text-color, #7aa8b8);
         }
+        /* ------------------------------------------------------------------ */
+        /* Events strip                                                         */
+        /* ------------------------------------------------------------------ */
+        .events-block {
+          padding: 16px 0 4px;
+        }
+        .active-line {
+          font-size: 14px;
+          margin: 0 0 10px;
+        }
+        .active-line strong {
+          color: var(--primary-color, #00e5ff);
+        }
+        .events-gate {
+          font-size: 13px;
+          color: var(--secondary-text-color, #7aa8b8);
+          margin: 0 0 12px;
+        }
+        .mode-toggle {
+          display: flex;
+          gap: 0;
+          margin: 0 0 12px;
+          border: 1px solid var(--primary-color, #00e5ff);
+          border-radius: 6px;
+          overflow: hidden;
+        }
+        .mode-toggle button {
+          flex: 1;
+          margin: 0;
+          padding: 8px 10px;
+          background: transparent;
+          color: var(--primary-color, #00e5ff);
+          border: 0;
+          border-right: 1px solid var(--primary-color, #00e5ff);
+          font: inherit;
+          font-size: 12px;
+          font-weight: 600;
+          letter-spacing: 0.04em;
+          text-transform: uppercase;
+          cursor: pointer;
+        }
+        .mode-toggle button:last-child {
+          border-right: 0;
+        }
+        .mode-toggle button.active {
+          background: var(--primary-color, #00e5ff);
+          color: #041016;
+        }
+        .events-block label {
+          display: block;
+          font-size: 11px;
+          letter-spacing: 0.06em;
+          text-transform: uppercase;
+          color: var(--secondary-text-color, #7aa8b8);
+          margin: 8px 0 4px;
+        }
+        .events-block input,
+        .events-block select {
+          width: 100%;
+          box-sizing: border-box;
+          padding: 8px 10px;
+          background: var(--secondary-background-color, #0d1418);
+          color: var(--primary-text-color, #e8f6ff);
+          border: 1px solid var(--divider-color, #1f3a44);
+          border-radius: 6px;
+          font: inherit;
+        }
+        .events-block label.check-row {
+          display: flex;
+          align-items: center;
+          gap: 8px;
+          margin-top: 10px;
+          margin-bottom: 0;
+          font-size: 13px;
+          text-transform: none;
+          letter-spacing: 0;
+          color: var(--primary-text-color, #e8f6ff);
+        }
+        .events-block label.check-row input {
+          width: auto;
+          flex-shrink: 0;
+          margin: 0;
+        }
+        .events-block .btn-create,
+        .events-block .btn-ghost {
+          margin-top: 12px;
+          width: 100%;
+        }
+        /* ------------------------------------------------------------------ */
+        /* Shared button / layout                                               */
+        /* ------------------------------------------------------------------ */
         .status-card {
           padding: 16px 0;
         }
@@ -281,6 +396,31 @@
           opacity: 0.45;
           cursor: not-allowed;
         }
+        .btn-create {
+          background: var(--primary-color, #00e5ff);
+          color: #041016;
+          border: 0;
+          border-radius: 6px;
+          padding: 10px 16px;
+          font-weight: 600;
+          cursor: pointer;
+          font: inherit;
+        }
+        .btn-ghost {
+          background: transparent;
+          color: var(--primary-color, #00e5ff);
+          border: 1px solid var(--primary-color, #00e5ff);
+          border-radius: 6px;
+          padding: 10px 16px;
+          cursor: pointer;
+          font: inherit;
+        }
+        .btn-create:disabled,
+        .btn-ghost:disabled,
+        .small-btn:disabled {
+          opacity: 0.45;
+          cursor: not-allowed;
+        }
       `
       ];
     }
@@ -309,8 +449,266 @@
       } finally {
         this._busy = false;
       }
-      await this._loadCatalog();
+      await Promise.all([this._loadEvents(), this._loadCatalog()]);
     }
+    // -------------------------------------------------------------------------
+    // Events strip
+    // -------------------------------------------------------------------------
+    async _loadEvents() {
+      try {
+        const result = await this.hass.callWS({ type: "game_master/get_events" });
+        this._events = result?.events ?? [];
+        this._eventsReady = Boolean(result?.ready);
+        this._eventsDetail = result?.detail || "";
+        const activeId = String(this._state?.active_event?.id || "");
+        if (activeId && !this._evSetActiveId) {
+          this._evSetActiveId = activeId;
+        }
+      } catch (err) {
+        this._events = [];
+        this._eventsReady = false;
+        this._eventsDetail = this._formatErr(err);
+      }
+    }
+    _onEditEventPick(eventId) {
+      this._evEditId = eventId;
+      const ev = this._events.find((e) => String(e.id) === String(eventId));
+      this._evEditName = ev?.name || "";
+      this._evEditVenue = ev?.venue_name || "";
+    }
+    async _createEvent() {
+      const name = this._evCreateName.trim();
+      const venue = this._evCreateVenue.trim();
+      const setActive = this._evCreateSetActive;
+      if (!name) {
+        this._feedback("Enter an event name", "warn");
+        return;
+      }
+      this._busy = true;
+      try {
+        await this.hass.callService("game_master", "create_event", {
+          name,
+          venue_name: venue,
+          set_active: setActive
+        });
+        this._feedback(
+          setActive ? `Created and activated "${name}"` : `Created event "${name}"`,
+          "ok"
+        );
+        this._evCreateName = "";
+        this._evCreateVenue = "";
+        await this._refresh();
+      } catch (err) {
+        this._feedback("Create event failed: " + this._formatErr(err), "err");
+      } finally {
+        this._busy = false;
+      }
+    }
+    async _updateEvent() {
+      if (!this._evEditId) {
+        this._feedback("Pick an event to edit", "warn");
+        return;
+      }
+      const payload = { event_id: this._evEditId };
+      if (this._evEditName.trim()) payload.name = this._evEditName.trim();
+      payload.venue_name = this._evEditVenue.trim() || "";
+      this._busy = true;
+      try {
+        await this.hass.callService("game_master", "update_event", payload);
+        this._feedback("Event updated", "ok");
+        await this._loadEvents();
+      } catch (err) {
+        this._feedback("Update event failed: " + this._formatErr(err), "err");
+      } finally {
+        this._busy = false;
+      }
+    }
+    async _setActiveEvent() {
+      if (!this._evSetActiveId) {
+        this._feedback("Pick an event to activate", "warn");
+        return;
+      }
+      this._busy = true;
+      try {
+        await this.hass.callService("game_master", "set_active_event", {
+          event_id: this._evSetActiveId
+        });
+        this._feedback("Active event saved", "ok");
+        await this._refresh();
+      } catch (err) {
+        this._feedback("Set active failed: " + this._formatErr(err), "err");
+      } finally {
+        this._busy = false;
+      }
+    }
+    _eventsSection() {
+      const html = window.McPanel.html;
+      const eventOptions = this._events.length > 0 ? this._events : [];
+      const activeId = String(this._state?.active_event?.id || "");
+      const activeName = (this._state?.active_event?.name || "").trim();
+      return html`
+      <section class="section">
+        <h2>Events</h2>
+        <div class="events-block">
+          <p class="active-line">
+            Active: <strong>${activeName || activeId || "None"}</strong>
+          </p>
+          ${!this._eventsReady && this._eventsDetail ? html`<p class="events-gate">${this._eventsDetail}</p>` : ""}
+          <div class="mode-toggle" role="tablist" aria-label="Event action">
+            <button
+              type="button"
+              class=${this._evMode === "create" ? "active" : ""}
+              ?disabled=${this._busy}
+              @click=${() => {
+        this._evMode = "create";
+      }}
+            >
+              Create
+            </button>
+            <button
+              type="button"
+              class=${this._evMode === "edit" ? "active" : ""}
+              ?disabled=${this._busy}
+              @click=${() => {
+        this._evMode = "edit";
+      }}
+            >
+              Edit
+            </button>
+            <button
+              type="button"
+              class=${this._evMode === "set" ? "active" : ""}
+              ?disabled=${this._busy}
+              @click=${() => {
+        this._evMode = "set";
+      }}
+            >
+              Set Active
+            </button>
+          </div>
+
+          ${this._evMode === "create" ? html`
+                <label for="ev-create-name">Name</label>
+                <input
+                  id="ev-create-name"
+                  type="text"
+                  ?disabled=${this._busy}
+                  .value=${this._evCreateName}
+                  @input=${(e) => {
+        this._evCreateName = e.target.value;
+      }}
+                />
+                <label for="ev-create-venue">Venue (optional)</label>
+                <input
+                  id="ev-create-venue"
+                  type="text"
+                  ?disabled=${this._busy}
+                  .value=${this._evCreateVenue}
+                  @input=${(e) => {
+        this._evCreateVenue = e.target.value;
+      }}
+                />
+                <label class="check-row">
+                  <input
+                    type="checkbox"
+                    .checked=${this._evCreateSetActive}
+                    ?disabled=${this._busy}
+                    @change=${(e) => {
+        this._evCreateSetActive = e.target.checked;
+      }}
+                  />
+                  Set active after create
+                </label>
+                <button
+                  class="btn-create"
+                  ?disabled=${this._busy}
+                  @click=${() => this._createEvent()}
+                >
+                  Create event
+                </button>
+              ` : this._evMode === "edit" ? html`
+                  <label for="ev-edit-pick">Event</label>
+                  <select
+                    id="ev-edit-pick"
+                    .value=${this._evEditId}
+                    ?disabled=${this._busy || eventOptions.length === 0}
+                    @change=${(e) => {
+        this._onEditEventPick(e.target.value);
+      }}
+                  >
+                    <option value="">
+                      ${eventOptions.length ? "Select\u2026" : "No cached events yet \u2014 create one"}
+                    </option>
+                    ${eventOptions.map(
+        (ev) => html`<option value=${ev.id ?? ""}>
+                        ${ev.name || ev.id}
+                      </option>`
+      )}
+                  </select>
+                  <label for="ev-edit-name">Name</label>
+                  <input
+                    id="ev-edit-name"
+                    type="text"
+                    ?disabled=${this._busy}
+                    .value=${this._evEditName}
+                    @input=${(e) => {
+        this._evEditName = e.target.value;
+      }}
+                  />
+                  <label for="ev-edit-venue">Venue</label>
+                  <input
+                    id="ev-edit-venue"
+                    type="text"
+                    ?disabled=${this._busy}
+                    .value=${this._evEditVenue}
+                    @input=${(e) => {
+        this._evEditVenue = e.target.value;
+      }}
+                  />
+                  <button
+                    class="btn-ghost"
+                    ?disabled=${this._busy || !this._evEditId}
+                    @click=${() => this._updateEvent()}
+                  >
+                    Save event
+                  </button>
+                ` : html`
+                  <label for="ev-set-active">Event</label>
+                  <select
+                    id="ev-set-active"
+                    .value=${this._evSetActiveId}
+                    ?disabled=${this._busy || eventOptions.length === 0}
+                    @change=${(e) => {
+        this._evSetActiveId = e.target.value;
+      }}
+                  >
+                    <option value="">
+                      ${eventOptions.length ? "Select\u2026" : "No cached events yet \u2014 create one"}
+                    </option>
+                    ${eventOptions.map(
+        (ev) => html`<option
+                        value=${ev.id ?? ""}
+                        ?selected=${String(ev.id ?? "") === activeId}
+                      >
+                        ${ev.name || ev.id}
+                      </option>`
+      )}
+                  </select>
+                  <button
+                    class="btn-create"
+                    ?disabled=${this._busy || !this._evSetActiveId}
+                    @click=${() => this._setActiveEvent()}
+                  >
+                    Set active
+                  </button>
+                `}
+        </div>
+      </section>
+    `;
+    }
+    // -------------------------------------------------------------------------
+    // Affiliation catalog
+    // -------------------------------------------------------------------------
     async _loadCatalog() {
       const prevEvent = this._catalog?.event_id || null;
       try {
@@ -481,7 +879,7 @@
             </button>
           </div>
           ${!hasActive ? html`<p class="meta" style="margin-top:12px">
-                Set an active event in Registration before editing the catalog.
+                Set an active event in the Events section above before editing the catalog.
               </p>` : ""}
           ${cats.length === 0 ? html`<p class="meta" style="margin-top:12px">
                 No affiliation categories yet.
@@ -630,6 +1028,9 @@
       </div>
     `;
     }
+    // -------------------------------------------------------------------------
+    // Scoring toggles
+    // -------------------------------------------------------------------------
     async _setScoring(enabled) {
       this._busy = true;
       try {
@@ -663,7 +1064,7 @@
     }
     _activeLabel() {
       const ev = this._state?.active_event;
-      if (!ev) return "None \u2014 select an event in Registration";
+      if (!ev) return "None \u2014 create or set an active event in the Events section";
       const name = (ev.name || "").trim();
       const venue = (ev.venue_name || "").trim();
       if (name && venue) return `${name} \xB7 ${venue}`;
@@ -691,10 +1092,11 @@
         <header class="page-header">
           <h1>Game Master</h1>
           <p class="sub">
-            Control live gameplay for the active event. Change which event is
-            active in Registration.
+            Manage events and control live gameplay for the active event.
           </p>
         </header>
+
+        ${this._eventsSection()}
 
         <section class="section">
           <h2>Active event</h2>
@@ -762,7 +1164,7 @@
             </label>
           </div>
           ${!hasActive ? html`<p class="meta" style="margin-top:12px">
-                Set an active event in Registration before toggling gameplay.
+                Set an active event above before toggling gameplay.
               </p>` : ""}
         </section>
 
@@ -787,4 +1189,3 @@
   };
   customElements.define("game-master-panel", GameMasterPanel);
 })();
-//# sourceMappingURL=game-master-panel.js.map

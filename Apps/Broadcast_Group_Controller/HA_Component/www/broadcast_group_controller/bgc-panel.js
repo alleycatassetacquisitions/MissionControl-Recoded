@@ -389,4 +389,3 @@ This deletes the HA device and clears retained MQTT so the name can be reused or
     BroadcastGroupControllerPanel
   );
 })();
-//# sourceMappingURL=bgc-panel.js.map

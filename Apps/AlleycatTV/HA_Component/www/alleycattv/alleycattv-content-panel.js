@@ -998,4 +998,3 @@ Delete anyway?`;
   };
   customElements.define("alleycattv-content-panel", AlleycatTVContentPanel);
 })();
-//# sourceMappingURL=alleycattv-content-panel.js.map

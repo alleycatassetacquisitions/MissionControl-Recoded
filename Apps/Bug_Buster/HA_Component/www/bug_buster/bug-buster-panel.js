@@ -1197,4 +1197,3 @@ ${item.hex}` : "";
     customElements.define("bug-buster-panel", BugBusterPanel);
   }
 })();
-//# sourceMappingURL=bug-buster-panel.js.map

@@ -110,7 +110,7 @@ MCS proxies Central affiliation catalog routes live (no durable affiliation cach
 
 ### Registration
 
-The Mission Control dashboard for venue **events** (create / edit / set-active) and **player** registration (name ≤ 32 characters + optional email, team assign, event affiliations via dropdowns, soft-deactivate). It talks to MCS (services + panel), not to the Central Server on its own. Gameplay scoring toggles and affiliation **catalog** CRUD (plus HA-only defaults) are on **Game Master**, not here. Registration’s form uses one dropdown per category; **Faction** may create a new choice on type. Edit player switches the same form into edit mode (does not stack below Register). Roster still shows affiliation tags as chips.
+The Mission Control dashboard for **player** registration (Phase 1c: event create/edit/set-active moved to **Game Master**). Registration (name ≤ 32 characters + optional email, team assign, event affiliations via dropdowns, soft-deactivate). It talks to MCS (services + panel), not to the Central Server on its own. Gameplay scoring toggles and affiliation **catalog** CRUD (plus HA-only defaults) are on **Game Master**, not here. Registration’s form uses one dropdown per category; **Faction** may create a new choice on type. Edit player switches the same form into edit mode (does not stack below Register). Roster still shows affiliation tags as chips.
 
 - **Code:** `registration`
 
@@ -164,7 +164,7 @@ Players are **not** Home Assistant devices. Registration exposes connectivity an
 
 ### Game Master
 
-The Mission Control dashboard for **gameplay** controls on the active event: scoring on/off (“game live”), accept delayed scores, and (later) hours of operation / special-event triggers. It also owns the **affiliation catalog** (create/rename categories and choices) and **HA-only default choice per category** (prefill Registration create; never written to Central), with an event-keyed HA cache cleared when the active event changes. Panels (Game Master, Registration, GBN) poll `game_master/get_affiliation_catalog`. It talks to MCS only. Changing which event is active stays on Registration.
+The Mission Control dashboard for **gameplay** controls on the active event: scoring on/off (“game live”), accept delayed scores, and (later) hours of operation / special-event triggers. It also owns the **affiliation catalog** (create/rename categories and choices) and **HA-only default choice per category** (prefill Registration create; never written to Central), with an event-keyed HA cache cleared when the active event changes. Panels (Game Master, Registration, GBN) poll `game_master/get_affiliation_catalog`. It owns event create / edit / set-active (Phase 1c) so registration-desk staff cannot mis-click set-active. It talks to MCS only.
 
 ### Affiliation
 
