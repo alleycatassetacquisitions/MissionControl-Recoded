@@ -162,5 +162,5 @@ async def test_set_led_and_haptic(hass: HomeAssistant, loaded_entry):
 
     assert mock_pub.await_count == 2
     assert mock_pub.await_args_list[0].args[2:] == ("cmd", "all", "led")
-    assert mock_pub.await_args_list[1].args[2:] == ("cmd", "fdn-1", "haptic")
+    assert mock_pub.await_args_list[1].args[2:] == ("cmd", "device", "fdn-1", "haptic")
 
