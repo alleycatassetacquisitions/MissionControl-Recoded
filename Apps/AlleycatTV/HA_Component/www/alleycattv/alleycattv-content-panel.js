@@ -13,7 +13,6 @@
       this._confirmCb = null;
       this._promptCb = null;
       this._libDrag = null;
-      this._cachedServerUrl = "";
       this._cachedGbnUrl = "";
     }
     set panel(panel) {
@@ -21,24 +20,11 @@
       if (this.shadowRoot && this.shadowRoot.innerHTML) this._loadAll();
     }
     async _boot() {
-      await this._loadDirectoryUrl();
       await this._loadGbnUrl();
       this._loadAll();
     }
-    _serverUrl() {
-      return String(this._cachedServerUrl || "").replace(/\/$/, "");
-    }
     _gbnUrl() {
       return String(this._cachedGbnUrl || "").replace(/\/$/, "");
-    }
-    async _loadDirectoryUrl() {
-      try {
-        if (window.CoreConfigurator && this.hass) {
-          this._cachedServerUrl = await window.CoreConfigurator.getUrl(this.hass, "alleycattv");
-        }
-      } catch (_) {
-        this._cachedServerUrl = "";
-      }
     }
     async _loadGbnUrl() {
       try {
@@ -110,10 +96,7 @@
         errors.push(`playlists: ${err.message}`);
       }
       try {
-        const c = await this._api(
-          "GET",
-          `/api/content/?base_url=${encodeURIComponent(this._serverUrl())}`
-        );
+        const c = await this._api("GET", "/api/content/");
         content = Array.isArray(c) ? c : [];
       } catch (err) {
         errors.push(`content: ${err.message}`);
@@ -126,7 +109,7 @@
       }
       let bumpers = [];
       try {
-        const b = await this._api("GET", `/api/content/bumpers?base_url=${encodeURIComponent(this._serverUrl())}`);
+        const b = await this._api("GET", "/api/content/bumpers");
         bumpers = Array.isArray(b) ? b : [];
       } catch (_) {
       }
@@ -139,7 +122,7 @@
       this._paintBumpers();
       this._paintDevices();
       if (errors.length) {
-        this._toast(`Load failed (${this._serverUrl()}): ${errors.join("; ")}`, "err");
+        this._toast(`Load failed: ${errors.join("; ")}`, "err");
       } else {
         this._toast(
           `Library loaded \u2014 ${zones.length} broadcast group(s), ${content.length} file(s)`,
@@ -765,7 +748,7 @@ Delete anyway?`;
     }
     async _reloadBumpers() {
       try {
-        const b = await this._api("GET", `/api/content/bumpers?base_url=${encodeURIComponent(this._serverUrl())}`);
+        const b = await this._api("GET", "/api/content/bumpers");
         this._bumpers = Array.isArray(b) ? b : [];
       } catch (_) {
         this._bumpers = [];

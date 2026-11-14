@@ -9,13 +9,11 @@
       this._zones = {};
       this._selectedZone = null;
       this._eventUnsubscribe = null;
-      this._serverUrl = null;
       this._contentFiles = [];
       this._areas = [];
     }
     set panel(p) {
       this._panel = p;
-      this._serverUrl = this._resolveServerUrl();
     }
     disconnectedCallback() {
       super.disconnectedCallback();
@@ -24,18 +22,7 @@
         this._eventUnsubscribe = null;
       }
     }
-    _resolveServerUrl() {
-      return String(this._serverUrl || "").replace(/\/$/, "");
-    }
-    async _loadDirectoryUrl() {
-      if (window.CoreConfigurator && this.hass) {
-        this._serverUrl = await window.CoreConfigurator.getUrl(this.hass, "alleycattv");
-      } else if (!this._serverUrl) {
-        this._serverUrl = "";
-      }
-    }
     async _boot() {
-      await this._loadDirectoryUrl();
       await this._fetchServerZones();
       await this._loadDevices();
       await this._loadAreas();
@@ -206,7 +193,7 @@
     }
     async _loadContent() {
       try {
-        const resp = await fetch(`/api/alleycattv/proxy/api/content/?base_url=${encodeURIComponent(this._serverUrl || "")}`, { headers: this._token() ? { Authorization: `Bearer ${this._token()}` } : {}, credentials: "same-origin", cache: "no-store" });
+        const resp = await fetch(`/api/alleycattv/proxy/api/content/`, { headers: this._token() ? { Authorization: `Bearer ${this._token()}` } : {}, credentials: "same-origin", cache: "no-store" });
         if (resp.ok) {
           this._contentFiles = await resp.json();
           this._populateFilePicker();
