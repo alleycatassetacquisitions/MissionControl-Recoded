@@ -79,7 +79,7 @@ async def test_create_event_calls_mcs(hass: HomeAssistant, loaded_entry):
             new=AsyncMock(side_effect=_side_effect),
         ) as mock_req,
         patch(
-            "custom_components.game_master.events.push_active_event_to_gbn",
+            "custom_components.game_master._push_active_event_to_gbn",
             new=AsyncMock(),
         ),
         patch(
@@ -123,7 +123,8 @@ async def test_set_active_event_calls_mcs(hass: HomeAssistant, loaded_entry):
             new=AsyncMock(return_value=_mock_response(None, 204)),
         ) as mock_req,
         patch(
-            "custom_components.game_master.events.push_active_event_to_gbn",
+            # Bound name in __init__.py (imported as _push_active_event_to_gbn)
+            "custom_components.game_master._push_active_event_to_gbn",
             new=AsyncMock(),
         ) as mock_gbn,
         patch(
