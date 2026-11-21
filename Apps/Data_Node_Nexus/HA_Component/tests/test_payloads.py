@@ -21,6 +21,7 @@ def test_encode_page_cmd_includes_stamps():
         player_id="p1",
         role="hunter",
         neocorp="helix",
+        id="page-uuid-1",
     )
     data = json.loads(raw.decode("utf-8"))
     assert data == {
@@ -30,6 +31,7 @@ def test_encode_page_cmd_includes_stamps():
         "player_id": "p1",
         "role": "hunter",
         "neocorp": "helix",
+        "id": "page-uuid-1",
     }
 
 

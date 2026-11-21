@@ -28,6 +28,7 @@ _SCHEMAS: dict[str, dict[int, tuple[str, str]]] = {
         4: ("player_id", "string"),
         5: ("role", "string"),
         6: ("neocorp", "string"),
+        7: ("id", "string"),
     },
     "LedCmd": {
         1: ("state", "bool"),

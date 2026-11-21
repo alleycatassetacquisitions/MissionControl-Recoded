@@ -16,6 +16,7 @@ def encode_page_cmd(
     player_id: str = "",
     role: str = "",
     neocorp: str = "",
+    id: str = "",
     wire: str = "json",
 ) -> bytes:
     return encode_message(
@@ -27,6 +28,7 @@ def encode_page_cmd(
             "player_id": player_id or "",
             "role": role or "",
             "neocorp": neocorp or "",
+            "id": id or "",
         },
         wire=wire,  # type: ignore[arg-type]
     )

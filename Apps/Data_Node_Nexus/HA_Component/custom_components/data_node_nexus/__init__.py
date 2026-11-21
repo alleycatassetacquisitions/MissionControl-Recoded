@@ -9,6 +9,7 @@ Design contracts:
 from __future__ import annotations
 
 import logging
+import uuid
 
 import voluptuous as vol
 from homeassistant.components import websocket_api
@@ -177,6 +178,7 @@ def _register_services(hass: HomeAssistant) -> None:
             player_id=player_id,
             role=role,
             neocorp=neocorp,
+            id=str(uuid.uuid4()),
         )
         await _publish_cmd(hass, segments, "page", payload)
 
