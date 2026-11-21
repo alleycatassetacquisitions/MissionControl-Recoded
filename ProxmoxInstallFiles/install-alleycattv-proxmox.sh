@@ -163,7 +163,7 @@ install_atv_into_ct() {
   if [[ -n "$ATV_SRC" ]]; then
     [[ -d "$ATV_SRC" ]] || die "ATV_SRC is not a directory: $ATV_SRC"
     say "Copying AlleycatTV Server_Component from $ATV_SRC"
-    tar -C "$ATV_SRC" -cf - . | pct exec "$CTID" -- tar -C /root/alleycattv-src -xf -
+    tar -C "$ATV_SRC" -cf - . | pct exec "$CTID" -- tar -C /root/alleycattv-src --no-same-owner -xf -
   else
     say "Cloning AlleycatTV from $REPO_URL"
     pct exec "$CTID" -- bash -lc "

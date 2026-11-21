@@ -176,7 +176,7 @@ mc_ha_rsync_tree() {
   local ha_ip="$1" src="$2" dest_rel="$3"
   [[ -d "$src" ]] || return 0
   mc_ha_ssh "$ha_ip" "mkdir -p /config/${dest_rel}"
-  if tar -C "$src" -cf - . | mc_ha_ssh "$ha_ip" "tar -C /config/${dest_rel} -xf -"; then
+  if tar -C "$src" -cf - . | mc_ha_ssh "$ha_ip" "tar -C /config/${dest_rel} --no-same-owner -xf -"; then
     return 0
   fi
   # Optional fallback if tar path failed and both sides somehow support rsync

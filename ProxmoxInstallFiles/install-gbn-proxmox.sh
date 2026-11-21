@@ -155,7 +155,7 @@ pct exec "$CTID" -- bash -lc '
 
 if [[ -n "$GBN_SRC" ]]; then
   [[ -d "$GBN_SRC" ]] || die "GBN_SRC is not a directory: $GBN_SRC"
-  tar -C "$GBN_SRC" -cf - . | pct exec "$CTID" -- tar -C /root/gbn-src -xf -
+  tar -C "$GBN_SRC" -cf - . | pct exec "$CTID" -- tar -C /root/gbn-src --no-same-owner -xf -
 else
   pct exec "$CTID" -- bash -lc "
     set -euo pipefail

@@ -175,7 +175,7 @@ install_mcs_into_ct() {
   if [[ -n "$MCS_SRC" ]]; then
     [[ -d "$MCS_SRC" ]] || die "MCS_SRC is not a directory: $MCS_SRC"
     say "Copying MCS from $MCS_SRC"
-    tar -C "$MCS_SRC" -cf - . | pct exec "$CTID" -- tar -C /opt/mcs -xf -
+    tar -C "$MCS_SRC" -cf - . | pct exec "$CTID" -- tar -C /opt/mcs --no-same-owner -xf -
   else
     say "Cloning MCS from $REPO_URL"
     pct exec "$CTID" -- bash -lc "

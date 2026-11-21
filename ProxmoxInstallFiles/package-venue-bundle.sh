@@ -42,7 +42,7 @@ copy_tree() {
       tar -C "$src" \
         --exclude='.venv' --exclude='__pycache__' --exclude='node_modules' \
         --exclude='.git' --exclude='.pytest_cache' \
-        -cf - . | tar -C "$dest" -xf -
+        -cf - . | tar -C "$dest" --no-same-owner -xf -
     fi
   else
     cp -a "$src" "$dest"

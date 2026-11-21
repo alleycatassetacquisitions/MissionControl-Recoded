@@ -30,7 +30,7 @@ tar -C "$SRC" \
   --exclude='*.pyc' \
   --exclude='.pytest_cache' \
   --exclude='.git' \
-  -cf - . | pct exec "$CTID" -- tar -C "$DEST" -xf -
+  -cf - . | pct exec "$CTID" -- tar -C "$DEST" --no-same-owner -xf -
 
 # Reinstall deps if a venv + requirements/pyproject exists
 if pct exec "$CTID" -- test -x "${DEST}/.venv/bin/pip"; then

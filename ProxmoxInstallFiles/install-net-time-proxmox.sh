@@ -174,7 +174,7 @@ install_net_time_into_ct() {
   if [[ -n "$NET_TIME_SRC" ]]; then
     [[ -d "$NET_TIME_SRC" ]] || die "NET_TIME_SRC is not a directory: $NET_TIME_SRC"
     say "Copying Net Time from $NET_TIME_SRC"
-    tar -C "$NET_TIME_SRC" -cf - . | pct exec "$CTID" -- tar -C /opt/net_time -xf -
+    tar -C "$NET_TIME_SRC" -cf - . | pct exec "$CTID" -- tar -C /opt/net_time --no-same-owner -xf -
   else
     say "Cloning Net Time from $REPO_URL"
     pct exec "$CTID" -- bash -lc "
